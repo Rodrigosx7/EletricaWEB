@@ -52,6 +52,7 @@ function AppInterno() {
         data: { user },
       } = await supabase.auth.getUser();
 
+      console.log("[App] getUser() retornou:", user?.email || "null");
       setUsuario(user);
     }
 
@@ -59,8 +60,20 @@ function AppInterno() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUsuario(session?.user ?? null);
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log(
+        "[App] onAuthStateChange:",
+        event,
+        session?.user?.email || "sem user"
+      );
+      // Sempre que houver uma sessão válida, atualizar o usuário,
+      // mesmo em eventos diferentes de SIGNED_IN (ex: INITIAL_SESSION
+      // quando o app carrega após o OAuth redirecionar de volta).
+      if (session?.user) {
+        setUsuario(session.user);
+      } else if (event === "SIGNED_OUT") {
+        setUsuario(null);
+      }
     });
 
     return () => {
