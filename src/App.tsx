@@ -8,25 +8,8 @@ import Clientes from "./components/Clientes";
 import Servicos from "./components/Servicos";
 import Produtos from "./components/Produtos";
 
-type Cliente = {
-  id: number;
-  nome: string;
-  telefone: string | null;
-  endereco: string | null;
-  email: string | null;
-  user_id: string;
-  created_at?: string;
-};
-
 function App() {
   const [usuario, setUsuario] = useState<any>(null);
-
-  const [clientes, setClientes] = useState<Cliente[]>([]);
-  const [nome, setNome] = useState("");
-  const [telefone, setTelefone] = useState("");
-  const [email, setEmail] = useState("");
-  const [endereco, setEndereco] = useState("");
-  const [carregando, setCarregando] = useState(false);
   const [pagina, setPagina] = useState("dashboard");
 
   // Verificar usuário logado
@@ -52,103 +35,9 @@ function App() {
     };
   }, []);
 
-  // Carregar somente os clientes do usuário logado
-  async function carregarClientes() {
-    if (!usuario) return;
-
-    const { data, error } = await supabase
-      .from("clientes")
-      .select("*")
-      .eq("user_id", usuario.id)
-      .order("id", { ascending: false });
-
-    if (error) {
-      console.error("Erro ao carregar clientes:", error);
-      return;
-    }
-
-    setClientes(data || []);
-  }
-
-  // Carregar clientes quando o usuário estiver logado
-  useEffect(() => {
-    if (usuario) {
-      carregarClientes();
-    }
-  }, [usuario]);
-
-  // Cadastrar cliente
-  async function cadastrarCliente(e: React.FormEvent) {
-    e.preventDefault();
-
-    if (!nome.trim()) {
-      alert("Digite o nome do cliente.");
-      return;
-    }
-
-    if (!usuario) {
-      alert("Usuário não identificado.");
-      return;
-    }
-
-    setCarregando(true);
-
-    const novoCliente = {
-      nome: nome.trim(),
-      telefone: telefone.trim() || null,
-      email: email.trim() || null,
-      endereco: endereco.trim() || null,
-      user_id: usuario.id,
-    };
-
-    const { error } = await supabase
-      .from("clientes")
-      .insert(novoCliente);
-
-    if (error) {
-      console.error("Erro ao cadastrar:", error);
-      alert("Erro ao cadastrar cliente.");
-      setCarregando(false);
-      return;
-    }
-
-    setNome("");
-    setTelefone("");
-    setEmail("");
-    setEndereco("");
-
-    await carregarClientes();
-
-    setCarregando(false);
-  }
-
-  // Excluir cliente
-  async function excluirCliente(id: number) {
-    const confirmar = confirm("Deseja realmente excluir este cliente?");
-
-    if (!confirmar) return;
-
-    const { error } = await supabase
-      .from("clientes")
-      .delete()
-      .eq("id", id)
-      .eq("user_id", usuario.id);
-
-    if (error) {
-      console.error("Erro ao excluir:", error);
-      alert("Erro ao excluir cliente.");
-      return;
-    }
-
-    setClientes((clientesAtuais) =>
-      clientesAtuais.filter((cliente) => cliente.id !== id)
-    );
-  }
-
   // Logout
   async function sair() {
     await supabase.auth.signOut();
-    setClientes([]);
   }
 
   // Recuperação de senha
@@ -182,7 +71,7 @@ function App() {
         {/* Clientes */}
         {pagina === "clientes" && <Clientes />}
 
-        {/* Outras páginas - temporariamente */}
+        {/* Orçamentos */}
         {pagina === "orcamentos" && (
           <div className="p-8">
             <h1 className="text-3xl font-bold">
@@ -194,11 +83,14 @@ function App() {
             </p>
           </div>
         )}
-        
+
+        {/* Serviços */}
         {pagina === "servicos" && <Servicos />}
 
+        {/* Produtos */}
         {pagina === "produtos" && <Produtos />}
 
+        {/* Financeiro */}
         {pagina === "financeiro" && (
           <div className="p-8">
             <h1 className="text-3xl font-bold">
@@ -211,6 +103,7 @@ function App() {
           </div>
         )}
 
+        {/* Relatórios */}
         {pagina === "relatorios" && (
           <div className="p-8">
             <h1 className="text-3xl font-bold">
@@ -223,6 +116,7 @@ function App() {
           </div>
         )}
 
+        {/* Configurações */}
         {pagina === "configuracoes" && (
           <div className="p-8">
             <h1 className="text-3xl font-bold">
