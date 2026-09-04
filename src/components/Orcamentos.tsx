@@ -6,6 +6,9 @@ import autoTable from "jspdf-autotable";
 type Cliente = {
   id: number;
   nome: string;
+  telefone: string | null;
+  endereco: string | null;
+  email: string | null;
 };
 
 type Servico = {
@@ -118,7 +121,7 @@ function Orcamentos() {
       await Promise.all([
         supabase
           .from("clientes")
-          .select("id, nome")
+          .select("id, nome, telefone, endereco, email")
           .eq("user_id", usuario.id)
           .order("nome"),
 
@@ -562,16 +565,10 @@ async function editarOrcamento(orcamento: Orcamento) {
   }
 
   async function gerarPDF(orcamento: Orcamento) {
-  if (!usuario) {
-    alert("Usuário não identificado.");
-    return;
-  }
-
   try {
     const { data: itensPDF, error } = await supabase
       .from("orcamento_itens")
       .select(`
-        id,
         tipo,
         descricao,
         quantidade,
@@ -583,154 +580,510 @@ async function editarOrcamento(orcamento: Orcamento) {
       .order("id");
 
     if (error) {
-      console.error(error);
-      alert("Erro ao carregar os itens do orçamento.");
+      console.error("Erro ao buscar itens para PDF:", error);
+      alert("Erro ao gerar PDF.");
       return;
     }
 
+    const cliente =
+      orcamento.clientes?.[0]?.nome || "Cliente";
+
+    const clienteCompleto = clientes.find(
+      (c) => c.id === orcamento.cliente_id
+    );
+
     const doc = new jsPDF();
 
-    const numero = String(orcamento.numero).padStart(4, "0");
-    const cliente = orcamento.clientes?.[0]?.nome || "Cliente";
+    // =========================
+    // CORES
+    // =========================
+    const azulEscuro: [number, number, number] = [13, 27, 42];
+    const amarelo: [number, number, number] = [255, 214, 10];
+    const cinzaTexto: [number, number, number] = [90, 90, 90];
+    const cinzaClaro: [number, number, number] = [245, 246, 248];
 
-    const dataFormatada = new Date(
-      orcamento.data_orcamento + "T00:00:00"
-    ).toLocaleDateString("pt-BR");
+    // =========================
+    // LOGO
+    // =========================
+    try {
+      const carregarImagem = (src: string): Promise<string> => {
+        return new Promise((resolve, reject) => {
+          const img = new Image();
 
-    const validadeFormatada = orcamento.validade
-      ? new Date(
-          orcamento.validade + "T00:00:00"
-        ).toLocaleDateString("pt-BR")
-      : "Não informada";
+          img.onload = () => {
+            const canvas = document.createElement("canvas");
 
-    // Cabeçalho
-    doc.setFontSize(22);
+            canvas.width = img.width;
+            canvas.height = img.height;
+
+            const ctx = canvas.getContext("2d");
+
+            if (!ctx) {
+              reject(new Error("Não foi possível criar canvas."));
+              return;
+            }
+
+            ctx.drawImage(img, 0, 0);
+
+            resolve(canvas.toDataURL("image/png"));
+          };
+
+          img.onerror = () => {
+            reject(new Error("Não foi possível carregar a logo."));
+          };
+
+          img.src = src;
+        });
+      };
+
+      const logoBase64 = await carregarImagem("/logo.png");
+
+      doc.addImage(
+        logoBase64,
+        "PNG",
+        18,
+        12,
+        42,
+        25
+      );
+    } catch (erroLogo) {
+      console.warn("Logo não pôde ser carregada:", erroLogo);
+    }
+
+    // =========================
+    // CABEÇALHO
+    // =========================
+
+    doc.setFillColor(
+      azulEscuro[0],
+      azulEscuro[1],
+      azulEscuro[2]
+    );
+
+    doc.rect(0, 0, 210, 42, "F");
+
+    // Tenta colocar a logo novamente por cima do fundo.
+    // Caso a logo tenha fundo transparente, ficará perfeita.
+    try {
+      const carregarImagem = (src: string): Promise<string> => {
+        return new Promise((resolve, reject) => {
+          const img = new Image();
+
+          img.onload = () => {
+            const canvas = document.createElement("canvas");
+
+            canvas.width = img.width;
+            canvas.height = img.height;
+
+            const ctx = canvas.getContext("2d");
+
+            if (!ctx) {
+              reject(new Error("Canvas indisponível."));
+              return;
+            }
+
+            ctx.drawImage(img, 0, 0);
+
+            resolve(canvas.toDataURL("image/png"));
+          };
+
+          img.onerror = () =>
+            reject(new Error("Logo não encontrada."));
+
+          img.src = src;
+        });
+      };
+
+      const logo = await carregarImagem("/logo.png");
+
+      doc.addImage(
+        logo,
+        "PNG",
+        15,
+        7,
+        38,
+        28
+      );
+    } catch {
+      // Se não conseguir carregar a logo, continua normalmente.
+    }
+
+    doc.setTextColor(255, 255, 255);
     doc.setFont("helvetica", "bold");
-    doc.text("RJ ELÉTRICA", 20, 25);
-
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "normal");
-    doc.text("Orçamento de Serviços Elétricos", 20, 32);
-
     doc.setFontSize(18);
+
+    doc.text(
+      "RJ ELÉTRICA",
+      60,
+      17
+    );
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+
+    doc.text(
+      "Serviços Elétricos",
+      60,
+      24
+    );
+
+    doc.text(
+      "Técnico em Eletrotécnica",
+      60,
+      30
+    );
+
+    // =========================
+    // TÍTULO
+    // =========================
+
+    doc.setTextColor(
+      azulEscuro[0],
+      azulEscuro[1],
+      azulEscuro[2]
+    );
+
     doc.setFont("helvetica", "bold");
-    doc.text(`ORÇAMENTO #${numero}`, 140, 25);
+    doc.setFontSize(18);
 
-    // Linha
-    doc.setLineWidth(0.5);
-    doc.line(20, 40, 190, 40);
+    doc.text(
+      "ORÇAMENTO DE SERVIÇOS ELÉTRICOS",
+      105,
+      55,
+      { align: "center" }
+    );
 
-    // Informações
+    // Linha amarela
+    doc.setFillColor(
+      amarelo[0],
+      amarelo[1],
+      amarelo[2]
+    );
+
+    doc.rect(
+      78,
+      59,
+      54,
+      2,
+      "F"
+    );
+
+    // =========================
+    // DADOS DO ORÇAMENTO
+    // =========================
+
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+
+    doc.text(
+      `ORÇAMENTO Nº ${String(orcamento.numero).padStart(4, "0")}`,
+      20,
+      72
+    );
+
+    doc.setFont("helvetica", "normal");
+
+    doc.text(
+      `Data: ${new Date(
+        orcamento.data_orcamento + "T00:00:00"
+      ).toLocaleDateString("pt-BR")}`,
+      130,
+      72
+    );
+
+    if (orcamento.validade) {
+      doc.text(
+        `Validade: ${new Date(
+          orcamento.validade + "T00:00:00"
+        ).toLocaleDateString("pt-BR")}`,
+        130,
+        79
+      );
+    }
+
+    // =========================
+    // STATUS
+    // =========================
+
+    const statusX = 20;
+    const statusY = 82;
+
+    let statusTexto = orcamento.status;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+
+    doc.setTextColor(
+      azulEscuro[0],
+      azulEscuro[1],
+      azulEscuro[2]
+    );
+
+    doc.text(
+      "STATUS:",
+      statusX,
+      statusY
+    );
+
+    doc.setFont("helvetica", "normal");
+
+    doc.text(
+      statusTexto,
+      statusX + 18,
+      statusY
+    );
+
+    // =========================
+    // CLIENTE
+    // =========================
+
+    doc.setFillColor(
+      cinzaClaro[0],
+      cinzaClaro[1],
+      cinzaClaro[2]
+    );
+
+    doc.roundedRect(
+      15,
+      90,
+      180,
+      clienteCompleto?.telefone ||
+        clienteCompleto?.endereco
+        ? 34
+        : 22,
+      3,
+      3,
+      "F"
+    );
+
+    doc.setTextColor(
+      azulEscuro[0],
+      azulEscuro[1],
+      azulEscuro[2]
+    );
+
+    doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
-    doc.setFont("helvetica", "bold");
-    doc.text("Cliente:", 20, 52);
+
+    doc.text(
+      "DADOS DO CLIENTE",
+      20,
+      99
+    );
 
     doc.setFont("helvetica", "normal");
-    doc.text(cliente, 45, 52);
+    doc.setFontSize(10);
 
-    doc.setFont("helvetica", "bold");
-    doc.text("Data:", 20, 61);
+    doc.text(
+      cliente,
+      20,
+      107
+    );
 
-    doc.setFont("helvetica", "normal");
-    doc.text(dataFormatada, 45, 61);
+    let linhaCliente = 114;
 
-    doc.setFont("helvetica", "bold");
-    doc.text("Validade:", 100, 61);
+    if (clienteCompleto?.telefone) {
+      doc.text(
+        `Telefone: ${clienteCompleto.telefone}`,
+        20,
+        linhaCliente
+      );
 
-    doc.setFont("helvetica", "normal");
-    doc.text(validadeFormatada, 125, 61);
+      linhaCliente += 7;
+    }
 
-    doc.setFont("helvetica", "bold");
-    doc.text("Status:", 100, 52);
+    if (clienteCompleto?.endereco) {
+      doc.text(
+        `Endereço: ${clienteCompleto.endereco}`,
+        20,
+        linhaCliente
+      );
+    }
 
-    doc.setFont("helvetica", "normal");
-    doc.text(orcamento.status, 125, 52);
+    // =========================
+    // TABELA
+    // =========================
 
-    // Tabela
+    const linhasTabela = (itensPDF || []).map(
+      (item) => [
+        item.descricao,
+        Number(item.quantidade).toLocaleString(
+          "pt-BR"
+        ),
+        `R$ ${Number(
+          item.valor_unitario
+        ).toFixed(2).replace(".", ",")}`,
+        `R$ ${Number(
+          item.subtotal
+        ).toFixed(2).replace(".", ",")}`,
+      ]
+    );
+
     autoTable(doc, {
-      startY: 72,
+      startY: 132,
       head: [
         [
-          "Tipo",
           "Descrição",
           "Qtd.",
           "Valor unit.",
           "Subtotal",
         ],
       ],
-      body: (itensPDF || []).map((item) => [
-        item.tipo === "servico" ? "Serviço" : "Produto",
-        item.descricao,
-        String(item.quantidade),
-        formatarMoeda(Number(item.valor_unitario)),
-        formatarMoeda(Number(item.subtotal)),
-      ]),
-      styles: {
-        fontSize: 9,
-        cellPadding: 3,
-      },
+      body: linhasTabela,
+      theme: "grid",
       headStyles: {
+        fillColor: azulEscuro,
+        textColor: 255,
         fontStyle: "bold",
+        halign: "center",
+      },
+      bodyStyles: {
+        fontSize: 9,
       },
       columnStyles: {
-        0: { cellWidth: 25 },
-        1: { cellWidth: 70 },
-        2: { cellWidth: 20, halign: "right" },
-        3: { cellWidth: 35, halign: "right" },
-        4: { cellWidth: 35, halign: "right" },
+        0: {
+          cellWidth: 90,
+        },
+        1: {
+          cellWidth: 20,
+          halign: "center",
+        },
+        2: {
+          cellWidth: 35,
+          halign: "right",
+        },
+        3: {
+          cellWidth: 35,
+          halign: "right",
+        },
+      },
+      margin: {
+        left: 15,
+        right: 15,
       },
     });
+
+    // =========================
+    // TOTAIS
+    // =========================
 
     const finalY =
       (doc as any).lastAutoTable.finalY + 10;
 
     const subtotalPDF = (itensPDF || []).reduce(
       (total, item) =>
-        total + Number(item.subtotal),
+        total + Number(item.subtotal || 0),
       0
     );
 
-    const descontoPDF = Number(orcamento.desconto) || 0;
-    const totalPDF = Number(orcamento.valor_total) || 0;
+    const descontoPDF = Number(
+      orcamento.desconto || 0
+    );
 
-    // Totais
-    doc.setFontSize(11);
+    const totalPDF = Number(
+      orcamento.valor_total || 0
+    );
+
+    doc.setTextColor(
+      cinzaTexto[0],
+      cinzaTexto[1],
+      cinzaTexto[2]
+    );
+
     doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
 
     doc.text(
-      `Subtotal: ${formatarMoeda(subtotalPDF)}`,
-      130,
+      "Subtotal:",
+      135,
       finalY
     );
 
     doc.text(
-      `Desconto: ${formatarMoeda(descontoPDF)}`,
-      130,
-      finalY + 8
+      `R$ ${subtotalPDF
+        .toFixed(2)
+        .replace(".", ",")}`,
+      190,
+      finalY,
+      { align: "right" }
     );
-
-    doc.setFontSize(14);
-    doc.setFont("helvetica", "bold");
 
     doc.text(
-      `TOTAL: ${formatarMoeda(totalPDF)}`,
-      130,
-      finalY + 20
+      "Desconto:",
+      135,
+      finalY + 7
     );
 
-    // Observações
+    doc.text(
+      `R$ ${descontoPDF
+        .toFixed(2)
+        .replace(".", ",")}`,
+      190,
+      finalY + 7,
+      { align: "right" }
+    );
+
+    // Caixa do total
+    doc.setFillColor(
+      azulEscuro[0],
+      azulEscuro[1],
+      azulEscuro[2]
+    );
+
+    doc.roundedRect(
+      125,
+      finalY + 13,
+      70,
+      14,
+      3,
+      3,
+      "F"
+    );
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+
+    doc.text(
+      "TOTAL",
+      132,
+      finalY + 22
+    );
+
+    doc.text(
+      `R$ ${totalPDF
+        .toFixed(2)
+        .replace(".", ",")}`,
+      190,
+      finalY + 22,
+      { align: "right" }
+    );
+
+    // =========================
+    // OBSERVAÇÕES
+    // =========================
+
+    let observacoesY =
+      finalY + 38;
+
     if (orcamento.observacoes) {
-      doc.setFontSize(11);
+      doc.setTextColor(
+        azulEscuro[0],
+        azulEscuro[1],
+        azulEscuro[2]
+      );
+
       doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
 
       doc.text(
-        "Observações:",
+        "OBSERVAÇÕES",
         20,
-        finalY + 40
+        observacoesY
       );
 
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
+      doc.setFontSize(9);
 
       const observacoes = doc.splitTextToSize(
         orcamento.observacoes,
@@ -740,41 +1093,76 @@ async function editarOrcamento(orcamento: Orcamento) {
       doc.text(
         observacoes,
         20,
-        finalY + 48
+        observacoesY + 7
       );
+
+      observacoesY +=
+        7 + observacoes.length * 4;
     }
 
-    // Rodapé
-    const alturaPagina = doc.internal.pageSize.height;
+    // =========================
+    // RODAPÉ
+    // =========================
 
-    doc.setLineWidth(0.3);
-    doc.line(
-      20,
+    const alturaPagina =
+      doc.internal.pageSize.height;
+
+    doc.setFillColor(
+      azulEscuro[0],
+      azulEscuro[1],
+      azulEscuro[2]
+    );
+
+    doc.rect(
+      0,
       alturaPagina - 25,
-      190,
-      alturaPagina - 25
+      210,
+      25,
+      "F"
     );
 
-    doc.setFontSize(9);
+    doc.setTextColor(255, 255, 255);
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+
+    doc.text(
+      "RJ ELÉTRICA",
+      105,
+      alturaPagina - 15,
+      { align: "center" }
+    );
+
     doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
 
     doc.text(
-      "RJ ELÉTRICA - Serviços Elétricos",
-      20,
-      alturaPagina - 17
+      "Orçamento de serviços elétricos",
+      105,
+      alturaPagina - 9,
+      { align: "center" }
     );
 
-    doc.text(
-      `Orçamento #${numero}`,
-      155,
-      alturaPagina - 17
-    );
+    // =========================
+    // SALVAR PDF
+    // =========================
 
-    // Download
-    doc.save(`orcamento-${numero}.pdf`);
+    const numeroPDF = String(
+      orcamento.numero
+    ).padStart(4, "0");
+
+    doc.save(
+      `orcamento-${numeroPDF}.pdf`
+    );
   } catch (error) {
-    console.error("Erro ao gerar PDF:", error);
-    alert("Erro ao gerar o PDF.");
+    console.error(
+      "Erro ao gerar PDF:",
+      error
+    );
+
+    alert(
+      "Erro ao gerar o PDF."
+    );
   }
 }
 
