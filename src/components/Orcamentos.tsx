@@ -43,8 +43,8 @@ type Orcamento = {
   valor_total: number;
   observacoes: string | null;
   clientes?: {
-    nome: string;
-  };
+  nome: string;
+}[];
 };
 
 function formatarMoeda(valor: number) {
@@ -591,7 +591,7 @@ async function editarOrcamento(orcamento: Orcamento) {
     const doc = new jsPDF();
 
     const numero = String(orcamento.numero).padStart(4, "0");
-    const cliente = orcamento.clientes?.nome || "Cliente";
+    const cliente = orcamento.clientes?.[0]?.nome || "Cliente";
 
     const dataFormatada = new Date(
       orcamento.data_orcamento + "T00:00:00"
@@ -911,7 +911,7 @@ async function editarOrcamento(orcamento: Orcamento) {
                       </td>
 
                       <td className="px-6 py-4 text-gray-700">
-                        {orcamento.clientes?.nome || "Cliente"}
+                        {orcamento.clientes?.[0]?.nome || "Cliente"}
                       </td>
 
                       <td className="px-6 py-4 text-gray-600">
@@ -1489,8 +1489,8 @@ async function editarOrcamento(orcamento: Orcamento) {
                     </p>
 
                     <p className="text-lg font-bold text-gray-900 mt-1">
-                      {orcamentoVisualizado.clientes?.nome ||
-                        "Cliente"}
+                      {orcamentoVisualizado.clientes?.[0]?.nome ||
+  "Cliente"}
                     </p>
 
                   </div>
