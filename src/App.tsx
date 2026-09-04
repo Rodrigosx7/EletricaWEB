@@ -147,7 +147,8 @@ function App() {
 
   // Se não estiver logado, mostrar Login
   const recuperandoSenha =
-  window.location.hash.includes("type=recovery");
+  window.location.hash.includes("type=recovery") ||
+  window.location.hash.includes("redefinir-senha");
 
 if (recuperandoSenha) {
   return <NovaSenha />;

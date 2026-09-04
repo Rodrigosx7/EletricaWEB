@@ -45,7 +45,7 @@ function Login() {
     setCarregando(true);
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/`,
+  redirectTo: "https://portal-eletrico.netlify.app/#redefinir-senha",
     });
 
     if (error) {
