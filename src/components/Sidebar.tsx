@@ -413,7 +413,11 @@ export default function Sidebar({
           <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#FFD60A] to-yellow-500 text-[#0D1B2A] font-bold flex items-center justify-center text-sm shrink-0 overflow-hidden">
             {usuario?.user_metadata?.avatar_url ? (
               <img
-                src={usuario.user_metadata.avatar_url as string}
+                src={`${usuario.user_metadata.avatar_url}${
+                  (usuario.user_metadata.avatar_url as string).includes("?")
+                    ? "&"
+                    : "?"
+                }t=${Date.now()}`}
                 alt="Avatar"
                 className="w-full h-full object-cover"
               />

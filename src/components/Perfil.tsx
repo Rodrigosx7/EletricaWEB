@@ -198,7 +198,9 @@ export default function Perfil({
               <div className="w-20 h-20 rounded-full bg-gradient-to-br from-[#FFD60A] to-yellow-500 text-[#0D1B2A] font-bold text-2xl flex items-center justify-center shadow-lg overflow-hidden">
                 {avatarUrl ? (
                   <img
-                    src={avatarUrl}
+                    src={`${avatarUrl}${
+                      avatarUrl.includes("?") ? "&" : "?"
+                    }t=${Date.now()}`}
                     alt="Avatar"
                     className="w-full h-full object-cover"
                   />

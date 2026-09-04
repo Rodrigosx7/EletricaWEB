@@ -167,18 +167,40 @@ export function EmpresaProvider({
         .eq("id", empresa.id);
 
       if (error) {
+        console.error("Erro ao atualizar empresa:", error);
         throw new Error(
           `Erro ao atualizar empresa: ${error.message}`
         );
       }
 
-      const novaEmpresa = { ...empresa, ...payload } as Empresa;
-      setEmpresa(novaEmpresa);
+      // Recarrega do banco para garantir consistência (evita race condition
+      // entre estado local e dados reais)
+      const { data: atualizado, error: erroReload } = await supabase
+        .from("empresas")
+        .select("*")
+        .eq("id", empresa.id)
+        .maybeSingle();
 
-      if (patch.cor_primaria || patch.cor_secundaria) {
+      if (erroReload) {
+        console.error("Erro ao recarregar empresa:", erroReload);
+        // Fallback: usar o payload mesmo
+        const novaEmpresa = { ...empresa, ...payload } as Empresa;
+        setEmpresa(novaEmpresa);
+        if (patch.cor_primaria || patch.cor_secundaria) {
+          aplicarCoresCss(
+            novaEmpresa.cor_primaria || COR_PRIMARIA_PADRAO,
+            novaEmpresa.cor_secundaria || COR_SECUNDARIA_PADRAO
+          );
+        }
+        return;
+      }
+
+      if (atualizado) {
+        const dadosAtualizados = atualizado as Empresa;
+        setEmpresa(dadosAtualizados);
         aplicarCoresCss(
-          novaEmpresa.cor_primaria || COR_PRIMARIA_PADRAO,
-          novaEmpresa.cor_secundaria || COR_SECUNDARIA_PADRAO
+          dadosAtualizados.cor_primaria || COR_PRIMARIA_PADRAO,
+          dadosAtualizados.cor_secundaria || COR_SECUNDARIA_PADRAO
         );
       }
     },
