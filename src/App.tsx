@@ -2,6 +2,11 @@ import NovaSenha from "./pages/NovaSenha";
 import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
 import Login from "./pages/Login";
+import Dashboard from "./components/Dashboard";
+import Sidebar from "./components/Sidebar";
+import Clientes from "./components/Clientes";
+import Servicos from "./components/Servicos";
+import Produtos from "./components/Produtos";
 
 type Cliente = {
   id: number;
@@ -22,6 +27,7 @@ function App() {
   const [email, setEmail] = useState("");
   const [endereco, setEndereco] = useState("");
   const [carregando, setCarregando] = useState(false);
+  const [pagina, setPagina] = useState("dashboard");
 
   // Verificar usuário logado
   useEffect(() => {
@@ -66,10 +72,10 @@ function App() {
 
   // Carregar clientes quando o usuário estiver logado
   useEffect(() => {
-  if (usuario) {
-    carregarClientes();
-  }
-}, [usuario]);
+    if (usuario) {
+      carregarClientes();
+    }
+  }, [usuario]);
 
   // Cadastrar cliente
   async function cadastrarCliente(e: React.FormEvent) {
@@ -145,145 +151,91 @@ function App() {
     setClientes([]);
   }
 
-  // Se não estiver logado, mostrar Login
+  // Recuperação de senha
   const recuperandoSenha =
-  window.location.hash.includes("type=recovery") ||
-  window.location.hash.includes("redefinir-senha");
+    window.location.hash.includes("type=recovery") ||
+    window.location.hash.includes("redefinir-senha");
 
-if (recuperandoSenha) {
-  return <NovaSenha />;
-}
+  if (recuperandoSenha) {
+    return <NovaSenha />;
+  }
 
-if (!usuario) {
-  return <Login />;
-}
+  // Se não estiver logado, mostrar Login
+  if (!usuario) {
+    return <Login />;
+  }
 
   // Sistema
   return (
-    <div
-      style={{
-        maxWidth: "1000px",
-        margin: "40px auto",
-        padding: "20px",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <div>
-          <h1>Sistema Financeiro</h1>
-          <p>Usuário: {usuario.email}</p>
-        </div>
+    <div className="min-h-screen bg-gray-100">
+      <Sidebar
+        pagina={pagina}
+        setPagina={setPagina}
+        sair={sair}
+      />
 
-        <button onClick={sair}>Sair</button>
-      </div>
+      <main className="ml-64 min-h-screen">
 
-      <hr />
+        {/* Dashboard */}
+        {pagina === "dashboard" && <Dashboard />}
 
-      <h2>Clientes</h2>
+        {/* Clientes */}
+        {pagina === "clientes" && <Clientes />}
 
-      <form onSubmit={cadastrarCliente}>
-        <div>
-          <label>Nome *</label>
-          <br />
+        {/* Outras páginas - temporariamente */}
+        {pagina === "orcamentos" && (
+          <div className="p-8">
+            <h1 className="text-3xl font-bold">
+              Orçamentos
+            </h1>
 
-          <input
-            type="text"
-            value={nome}
-            onChange={(e) => setNome(e.target.value)}
-            placeholder="Nome do cliente"
-          />
-        </div>
+            <p className="text-gray-500 mt-2">
+              Módulo em construção.
+            </p>
+          </div>
+        )}
+        
+        {pagina === "servicos" && <Servicos />}
 
-        <br />
+        {pagina === "produtos" && <Produtos />}
 
-        <div>
-          <label>Telefone</label>
-          <br />
+        {pagina === "financeiro" && (
+          <div className="p-8">
+            <h1 className="text-3xl font-bold">
+              Financeiro
+            </h1>
 
-          <input
-            type="text"
-            value={telefone}
-            onChange={(e) => setTelefone(e.target.value)}
-            placeholder="(00) 00000-0000"
-          />
-        </div>
+            <p className="text-gray-500 mt-2">
+              Módulo em construção.
+            </p>
+          </div>
+        )}
 
-        <br />
+        {pagina === "relatorios" && (
+          <div className="p-8">
+            <h1 className="text-3xl font-bold">
+              Relatórios
+            </h1>
 
-        <div>
-          <label>E-mail</label>
-          <br />
+            <p className="text-gray-500 mt-2">
+              Módulo em construção.
+            </p>
+          </div>
+        )}
 
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="cliente@email.com"
-          />
-        </div>
+        {pagina === "configuracoes" && (
+          <div className="p-8">
+            <h1 className="text-3xl font-bold">
+              Configurações
+            </h1>
 
-        <br />
+            <p className="text-gray-500 mt-2">
+              Módulo em construção.
+            </p>
+          </div>
+        )}
 
-        <div>
-          <label>Endereço</label>
-          <br />
-
-          <input
-            type="text"
-            value={endereco}
-            onChange={(e) => setEndereco(e.target.value)}
-            placeholder="Endereço do cliente"
-          />
-        </div>
-
-        <br />
-
-        <button type="submit" disabled={carregando}>
-          {carregando ? "Cadastrando..." : "Cadastrar cliente"}
-        </button>
-      </form>
-
-      <hr />
-
-      <h2>Clientes cadastrados</h2>
-
-      {clientes.length === 0 ? (
-        <p>Nenhum cliente cadastrado.</p>
-      ) : (
-        <div>
-          {clientes.map((cliente) => (
-            <div key={cliente.id}>
-              <h3>{cliente.nome}</h3>
-
-              <p>
-                <strong>Telefone:</strong>{" "}
-                {cliente.telefone || "Não informado"}
-              </p>
-
-              <p>
-                <strong>E-mail:</strong>{" "}
-                {cliente.email || "Não informado"}
-              </p>
-
-              <p>
-                <strong>Endereço:</strong>{" "}
-                {cliente.endereco || "Não informado"}
-              </p>
-
-              <button onClick={() => excluirCliente(cliente.id)}>
-                Excluir
-              </button>
-
-              <hr />
-            </div>
-          ))}
-        </div>
-      )}
+      </main>
     </div>
   );
 }
