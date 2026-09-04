@@ -144,6 +144,41 @@ export function EmpresaProvider({
           data.cor_primaria || COR_PRIMARIA_PADRAO,
           data.cor_secundaria || COR_SECUNDARIA_PADRAO
         );
+        setCarregando(false);
+        return;
+      }
+
+      // Se não tem empresa ainda, cria automaticamente
+      // (proteção para usuários que existiam antes do trigger)
+      const nomeInicial =
+        (usuario!.user_metadata?.nome as string | undefined) ||
+        "Minha Empresa";
+
+      const { data: nova, error: erroCriar } = await supabase
+        .from("empresas")
+        .insert({
+          user_id: usuario!.id,
+          nome: nomeInicial,
+          cor_primaria: COR_PRIMARIA_PADRAO,
+          cor_secundaria: COR_SECUNDARIA_PADRAO,
+        })
+        .select()
+        .single();
+
+      if (cancelado) return;
+
+      if (erroCriar) {
+        console.error("Erro ao criar empresa:", erroCriar);
+        setCarregando(false);
+        return;
+      }
+
+      if (nova) {
+        setEmpresa(nova as Empresa);
+        aplicarCoresCss(
+          nova.cor_primaria || COR_PRIMARIA_PADRAO,
+          nova.cor_secundaria || COR_SECUNDARIA_PADRAO
+        );
       }
 
       setCarregando(false);
