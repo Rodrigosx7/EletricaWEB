@@ -13,6 +13,7 @@ export default function Sidebar({
     { id: "dashboard", nome: "Dashboard", icone: "⌂" },
     { id: "clientes", nome: "Clientes", icone: "♙" },
     { id: "orcamentos", nome: "Orçamentos", icone: "▤" },
+    { id: "ordens-servico", nome: "Ordens de Serviço", icone: "▣" },
     { id: "servicos", nome: "Serviços", icone: "⌁" },
     { id: "produtos", nome: "Produtos", icone: "▦" },
     { id: "financeiro", nome: "Financeiro", icone: "R$" },

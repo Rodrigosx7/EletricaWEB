@@ -8,6 +8,7 @@ import Clientes from "./components/Clientes";
 import Servicos from "./components/Servicos";
 import Produtos from "./components/Produtos";
 import Orcamentos from "./components/Orcamentos";
+import OrdensServico from "./components/OrdensServico";
 
 function App() {
   const [usuario, setUsuario] = useState<any>(null);
@@ -72,7 +73,11 @@ function App() {
         {/* Clientes */}
         {pagina === "clientes" && <Clientes />}
 
-       {pagina === "orcamentos" && <Orcamentos />}
+        {/* Orçamentos */}
+        {pagina === "orcamentos" && <Orcamentos />}
+
+        {/* Ordens de Serviço */}
+        {pagina === "ordens-servico" && <OrdensServico />}
 
         {/* Serviços */}
         {pagina === "servicos" && <Servicos />}
