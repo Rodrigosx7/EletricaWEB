@@ -1,1 +1,12 @@
 @import "tailwindcss";
+
+/* ============================================
+   White-label: variáveis de cor injetadas
+   em runtime pelo EmpresaContext
+   ============================================ */
+:root {
+  --color-primary: #FFD60A;
+  --color-primary-hsl: 51 100% 52%;
+  --color-primary-hover: #FFE552;
+  --color-secondary: #0D1B2A;
+}

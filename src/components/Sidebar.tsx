@@ -1,6 +1,7 @@
 import { useEffect, type ReactElement } from "react";
 import { X } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
+import { useEmpresa } from "../contexts/EmpresaContext";
 
 type SidebarProps = {
   pagina: string;
@@ -220,6 +221,8 @@ export default function Sidebar({
   aberta,
   aoFechar,
 }: SidebarProps) {
+  const { empresa } = useEmpresa();
+
   // Fecha com ESC quando drawer está aberto (apenas em mobile)
   useEffect(() => {
     if (!aberta) return;
@@ -319,21 +322,36 @@ export default function Sidebar({
       {/* Logo / marca */}
       <div className="h-20 flex items-center justify-between gap-3 px-5 border-b border-white/10">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#FFD60A] to-yellow-500 flex items-center justify-center shadow-md shrink-0">
-            <svg
-              className="w-6 h-6 text-[#0D1B2A]"
-              fill="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z" />
-            </svg>
+          <div
+            className="w-10 h-10 rounded-xl flex items-center justify-center shadow-md shrink-0 overflow-hidden"
+            style={{
+              background:
+                "linear-gradient(135deg, var(--color-primary), var(--color-primary-hover))",
+              color: "var(--color-secondary)",
+            }}
+          >
+            {empresa?.logo_url ? (
+              <img
+                src={empresa.logo_url}
+                alt="Logo"
+                className="w-full h-full object-contain bg-white"
+              />
+            ) : (
+              <svg
+                className="w-6 h-6"
+                fill="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z" />
+              </svg>
+            )}
           </div>
           <div className="min-w-0">
             <h1 className="text-base font-bold truncate">
-              Portal Elétrico
+              {empresa?.nome || "Portal Elétrico"}
             </h1>
             <p className="text-xs text-gray-400 truncate">
-              Gestão para eletricistas
+              {empresa?.slogan || "Gestão para eletricistas"}
             </p>
           </div>
         </div>

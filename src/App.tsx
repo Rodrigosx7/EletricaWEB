@@ -13,7 +13,9 @@ import OrdensServico from "./components/OrdensServico";
 import Perfil from "./components/Perfil";
 import ConfirmDialog from "./components/ConfirmDialog";
 import Topbar from "./components/Topbar";
+import Configuracoes from "./components/Configuracoes";
 import { ToastProvider } from "./components/ui/toast";
+import { EmpresaProvider } from "./contexts/EmpresaContext";
 import {
   LayoutDashboard,
   Users,
@@ -116,7 +118,8 @@ function AppInterno() {
 
   // Sistema
   return (
-    <div className="min-h-screen bg-gray-100">
+    <EmpresaProvider usuario={usuario}>
+      <div className="min-h-screen bg-gray-100">
       <Sidebar
         pagina={pagina}
         setPagina={(p) => {
@@ -197,18 +200,13 @@ function AppInterno() {
         )}
 
         {/* Configurações */}
-        {pagina === "configuracoes" && (
-          <EmConstrucao
-            titulo="Configurações"
-            descricao="Personalize dados da empresa, preferências e integrações."
-            icone="⚙️"
-          />
-        )}
+        {pagina === "configuracoes" && <Configuracoes />}
 
         </div>
 
       </main>
-    </div>
+      </div>
+    </EmpresaProvider>
   );
 }
 
