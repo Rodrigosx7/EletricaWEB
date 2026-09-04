@@ -205,9 +205,12 @@ export function SignInFlo({
     setGoogleCarregando(true);
 
     try {
+      // Usar só origin garante que o Supabase volta para a URL raiz,
+      // sem nenhum fragmento de URL (#type=recovery, etc.) que possa
+      // disparar fluxos errados.
       const redirectTo =
         typeof window !== "undefined"
-          ? `${window.location.origin}${window.location.pathname}`
+          ? `${window.location.origin}/`
           : undefined;
 
       const { error } = await supabase.auth.signInWithOAuth({
