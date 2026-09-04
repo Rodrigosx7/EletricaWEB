@@ -10,6 +10,7 @@ import Servicos from "./components/Servicos";
 import Produtos from "./components/Produtos";
 import Orcamentos from "./components/Orcamentos";
 import OrdensServico from "./components/OrdensServico";
+import Financeiro from "./components/Financeiro";
 import Perfil from "./components/Perfil";
 import ConfirmDialog from "./components/ConfirmDialog";
 import Topbar from "./components/Topbar";
@@ -225,15 +226,7 @@ function AppInterno() {
         {pagina === "produtos" && <Produtos />}
 
         {/* Financeiro */}
-        {pagina === "financeiro" && (
-          <EmConstrucao
-            titulo="Financeiro"
-            descricao="Acompanhe receitas, despesas e fluxo de caixa do seu negócio."
-            icone="💰"
-          />
-        )}
-
-        {/* Relatórios */}
+        {pagina === "financeiro" && <Financeiro />}
         {pagina === "relatorios" && (
           <EmConstrucao
             titulo="Relatórios"
