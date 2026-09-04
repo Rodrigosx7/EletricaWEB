@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "../supabase";
-import { useEmpresa } from "../contexts/EmpresaContext";
 
 type DashboardProps = {
   setPagina: (pagina: string) => void;
@@ -72,8 +71,6 @@ export default function Dashboard({ setPagina }: DashboardProps) {
   const [carregando, setCarregando] = useState(true);
   const [kpis, setKpis] = useState<KPIs>(KPIS_INICIAIS);
   const [osRecentes, setOsRecentes] = useState<OSRecente[]>([]);
-
-  const { empresa, carregando: carregandoEmpresa } = useEmpresa();
 
   useEffect(() => {
     async function carregar() {
@@ -550,37 +547,6 @@ export default function Dashboard({ setPagina }: DashboardProps) {
             )}
           </div>
         </div>
-      </div>
-
-      {/* DEBUG TEMPORÁRIO — diagnóstico do EmpresaContext */}
-      <div className="mt-6 bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-xs font-mono">
-        <p className="font-bold text-yellow-800 mb-2">
-          🐛 Debug temporário (remover depois)
-        </p>
-        <p>User ID: {usuario?.id || "(sem user)"}</p>
-        <p>User email: {usuario?.email || "(sem email)"}</p>
-        <p>
-          Empresa carregando?{" "}
-          <strong>{carregandoEmpresa ? "SIM" : "NÃO"}</strong>
-        </p>
-        <p>
-          Empresa existe?{" "}
-          <strong>{empresa ? "SIM" : "NÃO"}</strong>
-        </p>
-        {empresa && (
-          <>
-            <p>ID: {empresa.id}</p>
-            <p>Nome: <strong>{empresa.nome}</strong></p>
-            <p>Slogan: {empresa.slogan || "(vazio)"}</p>
-            <p>Logo: {empresa.logo_url ? "✓ tem" : "(vazio)"}</p>
-            <p>Cor primária: {empresa.cor_primaria}</p>
-          </>
-        )}
-        {!empresa && !carregandoEmpresa && (
-          <p className="text-red-700 mt-2 font-bold">
-            ⚠️ EMPRESA É NULL — Sidebar mostra fallback "Portal Elétrico"
-          </p>
-        )}
       </div>
     </div>
   );

@@ -78,7 +78,6 @@ function AppInterno() {
         data: { user },
       } = await supabase.auth.getUser();
 
-      console.log("[App] getUser() retornou:", user?.email || "null");
       setUsuario(user);
     }
 
@@ -87,11 +86,6 @@ function AppInterno() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log(
-        "[App] onAuthStateChange:",
-        event,
-        session?.user?.email || "sem user"
-      );
       if (session?.user) {
         setUsuario(session.user);
 
