@@ -11,6 +11,7 @@ import Produtos from "./components/Produtos";
 import Orcamentos from "./components/Orcamentos";
 import OrdensServico from "./components/OrdensServico";
 import Financeiro from "./components/Financeiro";
+import Relatorios from "./components/Relatorios";
 import Perfil from "./components/Perfil";
 import ConfirmDialog from "./components/ConfirmDialog";
 import Topbar from "./components/Topbar";
@@ -227,13 +228,7 @@ function AppInterno() {
 
         {/* Financeiro */}
         {pagina === "financeiro" && <Financeiro />}
-        {pagina === "relatorios" && (
-          <EmConstrucao
-            titulo="Relatórios"
-            descricao="Gere relatórios de faturamento, clientes e desempenho em PDF."
-            icone="📊"
-          />
-        )}
+        {pagina === "relatorios" && <Relatorios />}
 
         {/* Configurações */}
         {pagina === "configuracoes" && <Configuracoes />}
@@ -243,52 +238,5 @@ function AppInterno() {
       </main>
       </div>
     </EmpresaProvider>
-  );
-}
-
-function EmConstrucao({
-  titulo,
-  descricao,
-  icone,
-}: {
-  titulo: string;
-  descricao: string;
-  icone: string;
-}) {
-  return (
-    <div className="p-8 max-w-7xl mx-auto">
-      <h1 className="text-3xl font-bold text-gray-900">
-        {titulo}
-      </h1>
-      <p className="text-gray-500 mt-1">
-        {descricao}
-      </p>
-
-      <div className="mt-8 bg-white rounded-2xl border border-gray-100 shadow-sm">
-        <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
-          <div className="text-6xl mb-4">{icone}</div>
-          <h2 className="text-xl font-bold text-gray-900">
-            Em breve
-          </h2>
-          <p className="text-gray-500 mt-2 max-w-md">
-            Este módulo está em desenvolvimento e ficará disponível em uma
-            próxima atualização. Enquanto isso, explore as outras áreas do
-            painel.
-          </p>
-          <button
-            onClick={() =>
-              window.dispatchEvent(
-                new CustomEvent("navegar", {
-                  detail: { pagina: "dashboard" },
-                })
-              )
-            }
-            className="mt-6 bg-[#FFD60A] hover:bg-yellow-400 text-[#0D1B2A] font-bold px-5 py-2.5 rounded-lg transition shadow-lg shadow-yellow-500/20"
-          >
-            Voltar ao Dashboard
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
