@@ -410,8 +410,16 @@ export default function Sidebar({
           onClick={aoAbrirPerfil}
           className="w-full flex items-center gap-3 px-2 py-2 mb-1 rounded-lg bg-white/5 hover:bg-white/10 transition text-left group"
         >
-          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#FFD60A] to-yellow-500 text-[#0D1B2A] font-bold flex items-center justify-center text-sm shrink-0">
-            {iniciais(displayName)}
+          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#FFD60A] to-yellow-500 text-[#0D1B2A] font-bold flex items-center justify-center text-sm shrink-0 overflow-hidden">
+            {usuario?.user_metadata?.avatar_url ? (
+              <img
+                src={usuario.user_metadata.avatar_url as string}
+                alt="Avatar"
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              iniciais(displayName)
+            )}
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold truncate group-hover:text-[#FFD60A] transition">

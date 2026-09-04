@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import ConfirmDialog from "./ConfirmDialog";
 import { useToast } from "./ui/toast";
-
+import { useEmpresa } from "../contexts/EmpresaContext";
 type Cliente = {
   id: number;
   nome: string;
@@ -65,39 +65,41 @@ function formatarMoeda(valor: number) {
   });
 }
 
-// Carrega /logo.png uma única vez e devolve como data URL em base64.
-let logoCache: Promise<string> | null = null;
-function getLogo(): Promise<string> {
-  if (logoCache) return logoCache;
+// Carrega uma URL de logo e devolve como data URL em base64.
+let logoCache: { url: string; data: Promise<string> } | null = null;
 
-  logoCache = new Promise((resolve, reject) => {
+function getLogoFromUrl(url: string): Promise<string> {
+  if (logoCache && logoCache.url === url) return logoCache.data;
+
+  const promise = new Promise<string>((resolve, reject) => {
     const img = new Image();
-
+    img.crossOrigin = "anonymous";
     img.onload = () => {
       const canvas = document.createElement("canvas");
       canvas.width = img.width;
       canvas.height = img.height;
-
       const ctx = canvas.getContext("2d");
       if (!ctx) {
         reject(new Error("Canvas indisponível."));
         return;
       }
-
       ctx.drawImage(img, 0, 0);
       resolve(canvas.toDataURL("image/png"));
     };
-
-    img.onerror = () => reject(new Error("Logo não encontrada."));
-
-    img.src = "/logo.png";
+    img.onerror = () => reject(new Error("Logo não pôde ser carregada."));
+    img.src = url;
   });
 
-  return logoCache;
+  logoCache = { url, data: promise };
+  return promise;
 }
+
+// Fallback para /logo.png do projeto
+const FALLBACK_LOGO_URL = "/logo.png";
 
 function Orcamentos() {
   const [usuario, setUsuario] = useState<User | null>(null);
+  const { empresa } = useEmpresa();
 
   const [orcamentos, setOrcamentos] = useState<Orcamento[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -667,20 +669,18 @@ const cliente = clienteCompleto?.nome || "Cliente";
     // =========================
     // LOGO
     // =========================
-    try {
-      const logoBase64 = await getLogo();
+    // Define a URL da logo: prioriza a da empresa, depois o fallback padrão
+    const logoUrl = empresa?.logo_url || FALLBACK_LOGO_URL;
+    const logoBase64 = await getLogoFromUrl(logoUrl);
 
-      doc.addImage(
-        logoBase64,
-        "PNG",
-        18,
-        12,
-        42,
-        25
-      );
-    } catch (erroLogo) {
-      console.warn("Logo não pôde ser carregada:", erroLogo);
-    }
+    doc.addImage(
+      logoBase64,
+      "PNG",
+      18,
+      12,
+      42,
+      25
+    );
 
     // =========================
     // CABEÇALHO
@@ -695,27 +695,21 @@ const cliente = clienteCompleto?.nome || "Cliente";
     doc.rect(0, 0, 210, 42, "F");
 
     // Logo sobre o fundo escuro (mesma imagem cacheada)
-    try {
-      const logo = await getLogo();
-
-      doc.addImage(
-        logo,
-        "PNG",
-        15,
-        7,
-        38,
-        28
-      );
-    } catch {
-      // Se não conseguir carregar a logo, continua normalmente.
-    }
+    doc.addImage(
+      logoBase64,
+      "PNG",
+      15,
+      7,
+      38,
+      28
+    );
 
     doc.setTextColor(255, 255, 255);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(18);
 
     doc.text(
-      "RJ ELÉTRICA",
+      (empresa?.nome || "Portal Elétrico").toUpperCase(),
       60,
       17
     );
@@ -724,13 +718,13 @@ const cliente = clienteCompleto?.nome || "Cliente";
     doc.setFontSize(9);
 
     doc.text(
-      "Serviços Elétricos",
+      empresa?.slogan || "Gestão para eletricistas",
       60,
       24
     );
 
     doc.text(
-      "Técnico em Eletrotécnica",
+      `Gerado em ${new Date().toLocaleDateString("pt-BR")}`,
       60,
       30
     );

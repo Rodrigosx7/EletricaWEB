@@ -1,12 +1,14 @@
 import {
   useEffect,
+  useRef,
   useState,
   type FormEvent,
   type ReactElement,
 } from "react";
 import type { User } from "@supabase/supabase-js";
-import { Mail, User as IconUser, Save, X } from "lucide-react";
+import { Mail, User as IconUser, Save, X, Camera, Trash2 } from "lucide-react";
 import { supabase } from "../supabase";
+import { useToast } from "./ui/toast";
 
 type PerfilProps = {
   usuario: User;
@@ -31,8 +33,15 @@ export default function Perfil({
   const [nome, setNome] = useState(
     (usuario.user_metadata?.nome as string | undefined) || ""
   );
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(
+    (usuario.user_metadata?.avatar_url as string | undefined) || null
+  );
   const [carregando, setCarregando] = useState(false);
+  const [enviandoAvatar, setEnviandoAvatar] = useState(false);
   const [sucesso, setSucesso] = useState(false);
+  const { mostrarToast } = useToast();
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     function teclaEsc(e: KeyboardEvent) {
@@ -46,23 +55,116 @@ export default function Perfil({
     };
   }, [aoFechar]);
 
+  async function handleSelecionarArquivo(
+    e: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!["image/png", "image/jpeg", "image/jpg", "image/webp"].includes(file.type)) {
+      mostrarToast("Formato inválido. Use PNG, JPG ou WEBP.", "alerta");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
+    if (file.size > 3 * 1024 * 1024) {
+      mostrarToast("Arquivo muito grande. Máximo 3MB.", "alerta");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
+    setEnviandoAvatar(true);
+    try {
+      const extensao = file.name.split(".").pop() || "png";
+      const caminho = `${usuario.id}/avatar-${Date.now()}.${extensao}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(caminho, file, { cacheControl: "3600", upsert: true });
+
+      if (uploadError) {
+        throw new Error(uploadError.message);
+      }
+
+      const { data: urlData } = supabase.storage
+        .from("avatars")
+        .getPublicUrl(caminho);
+
+      const url = urlData.publicUrl;
+
+      // Atualiza o user_metadata com a URL do avatar
+      const { data, error } = await supabase.auth.updateUser({
+        data: {
+          ...(usuario.user_metadata || {}),
+          avatar_url: url,
+        },
+      });
+
+      if (error) throw new Error(error.message);
+
+      if (data.user) {
+        setAvatarUrl(url);
+        aoAtualizar(data.user);
+        mostrarToast("Foto atualizada!", "sucesso");
+      }
+    } catch (error) {
+      console.error(error);
+      const mensagem =
+        error instanceof Error
+          ? error.message
+          : "Erro ao enviar foto.";
+      mostrarToast(mensagem, "erro");
+    } finally {
+      setEnviandoAvatar(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function handleRemoverAvatar() {
+    if (!avatarUrl) return;
+    if (!confirm("Remover sua foto de perfil?")) return;
+
+    try {
+      const { data, error } = await supabase.auth.updateUser({
+        data: {
+          ...(usuario.user_metadata || {}),
+          avatar_url: null,
+        },
+      });
+
+      if (error) throw new Error(error.message);
+
+      if (data.user) {
+        setAvatarUrl(null);
+        aoAtualizar(data.user);
+        mostrarToast("Foto removida.", "sucesso");
+      }
+    } catch (error) {
+      console.error(error);
+      mostrarToast("Erro ao remover foto.", "erro");
+    }
+  }
+
   async function salvar(e: FormEvent) {
     e.preventDefault();
     if (!nome.trim()) {
-      alert("Digite seu nome.");
+      mostrarToast("Digite seu nome.", "alerta");
       return;
     }
 
     setCarregando(true);
 
     const { data, error } = await supabase.auth.updateUser({
-      data: { nome: nome.trim() },
+      data: {
+        ...(usuario.user_metadata || {}),
+        nome: nome.trim(),
+      },
     });
 
     setCarregando(false);
 
     if (error) {
-      alert(error.message);
+      mostrarToast(error.message, "erro");
       return;
     }
 
@@ -92,8 +194,40 @@ export default function Perfil({
             <X className="w-5 h-5" />
           </button>
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#FFD60A] to-yellow-500 text-[#0D1B2A] font-bold text-xl flex items-center justify-center shrink-0 shadow-lg">
-              {iniciais(nome, usuario.email || "")}
+            <div className="relative shrink-0">
+              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-[#FFD60A] to-yellow-500 text-[#0D1B2A] font-bold text-2xl flex items-center justify-center shadow-lg overflow-hidden">
+                {avatarUrl ? (
+                  <img
+                    src={avatarUrl}
+                    alt="Avatar"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  iniciais(nome, usuario.email || "")
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={enviandoAvatar}
+                className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-[#FFD60A] text-[#0D1B2A] flex items-center justify-center shadow-lg hover:bg-yellow-400 transition disabled:opacity-60 border-2 border-[#0D1B2A]"
+                title="Alterar foto"
+                aria-label="Alterar foto de perfil"
+              >
+                {enviandoAvatar ? (
+                  <div className="w-4 h-4 border-2 border-[#0D1B2A]/30 border-t-[#0D1B2A] rounded-full animate-spin" />
+                ) : (
+                  <Camera className="w-4 h-4" />
+                )}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/jpg,image/webp"
+                onChange={handleSelecionarArquivo}
+                className="hidden"
+                aria-label="Selecionar foto de perfil"
+              />
             </div>
             <div className="min-w-0">
               <h2 className="text-xl font-bold truncate">
@@ -104,6 +238,16 @@ export default function Perfil({
               </p>
             </div>
           </div>
+          {avatarUrl && (
+            <button
+              type="button"
+              onClick={handleRemoverAvatar}
+              className="mt-3 text-xs text-gray-300 hover:text-white inline-flex items-center gap-1 transition"
+            >
+              <Trash2 className="w-3 h-3" />
+              Remover foto
+            </button>
+          )}
         </div>
 
         {/* Formulário */}
