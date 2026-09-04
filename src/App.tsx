@@ -47,7 +47,34 @@ function AppInterno() {
 
   // Verificar usuário logado
   useEffect(() => {
+    // Limpa qualquer fragmento de URL após carregar (ex: OAuth que
+    // deixa #access_token=... que pode confundir a detecção de recovery)
+    if (window.location.hash) {
+      const hashLimpo = window.location.hash
+        .split("&")
+        .filter((parte) => !parte.startsWith("#access_token"))
+        .filter((parte) => !parte.startsWith("expires_at"))
+        .filter((parte) => !parte.startsWith("refresh_token"))
+        .filter((parte) => !parte.startsWith("token_type"))
+        .filter((parte) => !parte.startsWith("provider_token"))
+        .join("&");
+      if (hashLimpo !== window.location.hash) {
+        if (hashLimpo.length <= 1) {
+          history.replaceState(
+            null,
+            "",
+            window.location.pathname + window.location.search
+          );
+        } else {
+          history.replaceState(null, "", hashLimpo);
+        }
+      }
+    }
+
     async function verificarUsuario() {
+      // Pequeno delay para garantir que o Supabase processou o OAuth
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -66,9 +93,6 @@ function AppInterno() {
         event,
         session?.user?.email || "sem user"
       );
-      // Sempre que houver uma sessão válida, atualizar o usuário,
-      // mesmo em eventos diferentes de SIGNED_IN (ex: INITIAL_SESSION
-      // quando o app carrega após o OAuth redirecionar de volta).
       if (session?.user) {
         setUsuario(session.user);
       } else if (event === "SIGNED_OUT") {
