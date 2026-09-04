@@ -47,18 +47,17 @@ function AppInterno() {
 
   // Verificar usuário logado
   useEffect(() => {
-    // Limpa qualquer fragmento de URL após carregar (ex: OAuth que
-    // deixa #access_token=... que pode confundir a detecção de recovery)
-    if (window.location.hash) {
+    // Se a URL tem tokens OAuth (Supabase acabou de redirecionar),
+    // NÃO limpar o hash — o client Supabase precisa ler access_token,
+    // expires_at, refresh_token, etc. para estabelecer a sessão.
+    // Após o Supabase processar, onAuthStateChange dispara.
+    if (window.location.hash && !window.location.hash.includes("access_token")) {
       const hashLimpo = window.location.hash
         .split("&")
-        .filter((parte) => !parte.startsWith("#access_token"))
-        .filter((parte) => !parte.startsWith("expires_at"))
-        .filter((parte) => !parte.startsWith("refresh_token"))
-        .filter((parte) => !parte.startsWith("token_type"))
-        .filter((parte) => !parte.startsWith("provider_token"))
+        .filter((parte) => !parte.startsWith("#type=recovery"))
+        .filter((parte) => !parte.startsWith("redefinir-senha"))
         .join("&");
-      if (hashLimpo !== window.location.hash) {
+      if (hashLimpo !== window.location.hash && !hashLimpo.includes("access_token")) {
         if (hashLimpo.length <= 1) {
           history.replaceState(
             null,
@@ -73,7 +72,7 @@ function AppInterno() {
 
     async function verificarUsuario() {
       // Pequeno delay para garantir que o Supabase processou o OAuth
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       const {
         data: { user },
@@ -95,6 +94,19 @@ function AppInterno() {
       );
       if (session?.user) {
         setUsuario(session.user);
+
+        // Se estamos chegando do OAuth (SIGNED_IN + hash de access_token),
+        // limpar o hash agora que a sessão foi estabelecida.
+        if (
+          event === "SIGNED_IN" &&
+          window.location.hash.includes("access_token")
+        ) {
+          history.replaceState(
+            null,
+            "",
+            window.location.pathname + window.location.search
+          );
+        }
       } else if (event === "SIGNED_OUT") {
         setUsuario(null);
       }
