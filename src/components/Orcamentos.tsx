@@ -1,7 +1,18 @@
 import { useEffect, useState } from "react";
+import type { User } from "@supabase/supabase-js";
 import { supabase } from "../supabase";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import {
+  FilePlus,
+  X,
+  FileText,
+  Eye,
+  Pencil,
+  Trash2,
+} from "lucide-react";
+import ConfirmDialog from "./ConfirmDialog";
+import { useToast } from "./ui/toast";
 
 type Cliente = {
   id: number;
@@ -54,8 +65,39 @@ function formatarMoeda(valor: number) {
   });
 }
 
+// Carrega /logo.png uma única vez e devolve como data URL em base64.
+let logoCache: Promise<string> | null = null;
+function getLogo(): Promise<string> {
+  if (logoCache) return logoCache;
+
+  logoCache = new Promise((resolve, reject) => {
+    const img = new Image();
+
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("Canvas indisponível."));
+        return;
+      }
+
+      ctx.drawImage(img, 0, 0);
+      resolve(canvas.toDataURL("image/png"));
+    };
+
+    img.onerror = () => reject(new Error("Logo não encontrada."));
+
+    img.src = "/logo.png";
+  });
+
+  return logoCache;
+}
+
 function Orcamentos() {
-  const [usuario, setUsuario] = useState<any>(null);
+  const [usuario, setUsuario] = useState<User | null>(null);
 
   const [orcamentos, setOrcamentos] = useState<Orcamento[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -65,6 +107,12 @@ function Orcamentos() {
   const [modalAberto, setModalAberto] = useState(false);
   const [orcamentoEditando, setOrcamentoEditando] =
   useState<Orcamento | null>(null);
+
+  const [orcamentoParaExcluir, setOrcamentoParaExcluir] =
+    useState<Orcamento | null>(null);
+  const [excluindo, setExcluindo] = useState(false);
+
+  const { mostrarToast } = useToast();
 
   const [clienteId, setClienteId] = useState("");
   const [dataOrcamento, setDataOrcamento] = useState(
@@ -175,14 +223,14 @@ function Orcamentos() {
 
   function adicionarItem() {
     if (!itemSelecionado) {
-      alert("Selecione um item.");
+      mostrarToast("Selecione um item.", "alerta");
       return;
     }
 
     const qtd = Number(quantidade);
 
     if (!qtd || qtd <= 0) {
-      alert("Digite uma quantidade válida.");
+      mostrarToast("Digite uma quantidade válida.", "alerta");
       return;
     }
 
@@ -284,7 +332,10 @@ async function editarOrcamento(orcamento: Orcamento) {
 
     if (error) {
       console.error("Erro ao carregar itens:", error);
-      alert("Erro ao carregar os itens do orçamento.");
+      mostrarToast(
+        "Erro ao carregar os itens do orçamento.",
+        "erro"
+      );
       return;
     }
 
@@ -298,7 +349,7 @@ async function editarOrcamento(orcamento: Orcamento) {
     setObservacoes(orcamento.observacoes || "");
 
     setItens(
-      (data || []).map((item: any) => ({
+      (data || []).map((item) => ({
         id: String(item.id),
         tipo: item.tipo,
         servico_id: item.servico_id || undefined,
@@ -317,7 +368,7 @@ async function editarOrcamento(orcamento: Orcamento) {
     setModalAberto(true);
   } catch (error) {
     console.error("Erro ao editar orçamento:", error);
-    alert("Erro ao carregar orçamento.");
+    mostrarToast("Erro ao carregar orçamento.", "erro");
   } finally {
     setSalvando(false);
   }
@@ -325,17 +376,20 @@ async function editarOrcamento(orcamento: Orcamento) {
 
   async function salvarOrcamento() {
   if (!usuario) {
-    alert("Usuário não identificado.");
+    mostrarToast("Usuário não identificado.", "erro");
     return;
   }
 
   if (!clienteId) {
-    alert("Selecione um cliente.");
+    mostrarToast("Selecione um cliente.", "alerta");
     return;
   }
 
   if (itens.length === 0) {
-    alert("Adicione pelo menos um item ao orçamento.");
+    mostrarToast(
+      "Adicione pelo menos um item ao orçamento.",
+      "alerta"
+    );
     return;
   }
 
@@ -397,8 +451,9 @@ async function editarOrcamento(orcamento: Orcamento) {
         throw erroItens;
       }
 
-      alert(
-        `Orçamento #${orcamentoEditando.numero} atualizado com sucesso.`
+      mostrarToast(
+        `Orçamento #${orcamentoEditando.numero} atualizado com sucesso.`,
+        "sucesso"
       );
 
       setModalAberto(false);
@@ -475,14 +530,17 @@ async function editarOrcamento(orcamento: Orcamento) {
       throw erroItens;
     }
 
-    alert(`Orçamento #${proximoNumero} criado com sucesso.`);
+    mostrarToast(
+      `Orçamento #${proximoNumero} criado com sucesso.`,
+      "sucesso"
+    );
 
     setModalAberto(false);
 
     await carregarDados();
   } catch (error) {
     console.error("Erro ao salvar orçamento:", error);
-    alert("Erro ao salvar orçamento.");
+    mostrarToast("Erro ao salvar orçamento.", "erro");
   } finally {
     setSalvando(false);
   }
@@ -513,7 +571,10 @@ async function editarOrcamento(orcamento: Orcamento) {
 
     if (error) {
       console.error("Erro ao carregar itens:", error);
-      alert("Erro ao carregar os itens do orçamento.");
+      mostrarToast(
+        "Erro ao carregar os itens do orçamento.",
+        "erro"
+      );
       setOrcamentoVisualizado(null);
       setItensVisualizados([]);
       setCarregandoVisualizacao(false);
@@ -530,33 +591,43 @@ async function editarOrcamento(orcamento: Orcamento) {
     setCarregandoVisualizacao(false);
   }
 
-  async function excluirOrcamento(id: number) {
-    const confirmar = confirm(
-      "Deseja realmente excluir este orçamento?"
-    );
+  async function confirmarExclusao() {
+    if (!orcamentoParaExcluir || !usuario) return;
 
-    if (!confirmar) return;
-
-    if (!usuario) return;
+    setExcluindo(true);
 
     const { error } = await supabase
       .from("orcamentos")
       .delete()
-      .eq("id", id)
+      .eq("id", orcamentoParaExcluir.id)
       .eq("user_id", usuario.id);
+
+    setExcluindo(false);
 
     if (error) {
       console.error("Erro ao excluir orçamento:", error);
-      alert("Erro ao excluir orçamento.");
+      mostrarToast("Erro ao excluir orçamento.", "erro");
       return;
     }
 
     setOrcamentos((lista) =>
-      lista.filter((orcamento) => orcamento.id !== id)
+      lista.filter(
+        (orcamento) => orcamento.id !== orcamentoParaExcluir.id
+      )
     );
+    mostrarToast(
+      `Orçamento #${String(orcamentoParaExcluir.numero).padStart(
+        4,
+        "0"
+      )} excluído com sucesso.`,
+      "sucesso"
+    );
+    setOrcamentoParaExcluir(null);
   }
 
   async function gerarPDF(orcamento: Orcamento) {
+  if (!usuario) return;
+
   try {
     const { data: itensPDF, error } = await supabase
       .from("orcamento_itens")
@@ -573,7 +644,7 @@ async function editarOrcamento(orcamento: Orcamento) {
 
     if (error) {
       console.error("Erro ao buscar itens para PDF:", error);
-      alert("Erro ao gerar PDF.");
+      mostrarToast("Erro ao gerar PDF.", "erro");
       return;
     }
 
@@ -597,37 +668,7 @@ const cliente = clienteCompleto?.nome || "Cliente";
     // LOGO
     // =========================
     try {
-      const carregarImagem = (src: string): Promise<string> => {
-        return new Promise((resolve, reject) => {
-          const img = new Image();
-
-          img.onload = () => {
-            const canvas = document.createElement("canvas");
-
-            canvas.width = img.width;
-            canvas.height = img.height;
-
-            const ctx = canvas.getContext("2d");
-
-            if (!ctx) {
-              reject(new Error("Não foi possível criar canvas."));
-              return;
-            }
-
-            ctx.drawImage(img, 0, 0);
-
-            resolve(canvas.toDataURL("image/png"));
-          };
-
-          img.onerror = () => {
-            reject(new Error("Não foi possível carregar a logo."));
-          };
-
-          img.src = src;
-        });
-      };
-
-      const logoBase64 = await carregarImagem("/logo.png");
+      const logoBase64 = await getLogo();
 
       doc.addImage(
         logoBase64,
@@ -653,39 +694,9 @@ const cliente = clienteCompleto?.nome || "Cliente";
 
     doc.rect(0, 0, 210, 42, "F");
 
-    // Tenta colocar a logo novamente por cima do fundo.
-    // Caso a logo tenha fundo transparente, ficará perfeita.
+    // Logo sobre o fundo escuro (mesma imagem cacheada)
     try {
-      const carregarImagem = (src: string): Promise<string> => {
-        return new Promise((resolve, reject) => {
-          const img = new Image();
-
-          img.onload = () => {
-            const canvas = document.createElement("canvas");
-
-            canvas.width = img.width;
-            canvas.height = img.height;
-
-            const ctx = canvas.getContext("2d");
-
-            if (!ctx) {
-              reject(new Error("Canvas indisponível."));
-              return;
-            }
-
-            ctx.drawImage(img, 0, 0);
-
-            resolve(canvas.toDataURL("image/png"));
-          };
-
-          img.onerror = () =>
-            reject(new Error("Logo não encontrada."));
-
-          img.src = src;
-        });
-      };
-
-      const logo = await carregarImagem("/logo.png");
+      const logo = await getLogo();
 
       doc.addImage(
         logo,
@@ -799,7 +810,7 @@ const cliente = clienteCompleto?.nome || "Cliente";
     const statusX = 20;
     const statusY = 82;
 
-    let statusTexto = orcamento.status;
+    const statusTexto = orcamento.status;
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9);
@@ -959,7 +970,7 @@ const cliente = clienteCompleto?.nome || "Cliente";
     // =========================
 
     const finalY =
-      (doc as any).lastAutoTable.finalY + 10;
+      (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
 
     const subtotalPDF = (itensPDF || []).reduce(
       (total, item) =>
@@ -1151,8 +1162,9 @@ const cliente = clienteCompleto?.nome || "Cliente";
       error
     );
 
-    alert(
-      "Erro ao gerar o PDF."
+    mostrarToast(
+      "Erro ao gerar o PDF.",
+      "erro"
     );
   }
 }
@@ -1178,9 +1190,10 @@ const cliente = clienteCompleto?.nome || "Cliente";
 
           <button
             onClick={abrirNovoOrcamento}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-5 py-3 rounded-lg"
+            className="inline-flex items-center gap-2 bg-[#FFD60A] text-[#0D1B2A] font-bold px-5 py-3 rounded-lg hover:bg-yellow-400 transition shadow-lg shadow-yellow-500/20"
           >
-            + Novo orçamento
+            <FilePlus className="w-5 h-5" />
+            Novo orçamento
           </button>
         </div>
 
@@ -1250,27 +1263,27 @@ const cliente = clienteCompleto?.nome || "Cliente";
                 <thead className="bg-gray-50 border-b">
                   <tr>
 
-                    <th className="text-left px-6 py-4 text-sm font-semibold text-gray-600">
+                    <th scope="col" className="text-left px-6 py-4 text-sm font-semibold text-gray-600">
                       Nº
                     </th>
 
-                    <th className="text-left px-6 py-4 text-sm font-semibold text-gray-600">
+                    <th scope="col" className="text-left px-6 py-4 text-sm font-semibold text-gray-600">
                       Cliente
                     </th>
 
-                    <th className="text-left px-6 py-4 text-sm font-semibold text-gray-600">
+                    <th scope="col" className="text-left px-6 py-4 text-sm font-semibold text-gray-600">
                       Data
                     </th>
 
-                    <th className="text-left px-6 py-4 text-sm font-semibold text-gray-600">
+                    <th scope="col" className="text-left px-6 py-4 text-sm font-semibold text-gray-600">
                       Status
                     </th>
 
-                    <th className="text-right px-6 py-4 text-sm font-semibold text-gray-600">
+                    <th scope="col" className="text-right px-6 py-4 text-sm font-semibold text-gray-600">
                       Total
                     </th>
 
-                    <th className="text-right px-6 py-4 text-sm font-semibold text-gray-600">
+                    <th scope="col" className="text-right px-6 py-4 text-sm font-semibold text-gray-600">
                       Ações
                     </th>
 
@@ -1330,35 +1343,59 @@ const cliente = clienteCompleto?.nome || "Cliente";
                         <div className="flex justify-end gap-3">
 
                           <button
+                            type="button"
                             onClick={() =>
                               visualizarOrcamento(orcamento)
                             }
-                            className="text-blue-600 hover:text-blue-800 font-medium"
+                            title="Visualizar"
+                            aria-label="Visualizar orçamento"
+                            className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium transition"
                           >
-                            Visualizar
+                            <Eye className="w-4 h-4" />
+                            <span className="hidden lg:inline">
+                              Ver
+                            </span>
                           </button>
 
                           <button
-  onClick={() => gerarPDF(orcamento)}
-  className="text-gray-700 hover:text-gray-900 font-medium"
->
-  PDF
-</button>
-                          
-                        <button
-  onClick={() => editarOrcamento(orcamento)}
-  className="text-orange-600 hover:text-orange-800 font-medium"
->
-  Editar
-</button>
+                            type="button"
+                            onClick={() => gerarPDF(orcamento)}
+                            title="Baixar PDF"
+                            aria-label="Baixar PDF"
+                            className="inline-flex items-center gap-1 text-gray-700 hover:text-gray-900 font-medium transition"
+                          >
+                            <FileText className="w-4 h-4" />
+                            <span className="hidden lg:inline">
+                              PDF
+                            </span>
+                          </button>
 
                           <button
-                            onClick={() =>
-                              excluirOrcamento(orcamento.id)
-                            }
-                            className="text-red-600 hover:text-red-800 font-medium"
+                            type="button"
+                            onClick={() => editarOrcamento(orcamento)}
+                            title="Editar"
+                            aria-label="Editar orçamento"
+                            className="inline-flex items-center gap-1 text-orange-600 hover:text-orange-800 font-medium transition"
                           >
-                            Excluir
+                            <Pencil className="w-4 h-4" />
+                            <span className="hidden lg:inline">
+                              Editar
+                            </span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setOrcamentoParaExcluir(orcamento)
+                            }
+                            title="Excluir"
+                            aria-label="Excluir orçamento"
+                            className="inline-flex items-center gap-1 text-red-600 hover:text-red-800 font-medium transition"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            <span className="hidden lg:inline">
+                              Excluir
+                            </span>
                           </button>
 
                         </div>
@@ -1418,11 +1455,13 @@ const cliente = clienteCompleto?.nome || "Cliente";
               </div>
 
               <button
+                type="button"
                 onClick={() => setModalAberto(false)}
                 disabled={salvando}
-                className="text-gray-400 hover:text-gray-700 text-2xl"
+                className="text-gray-400 hover:text-gray-700 transition p-1 rounded-lg hover:bg-gray-100 disabled:opacity-30"
+                aria-label="Fechar"
               >
-                ×
+                <X className="w-5 h-5" />
               </button>
 
             </div>
@@ -1434,11 +1473,15 @@ const cliente = clienteCompleto?.nome || "Cliente";
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Cliente *
+                  <label
+                    htmlFor="orc_cliente"
+                    className="block text-sm font-medium text-gray-700 mb-1"
+                  >
+                    Cliente <span className="text-red-500">*</span>
                   </label>
 
                   <select
+                    id="orc_cliente"
                     value={clienteId}
                     onChange={(e) =>
                       setClienteId(e.target.value)
@@ -1463,11 +1506,15 @@ const cliente = clienteCompleto?.nome || "Cliente";
                 </div>
 
                 <div>
-  <label className="block text-sm font-medium text-gray-700 mb-1">
+  <label
+    htmlFor="orc_status"
+    className="block text-sm font-medium text-gray-700 mb-1"
+  >
     Status
   </label>
 
   <select
+    id="orc_status"
     value={status}
     onChange={(e) => setStatus(e.target.value)}
     className="w-full border border-gray-300 rounded-lg px-3 py-2"
@@ -1480,11 +1527,15 @@ const cliente = clienteCompleto?.nome || "Cliente";
 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label
+                    htmlFor="orc_data"
+                    className="block text-sm font-medium text-gray-700 mb-1"
+                  >
                     Data do orçamento
                   </label>
 
                   <input
+                    id="orc_data"
                     type="date"
                     value={dataOrcamento}
                     onChange={(e) =>
@@ -1495,11 +1546,15 @@ const cliente = clienteCompleto?.nome || "Cliente";
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label
+                    htmlFor="orc_validade"
+                    className="block text-sm font-medium text-gray-700 mb-1"
+                  >
                     Validade
                   </label>
 
                   <input
+                    id="orc_validade"
                     type="date"
                     value={validade}
                     onChange={(e) =>
@@ -2128,6 +2183,32 @@ const cliente = clienteCompleto?.nome || "Cliente";
 
         </div>
       )}
+
+      {/* Confirmação de exclusão */}
+      <ConfirmDialog
+        aberto={orcamentoParaExcluir !== null}
+        titulo="Excluir orçamento?"
+        descricao={
+          orcamentoParaExcluir ? (
+            <>
+              Tem certeza que deseja excluir o orçamento{" "}
+              <strong className="text-gray-900">
+                #{String(orcamentoParaExcluir.numero).padStart(4, "0")}
+              </strong>{" "}
+              do valor de{" "}
+              <strong className="text-gray-900">
+                {formatarMoeda(Number(orcamentoParaExcluir.valor_total))}
+              </strong>
+              ? Esta ação não pode ser desfeita.
+            </>
+          ) : null
+        }
+        textoBotaoConfirmar="Excluir"
+        corBotaoConfirmar="vermelho"
+        carregando={excluindo}
+        aoConfirmar={confirmarExclusao}
+        aoCancelar={() => setOrcamentoParaExcluir(null)}
+      />
 
     </div>
   );

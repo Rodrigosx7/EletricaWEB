@@ -1,5 +1,13 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
+import { User, Mail, Lock, ArrowRight, ArrowLeft } from "lucide-react";
 import { supabase } from "../supabase";
+import {
+  AuthShell,
+  AuthCard,
+  AuthHeader,
+  FloatingField,
+  PrimaryButton,
+} from "../components/ui/auth-shell";
 
 type CadastroProps = {
   voltarLogin: () => void;
@@ -12,7 +20,7 @@ function Cadastro({ voltarLogin }: CadastroProps) {
   const [confirmarSenha, setConfirmarSenha] = useState("");
   const [carregando, setCarregando] = useState(false);
 
-  async function criarConta(e: React.FormEvent) {
+  async function criarConta(e: FormEvent) {
     e.preventDefault();
 
     if (!nome.trim()) {
@@ -69,124 +77,75 @@ function Cadastro({ voltarLogin }: CadastroProps) {
   }
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        background: "#0D1B2A",
-      }}
-    >
-      <form
-        onSubmit={criarConta}
-        style={{
-          width: "350px",
-          padding: "30px",
-          background: "white",
-          borderRadius: "12px",
-        }}
-      >
-        <h1>RJ ELÉTRICA</h1>
-
-        <p>Criar sua conta</p>
-
-        <label>Nome</label>
-        <br />
-
-        <input
-          type="text"
-          value={nome}
-          onChange={(e) => setNome(e.target.value)}
-          placeholder="Seu nome"
-          style={{
-            width: "100%",
-            padding: "10px",
-            marginTop: "5px",
-            marginBottom: "15px",
-            boxSizing: "border-box",
-          }}
+    <AuthShell>
+      <AuthCard>
+        <AuthHeader
+          icone={<User className="w-7 h-7 text-[#0D1B2A]" />}
+          titulo="Criar sua conta"
+          subtitulo="Comece a gerenciar seus serviços elétricos"
         />
 
-        <label>E-mail</label>
-        <br />
+        <form className="space-y-7" onSubmit={criarConta}>
+          <FloatingField
+            id="cadastro_nome"
+            label="Nome completo"
+            icone={<User size={16} />}
+            value={nome}
+            onChange={setNome}
+            placeholder="Nome"
+            required
+          />
+          <FloatingField
+            id="cadastro_email"
+            label="E-mail"
+            icone={<Mail size={16} />}
+            type="email"
+            value={email}
+            onChange={setEmail}
+            placeholder="E-mail"
+            required
+          />
+          <FloatingField
+            id="cadastro_senha"
+            label="Senha (mínimo 6 caracteres)"
+            icone={<Lock size={16} />}
+            type="password"
+            value={senha}
+            onChange={setSenha}
+            placeholder="Senha"
+            required
+          />
+          <FloatingField
+            id="cadastro_confirmar"
+            label="Confirmar senha"
+            icone={<Lock size={16} />}
+            type="password"
+            value={confirmarSenha}
+            onChange={setConfirmarSenha}
+            placeholder="Confirmar senha"
+            required
+          />
 
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="seu@email.com"
-          style={{
-            width: "100%",
-            padding: "10px",
-            marginTop: "5px",
-            marginBottom: "15px",
-            boxSizing: "border-box",
-          }}
-        />
-
-        <label>Senha</label>
-        <br />
-
-        <input
-          type="password"
-          value={senha}
-          onChange={(e) => setSenha(e.target.value)}
-          placeholder="Mínimo 6 caracteres"
-          style={{
-            width: "100%",
-            padding: "10px",
-            marginTop: "5px",
-            marginBottom: "15px",
-            boxSizing: "border-box",
-          }}
-        />
-
-        <label>Confirmar senha</label>
-        <br />
-
-        <input
-          type="password"
-          value={confirmarSenha}
-          onChange={(e) => setConfirmarSenha(e.target.value)}
-          placeholder="Digite a senha novamente"
-          style={{
-            width: "100%",
-            padding: "10px",
-            marginTop: "5px",
-            marginBottom: "20px",
-            boxSizing: "border-box",
-          }}
-        />
-
-        <button
-          type="submit"
-          disabled={carregando}
-          style={{
-            width: "100%",
-            padding: "12px",
-            cursor: "pointer",
-          }}
-        >
-          {carregando ? "Criando conta..." : "Criar conta"}
-        </button>
-
-        <br />
-        <br />
+          <PrimaryButton
+            carregando={carregando}
+            carregandoTexto="Criando conta..."
+            texto="Criar conta"
+            icone={
+              <ArrowRight className="ml-2 h-5 w-5 transform group-hover:translate-x-1 transition-transform" />
+            }
+          />
+        </form>
 
         <button
           type="button"
           onClick={voltarLogin}
-          style={{
-            width: "100%",
-            padding: "10px",
-            cursor: "pointer",
-          }}
+          className="w-full flex items-center justify-center gap-2 text-sm text-gray-300 hover:text-[#FFD60A] transition"
         >
+          <ArrowLeft className="w-4 h-4" />
           Voltar para o login
         </button>
-      </form>
-    </div>
+      </AuthCard>
+    </AuthShell>
   );
 }
 

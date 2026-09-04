@@ -1,5 +1,15 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../supabase";
+import {
+  Wrench,
+  Eye,
+  Pencil,
+  Trash2,
+  CheckCircle2,
+  RotateCcw,
+} from "lucide-react";
+import ConfirmDialog from "./ConfirmDialog";
+import { useToast } from "./ui/toast";
 
 type Cliente = {
   id: number;
@@ -83,6 +93,20 @@ export default function OrdensServico() {
   const [salvando, setSalvando] = useState(false);
   const [editandoId, setEditandoId] =
     useState<number | null>(null);
+
+  const [ordemParaExcluir, setOrdemParaExcluir] =
+    useState<OrdemServico | null>(null);
+  const [excluindo, setExcluindo] = useState(false);
+
+  const [ordemParaConcluir, setOrdemParaConcluir] =
+    useState<OrdemServico | null>(null);
+  const [concluindo, setConcluindo] = useState(false);
+
+  const [ordemParaReabrir, setOrdemParaReabrir] =
+    useState<OrdemServico | null>(null);
+  const [reabrindo, setReabrindo] = useState(false);
+
+  const { mostrarToast } = useToast();
 
   const [origem, setOrigem] =
     useState<"zero" | "orcamento">("zero");
@@ -424,17 +448,17 @@ export default function OrdensServico() {
       } = await supabase.auth.getUser();
 
       if (!user) {
-        alert("Usuário não encontrado.");
+        mostrarToast("Usuário não encontrado.", "erro");
         return;
       }
 
       if (!clienteId) {
-        alert("Selecione um cliente.");
+        mostrarToast("Selecione um cliente.", "alerta");
         return;
       }
 
       if (!descricao.trim()) {
-        alert("Informe a descrição do serviço.");
+        mostrarToast("Informe a descrição do serviço.", "alerta");
         return;
       }
 
@@ -468,20 +492,23 @@ export default function OrdensServico() {
               custoMateriaisNumerico,
             valor_total: valorTotal,
           })
-          .eq("id", editandoId);
+          .eq("id", editandoId)
+          .eq("user_id", user.id);
 
         if (error) {
           console.error(error);
 
-          alert(
-            "Não foi possível atualizar a O.S."
+          mostrarToast(
+            "Não foi possível atualizar a O.S.",
+            "erro"
           );
 
           return;
         }
 
-        alert(
-          "Ordem de serviço atualizada com sucesso!"
+        mostrarToast(
+          "Ordem de serviço atualizada com sucesso!",
+          "sucesso"
         );
 
         setModalAberto(false);
@@ -498,8 +525,9 @@ export default function OrdensServico() {
 
       if (origem === "orcamento") {
         if (!orcamentoId) {
-          alert(
-            "Selecione um orçamento aprovado."
+          mostrarToast(
+            "Selecione um orçamento aprovado.",
+            "alerta"
           );
 
           return;
@@ -512,8 +540,9 @@ export default function OrdensServico() {
           ) || null;
 
         if (!orcamentoSelecionado) {
-          alert(
-            "Orçamento não encontrado."
+          mostrarToast(
+            "Orçamento não encontrado.",
+            "erro"
           );
 
           return;
@@ -541,8 +570,9 @@ export default function OrdensServico() {
       if (erroNumero) {
         console.error(erroNumero);
 
-        alert(
-          "Não foi possível gerar o número da O.S."
+        mostrarToast(
+          "Não foi possível gerar o número da O.S.",
+          "erro"
         );
 
         return;
@@ -599,8 +629,9 @@ export default function OrdensServico() {
       if (erroOrdem || !novaOrdem) {
         console.error(erroOrdem);
 
-        alert(
-          "Não foi possível cadastrar a ordem de serviço."
+        mostrarToast(
+          "Não foi possível cadastrar a ordem de serviço.",
+          "erro"
         );
 
         return;
@@ -647,16 +678,18 @@ export default function OrdensServico() {
               novaOrdem.id
             );
 
-          alert(
-            "A O.S. não foi criada porque os itens não puderam ser copiados."
+          mostrarToast(
+            "A O.S. não foi criada porque os itens não puderam ser copiados.",
+            "erro"
           );
 
           return;
         }
       }
 
-      alert(
-        "Ordem de serviço cadastrada com sucesso!"
+      mostrarToast(
+        "Ordem de serviço cadastrada com sucesso!",
+        "sucesso"
       );
 
       setModalAberto(false);
@@ -746,107 +779,148 @@ export default function OrdensServico() {
     setModalAberto(true);
   }
 
-  async function concluirOrdem(
-    ordem: OrdemServico
-  ) {
-    const confirmar = window.confirm(
-      "Deseja marcar a O.S. #" +
-        String(ordem.numero).padStart(
+  async function confirmarConclusao() {
+    if (!ordemParaConcluir) return;
+
+    setConcluindo(true);
+
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        mostrarToast("Usuário não encontrado.", "erro");
+        setConcluindo(false);
+        return;
+      }
+
+      const { error } = await supabase
+        .from("ordens_servico")
+        .update({
+          status: "Concluída",
+          data_conclusao: hoje(),
+        })
+        .eq("id", ordemParaConcluir.id)
+        .eq("user_id", user.id);
+
+      if (error) {
+        console.error(error);
+        mostrarToast(
+          "Não foi possível concluir a O.S.",
+          "erro"
+        );
+        setConcluindo(false);
+        return;
+      }
+
+      mostrarToast(
+        `O.S. #${String(ordemParaConcluir.numero).padStart(
           4,
           "0"
-        ) +
-        " como concluída?"
-    );
-
-    if (!confirmar) {
-      return;
-    }
-
-    const { error } = await supabase
-      .from("ordens_servico")
-      .update({
-        status: "Concluída",
-        data_conclusao: hoje(),
-      })
-      .eq("id", ordem.id);
-
-    if (error) {
-      console.error(error);
-
-      alert(
-        "Não foi possível concluir a O.S."
+        )} concluída com sucesso!`,
+        "sucesso"
       );
-
-      return;
+      setOrdemParaConcluir(null);
+      await carregarDados();
+    } finally {
+      setConcluindo(false);
     }
-
-    await carregarDados();
   }
 
-  async function reabrirOrdem(
-    ordem: OrdemServico
-  ) {
-    const confirmar = window.confirm(
-      "Deseja reabrir a O.S. #" +
-        String(ordem.numero).padStart(
+  async function confirmarReabertura() {
+    if (!ordemParaReabrir) return;
+
+    setReabrindo(true);
+
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        mostrarToast("Usuário não encontrado.", "erro");
+        setReabrindo(false);
+        return;
+      }
+
+      const { error } = await supabase
+        .from("ordens_servico")
+        .update({
+          status: "Em andamento",
+          data_conclusao: null,
+        })
+        .eq("id", ordemParaReabrir.id)
+        .eq("user_id", user.id);
+
+      if (error) {
+        console.error(error);
+        mostrarToast(
+          "Não foi possível reabrir a O.S.",
+          "erro"
+        );
+        setReabrindo(false);
+        return;
+      }
+
+      mostrarToast(
+        `O.S. #${String(ordemParaReabrir.numero).padStart(
           4,
           "0"
-        ) +
-        "?"
-    );
-
-    if (!confirmar) {
-      return;
-    }
-
-    const { error } = await supabase
-      .from("ordens_servico")
-      .update({
-        status: "Em andamento",
-        data_conclusao: null,
-      })
-      .eq("id", ordem.id);
-
-    if (error) {
-      console.error(error);
-
-      alert(
-        "Não foi possível reabrir a O.S."
+        )} reaberta com sucesso!`,
+        "sucesso"
       );
-
-      return;
+      setOrdemParaReabrir(null);
+      await carregarDados();
+    } finally {
+      setReabrindo(false);
     }
-
-    await carregarDados();
   }
 
-  async function excluirOrdem(
-    id: number
-  ) {
-    const confirmar = window.confirm(
-      "Tem certeza que deseja excluir esta ordem de serviço?"
-    );
+  async function confirmarExclusao() {
+    if (!ordemParaExcluir) return;
 
-    if (!confirmar) {
-      return;
-    }
+    setExcluindo(true);
 
-    const { error } = await supabase
-      .from("ordens_servico")
-      .delete()
-      .eq("id", id);
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
-    if (error) {
-      console.error(error);
+      if (!user) {
+        mostrarToast("Usuário não encontrado.", "erro");
+        setExcluindo(false);
+        return;
+      }
 
-      alert(
-        "Não foi possível excluir a ordem de serviço."
+      const { error } = await supabase
+        .from("ordens_servico")
+        .delete()
+        .eq("id", ordemParaExcluir.id)
+        .eq("user_id", user.id);
+
+      if (error) {
+        console.error(error);
+        mostrarToast(
+          "Não foi possível excluir a ordem de serviço.",
+          "erro"
+        );
+        setExcluindo(false);
+        return;
+      }
+
+      mostrarToast(
+        `O.S. #${String(ordemParaExcluir.numero).padStart(
+          4,
+          "0"
+        )} excluída com sucesso.`,
+        "sucesso"
       );
-
-      return;
+      setOrdemParaExcluir(null);
+      await carregarDados();
+    } finally {
+      setExcluindo(false);
     }
-
-    await carregarDados();
   }
 
   const orcamentoSelecionadoAtual =
@@ -896,9 +970,10 @@ export default function OrdensServico() {
 
         <button
           onClick={abrirNovaOrdem}
-          className="bg-[#FFD60A] hover:bg-yellow-400 text-[#0D1B2A] font-semibold px-5 py-3 rounded-lg transition"
+          className="inline-flex items-center gap-2 bg-[#FFD60A] hover:bg-yellow-400 text-[#0D1B2A] font-bold px-5 py-3 rounded-lg transition shadow-lg shadow-yellow-500/20"
         >
-          + Nova O.S.
+          <Wrench className="w-5 h-5" />
+          Nova O.S.
         </button>
 
       </div>
@@ -911,31 +986,31 @@ export default function OrdensServico() {
 
             <tr>
 
-              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">
+              <th scope="col" className="px-6 py-4 text-left text-sm font-semibold text-gray-600">
                 O.S.
               </th>
 
-              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">
+              <th scope="col" className="px-6 py-4 text-left text-sm font-semibold text-gray-600">
                 Cliente
               </th>
 
-              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">
+              <th scope="col" className="px-6 py-4 text-left text-sm font-semibold text-gray-600">
                 Origem
               </th>
 
-              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">
+              <th scope="col" className="px-6 py-4 text-left text-sm font-semibold text-gray-600">
                 Data
               </th>
 
-              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">
+              <th scope="col" className="px-6 py-4 text-left text-sm font-semibold text-gray-600">
                 Status
               </th>
 
-              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">
+              <th scope="col" className="px-6 py-4 text-left text-sm font-semibold text-gray-600">
                 Valor
               </th>
 
-              <th className="px-6 py-4 text-right text-sm font-semibold text-gray-600">
+              <th scope="col" className="px-6 py-4 text-right text-sm font-semibold text-gray-600">
                 Ações
               </th>
 
@@ -1035,24 +1110,32 @@ export default function OrdensServico() {
                     <div className="flex justify-end gap-2 flex-wrap">
 
                       <button
+                        type="button"
                         onClick={() =>
                           visualizarOrdem(
                             ordem
                           )
                         }
-                        className="px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg"
+                        title="Visualizar"
+                        aria-label="Visualizar O.S."
+                        className="px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg inline-flex items-center gap-1 transition"
                       >
-                        Visualizar
+                        <Eye className="w-4 h-4" />
+                        Ver
                       </button>
 
                       <button
+                        type="button"
                         onClick={() =>
                           editarOrdem(
                             ordem
                           )
                         }
-                        className="px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
+                        title="Editar"
+                        aria-label="Editar O.S."
+                        className="px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg inline-flex items-center gap-1 transition"
                       >
+                        <Pencil className="w-4 h-4" />
                         Editar
                       </button>
 
@@ -1062,14 +1145,16 @@ export default function OrdensServico() {
                           "Cancelada" && (
 
                           <button
+                            type="button"
                             onClick={() =>
-                              concluirOrdem(
-                                ordem
-                              )
+                              setOrdemParaConcluir(ordem)
                             }
-                            className="px-3 py-2 text-sm text-green-700 hover:bg-green-50 rounded-lg font-medium"
+                            title="Marcar como concluída"
+                            aria-label="Marcar O.S. como concluída"
+                            className="px-3 py-2 text-sm text-green-700 hover:bg-green-50 rounded-lg font-medium inline-flex items-center gap-1 transition"
                           >
-                            ✓ Concluir
+                            <CheckCircle2 className="w-4 h-4" />
+                            Concluir
                           </button>
 
                         )}
@@ -1078,26 +1163,30 @@ export default function OrdensServico() {
                         "Concluída" && (
 
                           <button
+                            type="button"
                             onClick={() =>
-                              reabrirOrdem(
-                                ordem
-                              )
+                              setOrdemParaReabrir(ordem)
                             }
-                            className="px-3 py-2 text-sm text-orange-600 hover:bg-orange-50 rounded-lg"
+                            title="Reabrir O.S."
+                            aria-label="Reabrir O.S."
+                            className="px-3 py-2 text-sm text-orange-600 hover:bg-orange-50 rounded-lg inline-flex items-center gap-1 transition"
                           >
-                            ↩ Reabrir
+                            <RotateCcw className="w-4 h-4" />
+                            Reabrir
                           </button>
 
                         )}
 
                       <button
+                        type="button"
                         onClick={() =>
-                          excluirOrdem(
-                            ordem.id
-                          )
+                          setOrdemParaExcluir(ordem)
                         }
-                        className="px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg"
+                        title="Excluir"
+                        aria-label="Excluir O.S."
+                        className="px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg inline-flex items-center gap-1 transition"
                       >
+                        <Trash2 className="w-4 h-4" />
                         Excluir
                       </button>
 
@@ -1240,8 +1329,8 @@ export default function OrdensServico() {
 
                   <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
 
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Orçamento aprovado *
+                    <label htmlFor="os_orcamento" className="block text-sm font-semibold text-gray-700 mb-2">
+                      Orçamento aprovado <span className="text-red-500">*</span>
                     </label>
 
                     {orcamentos.length === 0 ? (
@@ -1253,6 +1342,7 @@ export default function OrdensServico() {
                     ) : (
 
                       <select
+                        id="os_orcamento"
                         value={
                           orcamentoId
                         }
@@ -1311,11 +1401,12 @@ export default function OrdensServico() {
 
               <div>
 
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Cliente *
+                <label htmlFor="os_cliente" className="block text-sm font-semibold text-gray-700 mb-2">
+                  Cliente <span className="text-red-500">*</span>
                 </label>
 
                 <select
+                  id="os_cliente"
                   value={clienteId}
                   onChange={(e) =>
                     setClienteId(
@@ -1368,11 +1459,12 @@ export default function OrdensServico() {
 
                 <div>
 
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Data de abertura *
+                  <label htmlFor="os_data_abertura" className="block text-sm font-semibold text-gray-700 mb-2">
+                    Data de abertura <span className="text-red-500">*</span>
                   </label>
 
                   <input
+                    id="os_data_abertura"
                     type="date"
                     value={
                       dataAbertura
@@ -1389,11 +1481,12 @@ export default function OrdensServico() {
 
                 <div>
 
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  <label htmlFor="os_data_inicio" className="block text-sm font-semibold text-gray-700 mb-2">
                     Data de início
                   </label>
 
                   <input
+                    id="os_data_inicio"
                     type="date"
                     value={
                       dataInicio
@@ -1410,11 +1503,12 @@ export default function OrdensServico() {
 
                 <div>
 
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  <label htmlFor="os_data_previsao" className="block text-sm font-semibold text-gray-700 mb-2">
                     Previsão de conclusão
                   </label>
 
                   <input
+                    id="os_data_previsao"
                     type="date"
                     value={
                       dataPrevisao
@@ -1433,11 +1527,12 @@ export default function OrdensServico() {
 
               <div>
 
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                <label htmlFor="os_status" className="block text-sm font-semibold text-gray-700 mb-2">
                   Status
                 </label>
 
                 <select
+                  id="os_status"
                   value={status}
                   onChange={(e) =>
                     setStatus(
@@ -1472,11 +1567,12 @@ export default function OrdensServico() {
 
                   <div>
 
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    <label htmlFor="os_data_conclusao" className="block text-sm font-semibold text-gray-700 mb-2">
                       Data de conclusão
                     </label>
 
                     <input
+                      id="os_data_conclusao"
                       type="date"
                       value={
                         dataConclusao
@@ -1495,11 +1591,12 @@ export default function OrdensServico() {
 
               <div>
 
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Descrição do serviço *
+                <label htmlFor="os_descricao" className="block text-sm font-semibold text-gray-700 mb-2">
+                  Descrição do serviço <span className="text-red-500">*</span>
                 </label>
 
                 <textarea
+                  id="os_descricao"
                   value={
                     descricao
                   }
@@ -1519,11 +1616,12 @@ export default function OrdensServico() {
 
                 <div>
 
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  <label htmlFor="os_valor" className="block text-sm font-semibold text-gray-700 mb-2">
                     Valor do serviço
                   </label>
 
                   <input
+                    id="os_valor"
                     type="number"
                     step="0.01"
                     min="0"
@@ -1542,11 +1640,12 @@ export default function OrdensServico() {
 
                 <div>
 
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  <label htmlFor="os_custo" className="block text-sm font-semibold text-gray-700 mb-2">
                     Custo dos materiais
                   </label>
 
                   <input
+                    id="os_custo"
                     type="number"
                     step="0.01"
                     min="0"
@@ -1581,11 +1680,12 @@ export default function OrdensServico() {
 
               <div>
 
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                <label htmlFor="os_observacoes" className="block text-sm font-semibold text-gray-700 mb-2">
                   Observações
                 </label>
 
                 <textarea
+                  id="os_observacoes"
                   value={
                     observacoes
                   }
@@ -2030,15 +2130,17 @@ export default function OrdensServico() {
                     "Cancelada" && (
 
                     <button
+                      type="button"
                       onClick={() => {
                         fecharVisualizacao();
-                        concluirOrdem(
+                        setOrdemParaConcluir(
                           ordemVisualizada
                         );
                       }}
-                      className="px-5 py-3 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700"
+                      className="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700 transition"
                     >
-                      ✓ Concluir O.S.
+                      <CheckCircle2 className="w-4 h-4" />
+                      Concluir O.S.
                     </button>
 
                   )}
@@ -2059,6 +2161,80 @@ export default function OrdensServico() {
           </div>
 
         )}
+
+      {/* Confirmação de exclusão */}
+      <ConfirmDialog
+        aberto={ordemParaExcluir !== null}
+        titulo="Excluir ordem de serviço?"
+        descricao={
+          ordemParaExcluir ? (
+            <>
+              Tem certeza que deseja excluir a O.S.{" "}
+              <strong className="text-gray-900">
+                #{String(ordemParaExcluir.numero).padStart(4, "0")}
+              </strong>{" "}
+              do valor de{" "}
+              <strong className="text-gray-900">
+                {formatarValor(
+                  Number(ordemParaExcluir.valor_total) || 0
+                )}
+              </strong>
+              ? Esta ação não pode ser desfeita.
+            </>
+          ) : null
+        }
+        textoBotaoConfirmar="Excluir"
+        corBotaoConfirmar="vermelho"
+        carregando={excluindo}
+        aoConfirmar={confirmarExclusao}
+        aoCancelar={() => setOrdemParaExcluir(null)}
+      />
+
+      {/* Confirmação de conclusão */}
+      <ConfirmDialog
+        aberto={ordemParaConcluir !== null}
+        titulo="Concluir ordem de serviço?"
+        descricao={
+          ordemParaConcluir ? (
+            <>
+              Marcar a O.S.{" "}
+              <strong className="text-gray-900">
+                #{String(ordemParaConcluir.numero).padStart(4, "0")}
+              </strong>{" "}
+              como concluída? A data de conclusão será preenchida
+              automaticamente.
+            </>
+          ) : null
+        }
+        textoBotaoConfirmar="Concluir"
+        corBotaoConfirmar="amarelo"
+        carregando={concluindo}
+        aoConfirmar={confirmarConclusao}
+        aoCancelar={() => setOrdemParaConcluir(null)}
+      />
+
+      {/* Confirmação de reabertura */}
+      <ConfirmDialog
+        aberto={ordemParaReabrir !== null}
+        titulo="Reabrir ordem de serviço?"
+        descricao={
+          ordemParaReabrir ? (
+            <>
+              Reabrir a O.S.{" "}
+              <strong className="text-gray-900">
+                #{String(ordemParaReabrir.numero).padStart(4, "0")}
+              </strong>
+              ? O status voltará para "Em andamento" e a data de
+              conclusão será removida.
+            </>
+          ) : null
+        }
+        textoBotaoConfirmar="Reabrir"
+        corBotaoConfirmar="amarelo"
+        carregando={reabrindo}
+        aoConfirmar={confirmarReabertura}
+        aoCancelar={() => setOrdemParaReabrir(null)}
+      />
 
     </div>
   );

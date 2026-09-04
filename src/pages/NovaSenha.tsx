@@ -1,5 +1,13 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
+import { Lock, CheckCircle2, ArrowRight } from "lucide-react";
 import { supabase } from "../supabase";
+import {
+  AuthShell,
+  AuthCard,
+  AuthHeader,
+  FloatingField,
+  PrimaryButton,
+} from "../components/ui/auth-shell";
 
 function NovaSenha() {
   const [senha, setSenha] = useState("");
@@ -7,7 +15,7 @@ function NovaSenha() {
   const [carregando, setCarregando] = useState(false);
   const [alterada, setAlterada] = useState(false);
 
-  async function alterarSenha(e: React.FormEvent) {
+  async function alterarSenha(e: FormEvent) {
     e.preventDefault();
 
     if (senha.length < 6) {
@@ -39,117 +47,78 @@ function NovaSenha() {
 
   if (alterada) {
     return (
-      <div
-        style={{
-          minHeight: "100vh",
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          background: "#0D1B2A",
-        }}
-      >
-        <div
-          style={{
-            width: "350px",
-            padding: "30px",
-            background: "white",
-            borderRadius: "12px",
-            textAlign: "center",
-          }}
-        >
-          <h1>RJ ELÉTRICA</h1>
+      <AuthShell>
+        <AuthCard>
+          <div className="text-center">
+            <div className="inline-flex w-14 h-14 rounded-xl bg-green-500 items-center justify-center mb-3 shadow-lg shadow-green-500/30">
+              <CheckCircle2 className="w-8 h-8 text-white" />
+            </div>
+            <h2 className="text-3xl font-bold text-white">
+              Senha alterada!
+            </h2>
+            <p className="mt-2 text-sm text-gray-300">
+              Sua senha foi alterada com sucesso. Você já pode acessar o
+              sistema.
+            </p>
+          </div>
 
-          <h2>Senha alterada!</h2>
-
-          <p>
-            Sua senha foi alterada com sucesso.
-          </p>
-
-          <button
+          <PrimaryButton
             onClick={() => {
               window.location.href = "/";
             }}
-            style={{
-              width: "100%",
-              padding: "12px",
-              cursor: "pointer",
-            }}
-          >
-            Ir para o sistema
-          </button>
-        </div>
-      </div>
+            carregandoTexto=""
+            texto="Ir para o sistema"
+            icone={
+              <ArrowRight className="ml-2 h-5 w-5 transform group-hover:translate-x-1 transition-transform" />
+            }
+          />
+        </AuthCard>
+      </AuthShell>
     );
   }
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        background: "#0D1B2A",
-      }}
-    >
-      <form
-        onSubmit={alterarSenha}
-        style={{
-          width: "350px",
-          padding: "30px",
-          background: "white",
-          borderRadius: "12px",
-        }}
-      >
-        <h1>RJ ELÉTRICA</h1>
-
-        <p>Crie uma nova senha</p>
-
-        <label>Nova senha</label>
-
-        <input
-          type="password"
-          value={senha}
-          onChange={(e) => setSenha(e.target.value)}
-          placeholder="Mínimo 6 caracteres"
-          style={{
-            width: "100%",
-            padding: "10px",
-            marginTop: "5px",
-            marginBottom: "15px",
-            boxSizing: "border-box",
-          }}
+    <AuthShell>
+      <AuthCard>
+        <AuthHeader
+          icone={<Lock className="w-7 h-7 text-[#0D1B2A]" />}
+          titulo="Crie uma nova senha"
+          subtitulo="Defina uma senha forte para sua conta"
         />
 
-        <label>Confirmar nova senha</label>
+        <form className="space-y-7" onSubmit={alterarSenha}>
+          <FloatingField
+            id="nova_senha"
+            label="Nova senha (mínimo 6 caracteres)"
+            icone={<Lock size={16} />}
+            type="password"
+            value={senha}
+            onChange={setSenha}
+            placeholder="Nova senha"
+            required
+          />
+          <FloatingField
+            id="nova_senha_confirmar"
+            label="Confirmar nova senha"
+            icone={<Lock size={16} />}
+            type="password"
+            value={confirmarSenha}
+            onChange={setConfirmarSenha}
+            placeholder="Confirmar nova senha"
+            required
+          />
 
-        <input
-          type="password"
-          value={confirmarSenha}
-          onChange={(e) => setConfirmarSenha(e.target.value)}
-          placeholder="Digite novamente"
-          style={{
-            width: "100%",
-            padding: "10px",
-            marginTop: "5px",
-            marginBottom: "20px",
-            boxSizing: "border-box",
-          }}
-        />
-
-        <button
-          type="submit"
-          disabled={carregando}
-          style={{
-            width: "100%",
-            padding: "12px",
-            cursor: "pointer",
-          }}
-        >
-          {carregando ? "Alterando..." : "Alterar senha"}
-        </button>
-      </form>
-    </div>
+          <PrimaryButton
+            carregando={carregando}
+            carregandoTexto="Alterando..."
+            texto="Alterar senha"
+            icone={
+              <ArrowRight className="ml-2 h-5 w-5 transform group-hover:translate-x-1 transition-transform" />
+            }
+          />
+        </form>
+      </AuthCard>
+    </AuthShell>
   );
 }
 
