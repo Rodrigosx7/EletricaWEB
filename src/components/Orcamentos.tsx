@@ -45,9 +45,6 @@ type Orcamento = {
   desconto: number;
   valor_total: number;
   observacoes: string | null;
-  clientes?: {
-  nome: string;
-}[];
 };
 
 function formatarMoeda(valor: number) {
@@ -137,26 +134,21 @@ function Orcamentos() {
           .eq("user_id", usuario.id)
           .order("nome"),
 
-        supabase
-          .from("orcamentos")
-          .select(
-            `
-            id,
-            numero,
-            cliente_id,
-            data_orcamento,
-            validade,
-            status,
-            desconto,
-            valor_total,
-            observacoes,
-            clientes (
-              nome
-            )
-          `
-          )
-          .eq("user_id", usuario.id)
-          .order("numero", { ascending: false }),
+       supabase
+  .from("orcamentos")
+  .select(`
+    id,
+    numero,
+    cliente_id,
+    data_orcamento,
+    validade,
+    status,
+    desconto,
+    valor_total,
+    observacoes
+  `)
+  .eq("user_id", usuario.id)
+  .order("numero", { ascending: false }),
       ]);
 
     if (clientesResult.error) {
@@ -585,12 +577,11 @@ async function editarOrcamento(orcamento: Orcamento) {
       return;
     }
 
-    const cliente =
-      orcamento.clientes?.[0]?.nome || "Cliente";
+   const clienteCompleto = clientes.find(
+  (c) => c.id === orcamento.cliente_id
+);
 
-    const clienteCompleto = clientes.find(
-      (c) => c.id === orcamento.cliente_id
-    );
+const cliente = clienteCompleto?.nome || "Cliente";
 
     const doc = new jsPDF();
 
@@ -1298,9 +1289,11 @@ async function editarOrcamento(orcamento: Orcamento) {
                         #{String(orcamento.numero).padStart(4, "0")}
                       </td>
 
-                      <td className="px-6 py-4 text-gray-700">
-                        {orcamento.clientes?.[0]?.nome || "Cliente"}
-                      </td>
+                     <td className="px-6 py-4 text-gray-700">
+  {clientes.find(
+    (cliente) => cliente.id === orcamento.cliente_id
+  )?.nome || "Cliente"}
+</td>
 
                       <td className="px-6 py-4 text-gray-600">
                         {new Date(
@@ -1848,10 +1841,7 @@ async function editarOrcamento(orcamento: Orcamento) {
               </div>
 
               <button
-  onClick={() => {
-    setModalAberto(false);
-    setOrcamentoEditando(null);
-  }}
+  onClick={fecharVisualizacao}
   className="text-gray-400 hover:text-gray-600 text-2xl"
 >
   ×
@@ -1877,8 +1867,10 @@ async function editarOrcamento(orcamento: Orcamento) {
                     </p>
 
                     <p className="text-lg font-bold text-gray-900 mt-1">
-                      {orcamentoVisualizado.clientes?.[0]?.nome ||
-  "Cliente"}
+                     {clientes.find(
+  (cliente) =>
+    cliente.id === orcamentoVisualizado.cliente_id
+)?.nome || "Cliente"}
                     </p>
 
                   </div>
