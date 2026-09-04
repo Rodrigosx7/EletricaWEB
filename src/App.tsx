@@ -7,6 +7,7 @@ import Sidebar from "./components/Sidebar";
 import Clientes from "./components/Clientes";
 import Servicos from "./components/Servicos";
 import Produtos from "./components/Produtos";
+import Orcamentos from "./components/Orcamentos";
 
 function App() {
   const [usuario, setUsuario] = useState<any>(null);
@@ -71,18 +72,7 @@ function App() {
         {/* Clientes */}
         {pagina === "clientes" && <Clientes />}
 
-        {/* Orçamentos */}
-        {pagina === "orcamentos" && (
-          <div className="p-8">
-            <h1 className="text-3xl font-bold">
-              Orçamentos
-            </h1>
-
-            <p className="text-gray-500 mt-2">
-              Módulo em construção.
-            </p>
-          </div>
-        )}
+       {pagina === "orcamentos" && <Orcamentos />}
 
         {/* Serviços */}
         {pagina === "servicos" && <Servicos />}
