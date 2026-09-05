@@ -12,6 +12,7 @@ import Orcamentos from "./components/Orcamentos";
 import OrdensServico from "./components/OrdensServico";
 import Financeiro from "./components/Financeiro";
 import Relatorios from "./components/Relatorios";
+import Calculadora from "./components/Calculadora";
 import Perfil from "./components/Perfil";
 import ConfirmDialog from "./components/ConfirmDialog";
 import Topbar from "./components/Topbar";
@@ -27,6 +28,7 @@ import {
   Package,
   Wallet,
   BarChart3,
+  Calculator as CalcIcon,
   Settings,
   type LucideIcon,
 } from "lucide-react";
@@ -137,6 +139,7 @@ function AppInterno() {
       produtos: { titulo: "Produtos", icone: Package },
       financeiro: { titulo: "Financeiro", icone: Wallet },
       relatorios: { titulo: "Relatórios", icone: BarChart3 },
+      calculadora: { titulo: "Calculadora Elétrica", icone: CalcIcon },
       configuracoes: {
         titulo: "Configurações",
         icone: Settings,
@@ -229,6 +232,9 @@ function AppInterno() {
         {/* Financeiro */}
         {pagina === "financeiro" && <Financeiro />}
         {pagina === "relatorios" && <Relatorios />}
+
+        {/* Calculadora */}
+        {pagina === "calculadora" && <Calculadora />}
 
         {/* Configurações */}
         {pagina === "configuracoes" && <Configuracoes />}
