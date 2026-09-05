@@ -673,17 +673,8 @@ const cliente = clienteCompleto?.nome || "Cliente";
     const logoUrl = empresa?.logo_url || FALLBACK_LOGO_URL;
     const logoBase64 = await getLogoFromUrl(logoUrl);
 
-    doc.addImage(
-      logoBase64,
-      "PNG",
-      18,
-      12,
-      42,
-      25
-    );
-
     // =========================
-    // CABEÇALHO
+    // CABEÇALHO (fundo escuro)
     // =========================
 
     doc.setFillColor(
@@ -694,7 +685,7 @@ const cliente = clienteCompleto?.nome || "Cliente";
 
     doc.rect(0, 0, 210, 42, "F");
 
-    // Logo sobre o fundo escuro (mesma imagem cacheada)
+    // Logo SOBRE o fundo escuro (única renderização)
     doc.addImage(
       logoBase64,
       "PNG",
@@ -798,7 +789,7 @@ const cliente = clienteCompleto?.nome || "Cliente";
     }
 
     // =========================
-    // STATUS
+    // STATUS (com cor)
     // =========================
 
     const statusX = 20;
@@ -806,28 +797,29 @@ const cliente = clienteCompleto?.nome || "Cliente";
 
     const statusTexto = orcamento.status;
 
+    // Cor de fundo por status
+    const coresStatus: Record<string, [number, number, number]> = {
+      Pendente: [251, 191, 36], // amarelo
+      Aprovado: [16, 185, 129], // verde
+      Recusado: [239, 68, 68], // vermelho
+      "Concluído": [59, 130, 246], // azul
+    };
+    const corStatus = coresStatus[statusTexto] || [100, 116, 139];
+
+    // Badge do status (pílula colorida)
+    const larguraBadge = doc.getTextWidth(statusTexto) + 12;
+    doc.setFillColor(corStatus[0], corStatus[1], corStatus[2]);
+    doc.roundedRect(statusX + 18, statusY - 4, larguraBadge, 6, 1.5, 1.5, "F");
+
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9);
+    doc.setTextColor(255, 255, 255);
+    doc.text(statusTexto, statusX + 18 + 6, statusY + 1);
 
-    doc.setTextColor(
-      azulEscuro[0],
-      azulEscuro[1],
-      azulEscuro[2]
-    );
-
-    doc.text(
-      "STATUS:",
-      statusX,
-      statusY
-    );
-
+    // Texto "STATUS:" continua cinza
+    doc.setTextColor(100, 116, 139);
     doc.setFont("helvetica", "normal");
-
-    doc.text(
-      statusTexto,
-      statusX + 18,
-      statusY
-    );
+    doc.text("STATUS:", statusX, statusY);
 
     // =========================
     // CLIENTE
@@ -1097,6 +1089,51 @@ const cliente = clienteCompleto?.nome || "Cliente";
     }
 
     // =========================
+    // ASSINATURA
+    // =========================
+
+    // Calcula altura disponível (não invadir o rodapé)
+    const alturaPaginaCalc = doc.internal.pageSize.height;
+    const limiteRodape = alturaPaginaCalc - 35;
+    let assinaturaY = Math.max(observacoesY + 15, finalY + 50);
+
+    // Se a posição ultrapassar o rodapé, joga para próxima página
+    if (assinaturaY > limiteRodape) {
+      doc.addPage();
+      assinaturaY = 30;
+    }
+
+    doc.setTextColor(
+      azulEscuro[0],
+      azulEscuro[1],
+      azulEscuro[2]
+    );
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+
+    // Linhas de assinatura (cliente + empresa)
+    const linhaY = assinaturaY + 18;
+    doc.setDrawColor(150, 150, 150);
+    doc.setLineWidth(0.3);
+
+    // Linha do cliente
+    doc.line(20, linhaY, 100, linhaY);
+    // Linha da empresa
+    doc.line(115, linhaY, 195, linhaY);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(90, 90, 90);
+    doc.text("Cliente (de acordo)", 20, linhaY + 5);
+    doc.text("Empresa / Responsável", 115, linhaY + 5);
+
+    // Data ao lado das linhas
+    doc.setFontSize(8);
+    doc.setTextColor(150, 150, 150);
+    doc.text("Data: ___ / ___ / ______", 20, linhaY + 12);
+    doc.text("Data: ___ / ___ / ______", 115, linhaY + 12);
+
+    // =========================
     // RODAPÉ
     // =========================
 
@@ -1123,7 +1160,7 @@ const cliente = clienteCompleto?.nome || "Cliente";
     doc.setFontSize(10);
 
     doc.text(
-      "RJ ELÉTRICA",
+      (empresa?.nome || "Portal Elétrico").toUpperCase(),
       105,
       alturaPagina - 15,
       { align: "center" }
@@ -1133,7 +1170,7 @@ const cliente = clienteCompleto?.nome || "Cliente";
     doc.setFontSize(8);
 
     doc.text(
-      "Orçamento de serviços elétricos",
+      empresa?.slogan || "Gestão para eletricistas",
       105,
       alturaPagina - 9,
       { align: "center" }
