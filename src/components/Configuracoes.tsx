@@ -8,6 +8,10 @@ import {
   Save,
   CheckCircle2,
   X,
+  Mail,
+  Phone,
+  MapPin,
+  FileText,
 } from "lucide-react";
 import { useEmpresa } from "../contexts/EmpresaContext";
 import { useToast } from "../components/ui/toast";
@@ -37,6 +41,10 @@ export default function Configuracoes(): ReactElement {
 
   const [nome, setNome] = useState("");
   const [slogan, setSlogan] = useState("");
+  const [emailContato, setEmailContato] = useState("");
+  const [telefoneContato, setTelefoneContato] = useState("");
+  const [cnpj, setCnpj] = useState("");
+  const [enderecoEmpresa, setEnderecoEmpresa] = useState("");
   const [corPrimaria, setCorPrimaria] = useState("#FFD60A");
   const [corSecundaria, setCorSecundaria] = useState("#0D1B2A");
   const [salvando, setSalvando] = useState(false);
@@ -49,6 +57,10 @@ export default function Configuracoes(): ReactElement {
     if (empresa) {
       setNome(empresa.nome || "");
       setSlogan(empresa.slogan || "");
+      setEmailContato(empresa.email_contato || "");
+      setTelefoneContato(empresa.telefone_contato || "");
+      setCnpj(empresa.cnpj || "");
+      setEnderecoEmpresa(empresa.endereco || "");
       setCorPrimaria(empresa.cor_primaria || "#FFD60A");
       setCorSecundaria(empresa.cor_secundaria || "#0D1B2A");
     }
@@ -65,6 +77,10 @@ export default function Configuracoes(): ReactElement {
       await atualizar({
         nome: nome.trim(),
         slogan: slogan.trim() || null,
+        email_contato: emailContato.trim() || null,
+        telefone_contato: telefoneContato.trim() || null,
+        cnpj: cnpj.trim() || null,
+        endereco: enderecoEmpresa.trim() || null,
         cor_primaria: corPrimaria,
         cor_secundaria: corSecundaria,
       });
@@ -214,6 +230,120 @@ export default function Configuracoes(): ReactElement {
               <p className="text-xs text-gray-500 mt-1">
                 Aparece embaixo do nome na sidebar
               </p>
+            </div>
+          </div>
+        </section>
+
+        {/* Contato e endereço */}
+        <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="px-6 py-5 border-b border-gray-100 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+              <Phone
+                className="w-5 h-5 text-blue-600"
+              />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">
+                Contato e endereço
+              </h2>
+              <p className="text-sm text-gray-500">
+                Informações que aparecem nos PDFs e para clientes
+              </p>
+            </div>
+          </div>
+
+          <div className="px-6 py-5 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label
+                  htmlFor="empresa_email"
+                  className="block text-sm font-semibold text-gray-700 mb-2"
+                >
+                  <Mail className="w-4 h-4 inline mr-1" />
+                  E-mail
+                </label>
+                <input
+                  id="empresa_email"
+                  type="email"
+                  value={emailContato}
+                  onChange={(e) => setEmailContato(e.target.value)}
+                  placeholder="contato@minhaempresa.com.br"
+                  className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:border-transparent transition"
+                  style={
+                    {
+                      "--tw-ring-color": "var(--color-primary)",
+                    } as React.CSSProperties
+                  }
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="empresa_telefone"
+                  className="block text-sm font-semibold text-gray-700 mb-2"
+                >
+                  <Phone className="w-4 h-4 inline mr-1" />
+                  Telefone / WhatsApp
+                </label>
+                <input
+                  id="empresa_telefone"
+                  type="text"
+                  value={telefoneContato}
+                  onChange={(e) => setTelefoneContato(e.target.value)}
+                  placeholder="(11) 98765-4321"
+                  className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:border-transparent transition"
+                  style={
+                    {
+                      "--tw-ring-color": "var(--color-primary)",
+                    } as React.CSSProperties
+                  }
+                />
+              </div>
+            </div>
+
+            <div>
+              <label
+                htmlFor="empresa_cnpj"
+                className="block text-sm font-semibold text-gray-700 mb-2"
+              >
+                <FileText className="w-4 h-4 inline mr-1" />
+                CNPJ / CPF
+              </label>
+              <input
+                id="empresa_cnpj"
+                type="text"
+                value={cnpj}
+                onChange={(e) => setCnpj(e.target.value)}
+                placeholder="00.000.000/0001-00"
+                className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:border-transparent transition"
+                style={
+                  {
+                    "--tw-ring-color": "var(--color-primary)",
+                  } as React.CSSProperties
+                  }
+              />
+            </div>
+
+            <div>
+              <label
+                htmlFor="empresa_endereco"
+                className="block text-sm font-semibold text-gray-700 mb-2"
+              >
+                <MapPin className="w-4 h-4 inline mr-1" />
+                Endereço
+              </label>
+              <input
+                id="empresa_endereco"
+                type="text"
+                value={enderecoEmpresa}
+                onChange={(e) => setEnderecoEmpresa(e.target.value)}
+                placeholder="Rua, número, bairro, cidade"
+                className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:border-transparent transition"
+                style={
+                  {
+                    "--tw-ring-color": "var(--color-primary)",
+                  } as React.CSSProperties
+                }
+              />
             </div>
           </div>
         </section>
@@ -471,6 +601,10 @@ export default function Configuracoes(): ReactElement {
                 if (empresa) {
                   setNome(empresa.nome);
                   setSlogan(empresa.slogan || "");
+                  setEmailContato(empresa.email_contato || "");
+                  setTelefoneContato(empresa.telefone_contato || "");
+                  setCnpj(empresa.cnpj || "");
+                  setEnderecoEmpresa(empresa.endereco || "");
                   setCorPrimaria(empresa.cor_primaria || "#FFD60A");
                   setCorSecundaria(
                     empresa.cor_secundaria || "#0D1B2A"

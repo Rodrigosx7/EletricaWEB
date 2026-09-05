@@ -19,6 +19,10 @@ export type Empresa = {
   logo_url: string | null;
   cor_primaria: string;
   cor_secundaria: string;
+  email_contato: string | null;
+  telefone_contato: string | null;
+  cnpj: string | null;
+  endereco: string | null;
 };
 
 type EmpresaContextValue = {

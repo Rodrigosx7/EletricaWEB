@@ -1094,7 +1094,7 @@ const cliente = clienteCompleto?.nome || "Cliente";
 
     // Calcula altura disponível (não invadir o rodapé)
     const alturaPaginaCalc = doc.internal.pageSize.height;
-    const limiteRodape = alturaPaginaCalc - 35;
+    const limiteRodape = alturaPaginaCalc - 42;
     let assinaturaY = Math.max(observacoesY + 15, finalY + 50);
 
     // Se a posição ultrapassar o rodapé, joga para próxima página
@@ -1148,9 +1148,9 @@ const cliente = clienteCompleto?.nome || "Cliente";
 
     doc.rect(
       0,
-      alturaPagina - 25,
+      alturaPagina - 32,
       210,
-      25,
+      32,
       "F"
     );
 
@@ -1162,19 +1162,37 @@ const cliente = clienteCompleto?.nome || "Cliente";
     doc.text(
       (empresa?.nome || "Portal Elétrico").toUpperCase(),
       105,
-      alturaPagina - 15,
+      alturaPagina - 22,
       { align: "center" }
     );
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
 
-    doc.text(
-      empresa?.slogan || "Gestão para eletricistas",
-      105,
-      alturaPagina - 9,
-      { align: "center" }
-    );
+    // Linha 1 do rodapé: slogan (ou texto genérico)
+    const linhaRodape1 = empresa?.slogan || "Gestão para eletricistas";
+    doc.text(linhaRodape1, 105, alturaPagina - 16, { align: "center" });
+
+    // Linha 2 do rodapé: contato (e-mail, telefone)
+    const partesContato: string[] = [];
+    if (empresa?.email_contato) partesContato.push(empresa.email_contato);
+    if (empresa?.telefone_contato)
+      partesContato.push(empresa.telefone_contato);
+    if (partesContato.length > 0) {
+      doc.text(partesContato.join(" · "), 105, alturaPagina - 11, {
+        align: "center",
+      });
+    }
+
+    // Linha 3 do rodapé: CNPJ + endereço (apenas se preenchidos)
+    const partesDoc: string[] = [];
+    if (empresa?.cnpj) partesDoc.push(`CNPJ: ${empresa.cnpj}`);
+    if (empresa?.endereco) partesDoc.push(empresa.endereco);
+    if (partesDoc.length > 0) {
+      doc.text(partesDoc.join(" · "), 105, alturaPagina - 6, {
+        align: "center",
+      });
+    }
 
     // =========================
     // SALVAR PDF
