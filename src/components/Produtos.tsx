@@ -9,6 +9,8 @@ import {
   DollarSign,
   Boxes,
   Tag,
+  ArrowDownToLine,
+  ArrowUpFromLine,
 } from "lucide-react";
 import { supabase } from "../supabase";
 import ConfirmDialog from "./ConfirmDialog";
@@ -99,6 +101,34 @@ export default function Produtos() {
   const [produtoParaExcluir, setProdutoParaExcluir] =
     useState<Produto | null>(null);
   const [excluindo, setExcluindo] = useState(false);
+
+  // Movimentação de estoque
+  const [produtoMovimentando, setProdutoMovimentando] =
+    useState<Produto | null>(null);
+  const [tipoMov, setTipoMov] = useState<"entrada" | "saida" | "ajuste">(
+    "entrada"
+  );
+  const [qtdMov, setQtdMov] = useState("");
+  const [obsMov, setObsMov] = useState("");
+  const [salvandoMov, setSalvandoMov] = useState(false);
+
+  // Histórico de movimentações
+  const [produtoHistorico, setProdutoHistorico] = useState<Produto | null>(
+    null
+  );
+  const [historico, setHistorico] = useState<
+    Array<{
+      id: number;
+      tipo: string;
+      quantidade: number;
+      estoque_anterior: number;
+      estoque_posterior: number;
+      observacao: string | null;
+      ordem_servico_id: number | null;
+      created_at: string;
+    }>
+  >([]);
+  const [carregandoHistorico, setCarregandoHistorico] = useState(false);
 
   const [filtroEstoqueBaixo, setFiltroEstoqueBaixo] =
     useState(false);
@@ -289,6 +319,99 @@ export default function Produtos() {
     );
     mostrarToast("Produto excluído com sucesso.", "sucesso");
     setProdutoParaExcluir(null);
+  }
+
+  function abrirMovimentacao(produto: Produto) {
+    setProdutoMovimentando(produto);
+    setTipoMov("entrada");
+    setQtdMov("");
+    setObsMov("");
+  }
+
+  function fecharMovimentacao() {
+    setProdutoMovimentando(null);
+    setQtdMov("");
+    setObsMov("");
+  }
+
+  async function salvarMovimentacao() {
+    if (!produtoMovimentando || !usuario) return;
+
+    const quantidade = Number(qtdMov.replace(",", "."));
+    if (!quantidade || quantidade <= 0) {
+      mostrarToast("Digite uma quantidade válida.", "alerta");
+      return;
+    }
+
+    setSalvandoMov(true);
+
+    const { error } = await supabase.rpc(
+      "atualizar_estoque_produto",
+      {
+        p_produto_id: produtoMovimentando.id,
+        p_tipo: tipoMov,
+        p_quantidade: quantidade,
+        p_observacao: obsMov.trim() || null,
+        p_ordem_servico_id: null,
+      }
+    );
+
+    setSalvandoMov(false);
+
+    if (error) {
+      console.error("Erro ao movimentar estoque:", error);
+      const mensagem =
+        error.message.includes("Estoque insuficiente")
+          ? "Estoque insuficiente para essa saída."
+          : "Erro ao movimentar estoque.";
+      mostrarToast(mensagem, "erro");
+      return;
+    }
+
+    mostrarToast(
+      `Estoque ${
+        tipoMov === "entrada"
+          ? "adicionado"
+          : tipoMov === "saida"
+          ? "removido"
+          : "ajustado"
+      } com sucesso!`,
+      "sucesso"
+    );
+
+    fecharMovimentacao();
+    await carregarProdutos(usuario.id);
+  }
+
+  async function abrirHistorico(produto: Produto) {
+    setProdutoHistorico(produto);
+    setCarregandoHistorico(true);
+
+    const { data, error } = await supabase
+      .from("estoque_movimentacoes")
+      .select(
+        "id, tipo, quantidade, estoque_anterior, estoque_posterior, observacao, ordem_servico_id, created_at"
+      )
+      .eq("user_id", usuario!.id)
+      .eq("produto_id", produto.id)
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    setCarregandoHistorico(false);
+
+    if (error) {
+      console.error("Erro ao carregar histórico:", error);
+      mostrarToast("Erro ao carregar histórico.", "erro");
+      setHistorico([]);
+      return;
+    }
+
+    setHistorico(data || []);
+  }
+
+  function fecharHistorico() {
+    setProdutoHistorico(null);
+    setHistorico([]);
   }
 
   const produtosEstoqueBaixo = produtos.filter(
@@ -623,7 +746,30 @@ export default function Produtos() {
                         </td>
 
                         <td className="px-6 py-4">
-                          <div className="flex justify-end gap-2">
+                          <div className="flex justify-end gap-2 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                abrirMovimentacao(produto)
+                              }
+                              title="Movimentar estoque"
+                              aria-label="Movimentar estoque"
+                              className="px-3 py-2 rounded-lg text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 transition inline-flex items-center gap-1"
+                            >
+                              <Boxes className="w-3.5 h-3.5" />
+                              Movimentar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                abrirHistorico(produto)
+                              }
+                              title="Ver histórico"
+                              aria-label="Ver histórico de movimentações"
+                              className="px-3 py-2 rounded-lg text-sm font-medium text-purple-600 bg-purple-50 hover:bg-purple-100 transition"
+                            >
+                              Histórico
+                            </button>
                             <button
                               type="button"
                               onClick={() =>
@@ -931,6 +1077,263 @@ export default function Produtos() {
         aoConfirmar={confirmarExclusao}
         aoCancelar={() => setProdutoParaExcluir(null)}
       />
+
+      {/* Modal de Movimentação de Estoque */}
+      {produtoMovimentando && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">
+                  Movimentar estoque
+                </h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  {produtoMovimentando.nome} — Estoque atual:{" "}
+                  <strong className="text-gray-900">
+                    {produtoMovimentando.estoque}{" "}
+                    {produtoMovimentando.unidade}
+                  </strong>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={fecharMovimentacao}
+                className="text-gray-400 hover:text-gray-700 transition p-1 rounded-lg hover:bg-gray-100"
+                aria-label="Fechar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Tipo de movimentação
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTipoMov("entrada")}
+                    className={`p-3 rounded-lg border-2 text-sm font-medium transition ${
+                      tipoMov === "entrada"
+                        ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                        : "border-gray-200 text-gray-600 hover:border-gray-300"
+                    }`}
+                  >
+                    <ArrowDownToLine className="w-4 h-4 mx-auto mb-1" />
+                    Entrada
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTipoMov("saida")}
+                    className={`p-3 rounded-lg border-2 text-sm font-medium transition ${
+                      tipoMov === "saida"
+                        ? "border-red-500 bg-red-50 text-red-700"
+                        : "border-gray-200 text-gray-600 hover:border-gray-300"
+                    }`}
+                  >
+                    <ArrowUpFromLine className="w-4 h-4 mx-auto mb-1" />
+                    Saída
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTipoMov("ajuste")}
+                    className={`p-3 rounded-lg border-2 text-sm font-medium transition ${
+                      tipoMov === "ajuste"
+                        ? "border-yellow-500 bg-yellow-50 text-yellow-700"
+                        : "border-gray-200 text-gray-600 hover:border-gray-300"
+                    }`}
+                  >
+                    <Boxes className="w-4 h-4 mx-auto mb-1" />
+                    Ajuste
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="mov_qtd"
+                  className="block text-sm font-semibold text-gray-700 mb-2"
+                >
+                  {tipoMov === "ajuste"
+                    ? "Estoque final desejado"
+                    : "Quantidade"}
+                </label>
+                <input
+                  id="mov_qtd"
+                  type="text"
+                  inputMode="decimal"
+                  value={qtdMov}
+                  onChange={(e) => setQtdMov(e.target.value)}
+                  placeholder={tipoMov === "ajuste" ? "0" : "Ex: 10"}
+                  className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A] focus:border-transparent transition"
+                />
+                {tipoMov === "entrada" && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Será somado ao estoque atual.
+                  </p>
+                )}
+                {tipoMov === "saida" && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Será subtraído do estoque atual.
+                  </p>
+                )}
+                {tipoMov === "ajuste" && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    O estoque será definido exatamente neste valor.
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label
+                  htmlFor="mov_obs"
+                  className="block text-sm font-semibold text-gray-700 mb-2"
+                >
+                  Observação
+                </label>
+                <textarea
+                  id="mov_obs"
+                  value={obsMov}
+                  onChange={(e) => setObsMov(e.target.value)}
+                  rows={2}
+                  placeholder="Ex: Compra do fornecedor X, ajuste de inventário..."
+                  className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A] focus:border-transparent transition resize-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={fecharMovimentacao}
+                  className="px-5 py-3 rounded-lg border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={salvarMovimentacao}
+                  disabled={salvandoMov}
+                  className="px-5 py-3 rounded-lg bg-[#FFD60A] text-[#0D1B2A] font-bold hover:bg-yellow-400 disabled:opacity-60 transition shadow-lg shadow-yellow-500/20 inline-flex items-center gap-2"
+                >
+                  {salvandoMov && (
+                    <div className="w-4 h-4 border-2 border-[#0D1B2A]/30 border-t-[#0D1B2A] rounded-full animate-spin" />
+                  )}
+                  {salvandoMov ? "Salvando..." : "Confirmar"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Histórico de Movimentações */}
+      {produtoHistorico && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">
+                  Histórico de movimentações
+                </h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  {produtoHistorico.nome} — Últimas 50 movimentações
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={fecharHistorico}
+                className="text-gray-400 hover:text-gray-700 transition p-1 rounded-lg hover:bg-gray-100"
+                aria-label="Fechar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto">
+              {carregandoHistorico ? (
+                <div className="text-center text-gray-500 py-8">
+                  Carregando...
+                </div>
+              ) : historico.length === 0 ? (
+                <div className="text-center text-gray-500 py-8">
+                  Nenhuma movimentação registrada para este produto.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {historico.map((mov) => (
+                    <div
+                      key={mov.id}
+                      className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg"
+                    >
+                      <div
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                          mov.tipo === "entrada"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : mov.tipo === "saida"
+                            ? "bg-red-100 text-red-700"
+                            : "bg-yellow-100 text-yellow-700"
+                        }`}
+                      >
+                        {mov.tipo === "entrada" ? (
+                          <ArrowDownToLine className="w-4 h-4" />
+                        ) : mov.tipo === "saida" ? (
+                          <ArrowUpFromLine className="w-4 h-4" />
+                        ) : (
+                          <Boxes className="w-4 h-4" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <p className="font-medium text-gray-900">
+                            {mov.tipo === "entrada"
+                              ? "Entrada"
+                              : mov.tipo === "saida"
+                              ? "Saída"
+                              : "Ajuste"}{" "}
+                            de{" "}
+                            <strong>
+                              {mov.quantidade}{" "}
+                              {produtoHistorico.unidade}
+                            </strong>
+                          </p>
+                          <span className="text-xs text-gray-500">
+                            {new Date(mov.created_at).toLocaleString(
+                              "pt-BR"
+                            )}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-600 mt-0.5">
+                          {mov.estoque_anterior} →{" "}
+                          {mov.estoque_posterior}{" "}
+                          {produtoHistorico.unidade}
+                          {mov.observacao && (
+                            <span className="block text-xs text-gray-500 mt-1">
+                              {mov.observacao}
+                              {mov.ordem_servico_id &&
+                                ` (OS #${mov.ordem_servico_id})`}
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-100 flex justify-end">
+              <button
+                type="button"
+                onClick={fecharHistorico}
+                className="px-5 py-2 rounded-lg border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -33,6 +33,8 @@ type Produto = {
   nome: string;
   preco_venda: number;
   unidade: string;
+  estoque?: number;
+  estoque_minimo?: number;
 };
 
 type ItemOrcamento = {
@@ -260,6 +262,22 @@ function Orcamentos() {
       );
 
       if (!produto) return;
+
+      // Validação de estoque (não bloqueia, mas avisa)
+      const estoqueApos = Number(produto.estoque) - qtd;
+      if (estoqueApos < 0) {
+        mostrarToast(
+          `Estoque insuficiente. Disponível: ${produto.estoque} ${produto.unidade}`,
+          "erro"
+        );
+        return;
+      }
+      if (estoqueApos <= Number(produto.estoque_minimo)) {
+        mostrarToast(
+          `Atenção: este item deixará o estoque baixo (${estoqueApos} ${produto.unidade} restantes).`,
+          "alerta"
+        );
+      }
 
       const novoItem: ItemOrcamento = {
         id: crypto.randomUUID(),

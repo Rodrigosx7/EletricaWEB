@@ -73,6 +73,15 @@ export default function Dashboard({ setPagina }: DashboardProps) {
   const [osRecentes, setOsRecentes] = useState<OSRecente[]>([]);
 
   useEffect(() => {
+    carregar();
+
+    // Recarrega dados sempre que o usuário volta para a aba do navegador
+    function onFocus() {
+      carregar();
+    }
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+
     async function carregar() {
       const {
         data: { user },
