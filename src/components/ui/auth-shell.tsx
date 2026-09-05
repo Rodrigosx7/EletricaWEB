@@ -1,5 +1,4 @@
 import type { ReactElement, ReactNode } from "react";
-import { SmokeyBackground } from "./login-form";
 
 interface AuthShellProps {
   children: ReactNode;
@@ -7,15 +6,18 @@ interface AuthShellProps {
 
 /**
  * Layout compartilhado para todas as telas de autenticação.
- * Centraliza o fundo WebGL smokey e o container glassmorphism.
+ * Fundo escuro limpo com halo amarelo sutil (sem animação WebGL pesada).
  */
 export function AuthShell({ children }: AuthShellProps): ReactElement {
   return (
     <main className="relative w-screen h-screen bg-[#0D1B2A] overflow-hidden">
-      <SmokeyBackground
-        color="#FFD60A"
-        backdropBlurAmount="sm"
-        className="absolute inset-0"
+      {/* Halo amarelo suave no topo (decorativo, não atrapalha a leitura) */}
+      <div
+        className="absolute -top-40 left-1/2 -translate-x-1/2 w-[800px] h-[400px] rounded-full blur-3xl pointer-events-none"
+        style={{
+          background:
+            "radial-gradient(closest-side, rgba(255, 214, 10, 0.10), transparent 70%)",
+        }}
       />
       <div className="relative z-10 flex items-center justify-center w-full h-full p-4">
         {children}
