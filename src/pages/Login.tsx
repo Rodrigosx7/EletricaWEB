@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { SignInFlo } from "../components/ui/sign-in-flo";
+import { SignInSplit } from "../components/ui/sign-in-split";
+import { AuthShellSplit } from "../components/ui/auth-shell";
+import AuthHero from "../components/ui/auth-hero";
 import RecuperacaoSenha from "./RecuperacaoSenha";
 import { supabase } from "../supabase";
 
@@ -34,10 +36,15 @@ function Login() {
   }
 
   return (
-    <SignInFlo
-      aoIrParaRecuperacao={() => setTela("recuperacao")}
-      // Sucesso é detectado pelo App.tsx via onAuthStateChange — sem prop necessária
-    />
+    <AuthShellSplit>
+      {/* Lado esquerdo: Hero */}
+      <div className="flex items-center justify-center">
+        <AuthHero />
+      </div>
+
+      {/* Lado direito: Formulário */}
+      <SignInSplit aoIrParaRecuperacao={() => setTela("recuperacao")} />
+    </AuthShellSplit>
   );
 }
 

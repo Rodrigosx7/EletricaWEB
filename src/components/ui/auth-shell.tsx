@@ -26,6 +26,27 @@ export function AuthShell({ children }: AuthShellProps): ReactElement {
   );
 }
 
+/**
+ * Layout split-screen com hero à esquerda e form à direita.
+ * Esconde o hero em telas pequenas (mobile) — mostra só o form.
+ */
+export function AuthShellSplit({ children }: AuthShellProps): ReactElement {
+  return (
+    <main className="relative w-screen min-h-screen lg:h-screen bg-[#0D1B2A] overflow-y-auto lg:overflow-hidden">
+      <div
+        className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full blur-3xl pointer-events-none opacity-20"
+        style={{
+          background:
+            "radial-gradient(closest-side, #FFD60A, transparent 70%)",
+        }}
+      />
+      <div className="relative z-10 grid grid-cols-1 lg:grid-cols-2 min-h-screen lg:h-full">
+        {children}
+      </div>
+    </main>
+  );
+}
+
 interface AuthCardProps {
   children: ReactNode;
 }
