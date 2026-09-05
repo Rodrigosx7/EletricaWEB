@@ -142,6 +142,13 @@ export default function Financeiro(): ReactElement {
       }
     }
     carregar();
+
+    // Auto-refresh quando volta para a aba
+    function onFocus() {
+      carregar();
+    }
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
   }, []);
 
   async function carregarMovimentos(userId: string) {
@@ -672,6 +679,12 @@ export default function Financeiro(): ReactElement {
                         {mov.forma_pagamento && (
                           <p className="text-xs text-gray-500 mt-0.5">
                             via {mov.forma_pagamento}
+                          </p>
+                        )}
+                        {mov.ordem_servico_id && (
+                          <p className="text-xs text-emerald-600 mt-0.5">
+                            ↳ Receita automática da OS #
+                            {mov.ordem_servico_id}
                           </p>
                         )}
                       </td>

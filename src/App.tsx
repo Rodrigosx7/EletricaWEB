@@ -218,7 +218,9 @@ function AppInterno() {
         {pagina === "clientes" && <Clientes />}
 
         {/* Orçamentos */}
-        {pagina === "orcamentos" && <Orcamentos />}
+        {pagina === "orcamentos" && (
+          <Orcamentos setPagina={setPagina} />
+        )}
 
         {/* Ordens de Serviço */}
         {pagina === "ordens-servico" && <OrdensServico />}

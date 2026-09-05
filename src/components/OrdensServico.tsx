@@ -7,6 +7,10 @@ import {
   Trash2,
   CheckCircle2,
   RotateCcw,
+  History,
+  Clock,
+  Boxes,
+  X,
 } from "lucide-react";
 import ConfirmDialog from "./ConfirmDialog";
 import { useToast } from "./ui/toast";
@@ -105,6 +109,34 @@ export default function OrdensServico() {
   const [ordemParaReabrir, setOrdemParaReabrir] =
     useState<OrdemServico | null>(null);
   const [reabrindo, setReabrindo] = useState(false);
+
+  // Histórico de status + movimentações de estoque
+  const [ordemHistorico, setOrdemHistorico] = useState<OrdemServico | null>(
+    null
+  );
+  const [historicoStatus, setHistoricoStatus] = useState<
+    Array<{
+      id: number;
+      status_anterior: string | null;
+      status_novo: string;
+      observacao: string | null;
+      created_at: string;
+    }>
+  >([]);
+  const [historicoEstoque, setHistoricoEstoque] = useState<
+    Array<{
+      id: number;
+      produto_id: number | null;
+      produto_nome: string | null;
+      tipo: string;
+      quantidade: number;
+      estoque_anterior: number;
+      estoque_posterior: number;
+      observacao: string | null;
+      created_at: string;
+    }>
+  >([]);
+  const [carregandoHistorico, setCarregandoHistorico] = useState(false);
 
   const { mostrarToast } = useToast();
 
@@ -877,6 +909,85 @@ export default function OrdensServico() {
     }
   }
 
+  async function abrirHistorico(ordem: OrdemServico) {
+    setOrdemHistorico(ordem);
+    setCarregandoHistorico(true);
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      mostrarToast("Usuário não autenticado.", "erro");
+      setCarregandoHistorico(false);
+      return;
+    }
+
+    const [statusRes, estoqueRes] = await Promise.all([
+      supabase
+        .from("historico_status_os")
+        .select("id, status_anterior, status_novo, observacao, created_at")
+        .eq("user_id", user.id)
+        .eq("ordem_servico_id", ordem.id)
+        .order("created_at", { ascending: false })
+        .limit(50),
+      supabase
+        .from("estoque_movimentacoes")
+        .select(
+          "id, produto_id, tipo, quantidade, estoque_anterior, estoque_posterior, observacao, created_at, produtos(nome)"
+        )
+        .eq("user_id", user.id)
+        .eq("ordem_servico_id", ordem.id)
+        .order("created_at", { ascending: false })
+        .limit(50),
+    ]);
+
+    setCarregandoHistorico(false);
+
+    if (statusRes.error) {
+      console.error("Erro ao carregar histórico de status:", statusRes.error);
+    }
+    if (estoqueRes.error) {
+      console.error("Erro ao carregar histórico de estoque:", estoqueRes.error);
+    }
+
+    setHistoricoStatus(statusRes.data || []);
+
+    // Mapear produtos (join pode não vir completo dependendo da config)
+    type MovComProduto = {
+      id: number;
+      produto_id: number | null;
+      tipo: string;
+      quantidade: number;
+      estoque_anterior: number;
+      estoque_posterior: number;
+      observacao: string | null;
+      created_at: string;
+      produtos: { nome: string } | { nome: string }[] | null;
+    };
+    const movsRaw = (estoqueRes.data as unknown as MovComProduto[]) || [];
+    setHistoricoEstoque(
+      movsRaw.map((m) => ({
+        id: m.id,
+        produto_id: m.produto_id,
+        produto_nome: Array.isArray(m.produtos)
+          ? m.produtos[0]?.nome ?? null
+          : m.produtos?.nome ?? null,
+        tipo: m.tipo,
+        quantidade: m.quantidade,
+        estoque_anterior: m.estoque_anterior,
+        estoque_posterior: m.estoque_posterior,
+        observacao: m.observacao,
+        created_at: m.created_at,
+      }))
+    );
+  }
+
+  function fecharHistorico() {
+    setOrdemHistorico(null);
+    setHistoricoStatus([]);
+    setHistoricoEstoque([]);
+  }
+
   async function confirmarExclusao() {
     if (!ordemParaExcluir) return;
 
@@ -1122,6 +1233,19 @@ export default function OrdensServico() {
                       >
                         <Eye className="w-4 h-4" />
                         Ver
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          abrirHistorico(ordem)
+                        }
+                        title="Histórico"
+                        aria-label="Ver histórico da O.S."
+                        className="px-3 py-2 text-sm text-purple-600 hover:bg-purple-50 rounded-lg inline-flex items-center gap-1 transition"
+                      >
+                        <History className="w-4 h-4" />
+                        Histórico
                       </button>
 
                       <button
@@ -2235,6 +2359,169 @@ export default function OrdensServico() {
         aoConfirmar={confirmarReabertura}
         aoCancelar={() => setOrdemParaReabrir(null)}
       />
+
+      {/* Modal de Histórico da O.S. */}
+      {ordemHistorico && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">
+                  Histórico da O.S. #
+                  {String(ordemHistorico.numero).padStart(4, "0")}
+                </h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  Timeline de mudanças de status e movimentações de
+                  estoque
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={fecharHistorico}
+                className="text-gray-400 hover:text-gray-700 transition p-1 rounded-lg hover:bg-gray-100"
+                aria-label="Fechar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto">
+              {carregandoHistorico ? (
+                <div className="text-center text-gray-500 py-8">
+                  Carregando...
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Timeline de status */}
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wider mb-3 flex items-center gap-2">
+                      <Clock className="w-4 h-4" />
+                      Mudanças de status
+                    </h3>
+                    {historicoStatus.length === 0 ? (
+                      <p className="text-sm text-gray-500 italic">
+                        Nenhuma mudança registrada.
+                      </p>
+                    ) : (
+                      <div className="space-y-3 border-l-2 border-gray-200 pl-4">
+                        {historicoStatus.map((item) => (
+                          <div key={item.id} className="relative">
+                            <span className="absolute -left-[21px] top-1 w-3 h-3 rounded-full bg-[#FFD60A] border-2 border-white" />
+                            <div className="bg-gray-50 rounded-lg p-3">
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <p className="font-medium text-gray-900 text-sm">
+                                  {item.status_anterior ? (
+                                    <>
+                                      <span className="text-gray-500">
+                                        {item.status_anterior}
+                                      </span>
+                      <span className="mx-2">→</span>
+                      <span className="text-[#0D1B2A] font-bold">
+                        {item.status_novo}
+                      </span>
+                                    </>
+                                  ) : (
+                                    <span className="text-[#0D1B2A] font-bold">
+                                      {item.status_novo}
+                                    </span>
+                                  )}
+                                </p>
+                                <span className="text-xs text-gray-500">
+                                  {new Date(item.created_at).toLocaleString(
+                                    "pt-BR"
+                                  )}
+                                </span>
+                              </div>
+                              {item.observacao && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                  {item.observacao}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Movimentações de estoque */}
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wider mb-3 flex items-center gap-2">
+                      <Boxes className="w-4 h-4" />
+                      Movimentações de estoque
+                    </h3>
+                    {historicoEstoque.length === 0 ? (
+                      <p className="text-sm text-gray-500 italic">
+                        Nenhuma movimentação de estoque registrada.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {historicoEstoque.map((mov) => (
+                          <div
+                            key={mov.id}
+                            className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg"
+                          >
+                            <div
+                              className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                                mov.tipo === "entrada"
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : mov.tipo === "saida"
+                                  ? "bg-red-100 text-red-700"
+                                  : "bg-yellow-100 text-yellow-700"
+                              }`}
+                            >
+                              {mov.tipo === "entrada"
+                                ? "↓"
+                                : mov.tipo === "saida"
+                                ? "↑"
+                                : "≡"}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-gray-900 text-sm">
+                                {mov.produto_nome || "Produto"}
+                                {" — "}
+                                <strong>
+                                  {mov.tipo === "entrada" ? "+" : mov.tipo === "saida" ? "−" : ""}
+                                  {mov.quantidade}
+                                </strong>
+                              </p>
+                              <p className="text-xs text-gray-500 mt-0.5">
+                                Estoque: {mov.estoque_anterior} →{" "}
+                                {mov.estoque_posterior}
+                                <span className="ml-2 text-gray-400">
+                                  •{" "}
+                                  {new Date(mov.created_at).toLocaleString(
+                                    "pt-BR"
+                                  )}
+                                </span>
+                              </p>
+                              {mov.observacao && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                  {mov.observacao}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-100 flex justify-end">
+              <button
+                type="button"
+                onClick={fecharHistorico}
+                className="px-5 py-2 rounded-lg border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

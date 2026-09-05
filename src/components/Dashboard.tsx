@@ -13,6 +13,7 @@ type KPIs = {
   osConcluidasMes: number;
   totalClientes: number;
   totalProdutos: number;
+  totalServicos: number;
   estoqueBaixo: number;
   totalOrcamentosPendentes: number;
 };
@@ -62,6 +63,7 @@ const KPIS_INICIAIS: KPIs = {
   osConcluidasMes: 0,
   totalClientes: 0,
   totalProdutos: 0,
+  totalServicos: 0,
   estoqueBaixo: 0,
   totalOrcamentosPendentes: 0,
 };
@@ -99,6 +101,7 @@ export default function Dashboard({ setPagina }: DashboardProps) {
       const [
         clientesRes,
         produtosRes,
+        servicosRes,
         orcamentosRes,
         ordensRes,
       ] = await Promise.all([
@@ -109,6 +112,10 @@ export default function Dashboard({ setPagina }: DashboardProps) {
         supabase
           .from("produtos")
           .select("id, estoque, estoque_minimo")
+          .eq("user_id", user.id),
+        supabase
+          .from("servicos")
+          .select("id", { count: "exact", head: true })
           .eq("user_id", user.id),
         supabase
           .from("orcamentos")
@@ -156,6 +163,7 @@ export default function Dashboard({ setPagina }: DashboardProps) {
         osConcluidasMes: osConcluidasMes.length,
         totalClientes: clientesRes.count || 0,
         totalProdutos: produtos.length,
+        totalServicos: servicosRes.count || 0,
         estoqueBaixo,
         totalOrcamentosPendentes:
           orcamentosRes.count || 0,
@@ -389,10 +397,7 @@ export default function Dashboard({ setPagina }: DashboardProps) {
               Serviços
             </p>
             <p className="text-2xl font-bold text-gray-900 mt-1">
-              —
-            </p>
-            <p className="text-xs text-gray-400 mt-0.5">
-              cat. cadastradas
+              {kpis.totalServicos}
             </p>
           </button>
 

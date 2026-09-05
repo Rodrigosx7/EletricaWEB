@@ -99,7 +99,11 @@ function getLogoFromUrl(url: string): Promise<string> {
 // Fallback para /logo.png do projeto
 const FALLBACK_LOGO_URL = "/logo.png";
 
-function Orcamentos() {
+type OrcamentosProps = {
+  setPagina: (pagina: string) => void;
+};
+
+function Orcamentos({ setPagina }: OrcamentosProps) {
   const [usuario, setUsuario] = useState<User | null>(null);
   const { empresa } = useEmpresa();
 
@@ -144,6 +148,12 @@ function Orcamentos() {
 
   const [carregandoVisualizacao, setCarregandoVisualizacao] =
     useState(false);
+
+  const [osVinculada, setOsVinculada] = useState<{
+    id: number;
+    numero: number;
+    status: string;
+  } | null>(null);
 
   useEffect(() => {
     async function carregarUsuario() {
@@ -572,22 +582,34 @@ async function editarOrcamento(orcamento: Orcamento) {
     setCarregandoVisualizacao(true);
     setItensVisualizados([]);
     setOrcamentoVisualizado(orcamento);
+    setOsVinculada(null);
 
-    const { data, error } = await supabase
-      .from("orcamento_itens")
-      .select(`
-        id,
-        tipo,
-        servico_id,
-        produto_id,
-        descricao,
-        quantidade,
-        valor_unitario,
-        subtotal
-      `)
-      .eq("orcamento_id", orcamento.id)
-      .eq("user_id", usuario.id)
-      .order("id");
+    const [itensRes, osRes] = await Promise.all([
+      supabase
+        .from("orcamento_itens")
+        .select(`
+          id,
+          tipo,
+          servico_id,
+          produto_id,
+          descricao,
+          quantidade,
+          valor_unitario,
+          subtotal
+        `)
+        .eq("orcamento_id", orcamento.id)
+        .eq("user_id", usuario.id)
+        .order("id"),
+      supabase
+        .from("ordens_servico")
+        .select("id, numero, status")
+        .eq("orcamento_id", orcamento.id)
+        .eq("user_id", usuario.id)
+        .maybeSingle(),
+    ]);
+
+    const data = itensRes.data;
+    const error = itensRes.error;
 
     if (error) {
       console.error("Erro ao carregar itens:", error);
@@ -602,12 +624,14 @@ async function editarOrcamento(orcamento: Orcamento) {
     }
 
     setItensVisualizados((data as ItemOrcamento[]) || []);
+    setOsVinculada(osRes.data);
     setCarregandoVisualizacao(false);
   }
 
   function fecharVisualizacao() {
     setOrcamentoVisualizado(null);
     setItensVisualizados([]);
+    setOsVinculada(null);
     setCarregandoVisualizacao(false);
   }
 
@@ -2236,6 +2260,22 @@ const cliente = clienteCompleto?.nome || "Cliente";
               >
                 Fechar
               </button>
+
+              {osVinculada && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    fecharVisualizacao();
+                    setPagina("ordens-servico");
+                  }}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition"
+                >
+                  🔧 Ir para OS #{String(osVinculada.numero).padStart(4, "0")}
+                  <span className="text-xs opacity-75">
+                    ({osVinculada.status})
+                  </span>
+                </button>
+              )}
 
               <button
   onClick={() => gerarPDF(orcamentoVisualizado)}

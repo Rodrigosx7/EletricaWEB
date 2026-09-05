@@ -149,6 +149,13 @@ export default function Produtos() {
     }
 
     iniciar();
+
+    // Auto-refresh quando volta para a aba
+    function onFocus() {
+      iniciar();
+    }
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
   }, []);
 
   async function carregarProdutos(userId: string) {
