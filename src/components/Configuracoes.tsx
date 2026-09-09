@@ -195,7 +195,7 @@ export default function Configuracoes(): ReactElement {
                 value={nome}
                 onChange={(e) => setNome(e.target.value)}
                 placeholder="Ex: RJ Elétrica, Silva Instalações..."
-                className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:border-transparent transition"
+                className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none transition"
                 style={
                   {
                     "--tw-ring-color": "var(--color-primary)",
@@ -220,7 +220,7 @@ export default function Configuracoes(): ReactElement {
                 value={slogan}
                 onChange={(e) => setSlogan(e.target.value)}
                 placeholder="Ex: Serviços elétricos com qualidade"
-                className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:border-transparent transition"
+                className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none transition"
                 style={
                   {
                     "--tw-ring-color": "var(--color-primary)",
@@ -268,7 +268,7 @@ export default function Configuracoes(): ReactElement {
                   value={emailContato}
                   onChange={(e) => setEmailContato(e.target.value)}
                   placeholder="contato@minhaempresa.com.br"
-                  className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:border-transparent transition"
+                  className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none transition"
                   style={
                     {
                       "--tw-ring-color": "var(--color-primary)",
@@ -290,7 +290,7 @@ export default function Configuracoes(): ReactElement {
                   value={telefoneContato}
                   onChange={(e) => setTelefoneContato(e.target.value)}
                   placeholder="(11) 98765-4321"
-                  className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:border-transparent transition"
+                  className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none transition"
                   style={
                     {
                       "--tw-ring-color": "var(--color-primary)",
@@ -314,7 +314,7 @@ export default function Configuracoes(): ReactElement {
                 value={cnpj}
                 onChange={(e) => setCnpj(e.target.value)}
                 placeholder="00.000.000/0001-00"
-                className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:border-transparent transition"
+                className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none transition"
                 style={
                   {
                     "--tw-ring-color": "var(--color-primary)",
@@ -337,7 +337,7 @@ export default function Configuracoes(): ReactElement {
                 value={enderecoEmpresa}
                 onChange={(e) => setEnderecoEmpresa(e.target.value)}
                 placeholder="Rua, número, bairro, cidade"
-                className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:border-transparent transition"
+                className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none transition"
                 style={
                   {
                     "--tw-ring-color": "var(--color-primary)",

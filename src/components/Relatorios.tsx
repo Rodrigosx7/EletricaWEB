@@ -11,6 +11,9 @@ import {
   Award,
 } from "lucide-react";
 import { supabase } from "../supabase";
+import { STATUS_OS, STATUS_OS_VALORES, STATUS_ORCAMENTO } from "../utils/constantes";
+import { classeStatus } from "../utils/statusBadge";
+import { formatarMoeda } from "../utils/formatters";
 
 type Periodo = "mes_atual" | "ultimos_3" | "ultimos_6" | "ultimos_12" | "personalizado";
 
@@ -54,13 +57,6 @@ type Dados = {
   itens: OrcamentoItem[];
 };
 
-function formatarMoeda(valor: number): string {
-  return valor.toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
-}
-
 function inicioMes(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
 }
@@ -69,20 +65,7 @@ function dataAtual(): string {
   return new Date().toISOString().split("T")[0];
 }
 
-function corStatus(status: string): string {
-  if (status === "Aprovado" || status === "Concluída") {
-    return "bg-emerald-100 text-emerald-700";
-  }
-  if (status === "Pendente" || status === "Aberta" || status === "Em andamento") {
-    return "bg-yellow-100 text-yellow-700";
-  }
-  if (status === "Recusado" || status === "Cancelada") {
-    return "bg-red-100 text-red-700";
-  }
-  return "bg-gray-100 text-gray-700";
-}
-
-const STATUS_OS_VALIDOS = ["Aberta", "Em andamento", "Concluída", "Cancelada"];
+const STATUS_OS_VALIDOS = STATUS_OS_VALORES;
 
 export default function Relatorios(): ReactElement {
   const [carregando, setCarregando] = useState(true);
@@ -216,7 +199,7 @@ export default function Relatorios(): ReactElement {
     > = {};
 
     ordensFiltradas.forEach((o) => {
-      if (o.status === "Concluída") {
+      if (o.status === STATUS_OS.CONCLUIDA) {
         const chave = o.data_abertura.substring(0, 7); // YYYY-MM
         if (!meses[chave]) {
           const [ano, mes] = chave.split("-");
@@ -252,12 +235,12 @@ export default function Relatorios(): ReactElement {
   const topClientes = useMemo(() => {
     const mapa = new Map<number, number>();
     ordensFiltradas
-      .filter((o) => o.status === "Concluída")
+      .filter((o) => o.status === STATUS_OS.CONCLUIDA)
       .forEach((o) => {
         mapa.set(o.cliente_id, (mapa.get(o.cliente_id) || 0) + Number(o.valor_total));
       });
     orcamentosFiltrados
-      .filter((o) => o.status === "Aprovado")
+      .filter((o) => o.status === STATUS_ORCAMENTO.APROVADO)
       .forEach((o) => {
         mapa.set(o.cliente_id, (mapa.get(o.cliente_id) || 0) + Number(o.valor_total));
       });
@@ -279,7 +262,7 @@ export default function Relatorios(): ReactElement {
     // Pega os IDs dos orçamentos aprovados ou OS concluídas no período
     const orcAprovadosIds = new Set(
       orcamentosFiltrados
-        .filter((o) => o.status === "Aprovado")
+        .filter((o) => o.status === STATUS_ORCAMENTO.APROVADO)
         .map((o) => o.id)
     );
 
@@ -311,18 +294,21 @@ export default function Relatorios(): ReactElement {
   }, [dados.itens, orcamentosFiltrados]);
 
   // 5. KPIs gerais
+  const osConcluidas = useMemo(
+    () => ordensFiltradas.filter((o) => o.status === STATUS_OS.CONCLUIDA),
+    [ordensFiltradas]
+  );
+
   const kpis = useMemo(() => {
-    const receitaTotal = ordensFiltradas
-      .filter((o) => o.status === "Concluída")
-      .reduce((s, o) => s + Number(o.valor_total), 0);
+    const receitaTotal = osConcluidas.reduce(
+      (s, o) => s + Number(o.valor_total),
+      0
+    );
     const ticketMedio =
-      ordensFiltradas.filter((o) => o.status === "Concluída").length > 0
-        ? receitaTotal /
-          ordensFiltradas.filter((o) => o.status === "Concluída").length
-        : 0;
+      osConcluidas.length > 0 ? receitaTotal / osConcluidas.length : 0;
     const taxaAprovacao =
       orcamentosFiltrados.length > 0
-        ? (orcamentosFiltrados.filter((o) => o.status === "Aprovado").length /
+        ? (orcamentosFiltrados.filter((o) => o.status === STATUS_ORCAMENTO.APROVADO).length /
             orcamentosFiltrados.length) *
           100
         : 0;
@@ -335,7 +321,7 @@ export default function Relatorios(): ReactElement {
         ordensFiltradas.map((o) => o.cliente_id)
       ).size,
     };
-  }, [ordensFiltradas, orcamentosFiltrados]);
+  }, [osConcluidas, ordensFiltradas, orcamentosFiltrados]);
 
   const maxBarra =
     Math.max(...faturamentoPorMes.map((m) => m.receita), 1);
@@ -369,7 +355,7 @@ export default function Relatorios(): ReactElement {
                 id="rel_periodo"
                 value={periodo}
                 onChange={(e) => setPeriodo(e.target.value as Periodo)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 outline-none focus:ring-2 focus:ring-[#FFD60A] bg-white"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 outline-none bg-white"
               >
                 <option value="mes_atual">Mês atual</option>
                 <option value="ultimos_3">Últimos 3 meses</option>
@@ -393,7 +379,7 @@ export default function Relatorios(): ReactElement {
                   setPeriodo("personalizado");
                   setDataInicio(e.target.value);
                 }}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 outline-none focus:ring-2 focus:ring-[#FFD60A]"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 outline-none"
               />
             </div>
             <div>
@@ -411,7 +397,7 @@ export default function Relatorios(): ReactElement {
                   setPeriodo("personalizado");
                   setDataFim(e.target.value);
                 }}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 outline-none focus:ring-2 focus:ring-[#FFD60A]"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 outline-none"
               />
             </div>
             <div className="flex items-end text-sm text-gray-500">
@@ -439,7 +425,7 @@ export default function Relatorios(): ReactElement {
                   <p className="text-2xl font-bold text-emerald-600 mt-1">
                     {formatarMoeda(kpis.receitaTotal)}
                   </p>
-                  <p className="text-xs text-gray-400 mt-0.5">
+                  <p className="text-xs text-gray-500 mt-0.5">
                     OS concluídas no período
                   </p>
                 </div>
@@ -454,7 +440,7 @@ export default function Relatorios(): ReactElement {
                   <p className="text-2xl font-bold text-blue-600 mt-1">
                     {formatarMoeda(kpis.ticketMedio)}
                   </p>
-                  <p className="text-xs text-gray-400 mt-0.5">
+                  <p className="text-xs text-gray-500 mt-0.5">
                     Por OS concluída
                   </p>
                 </div>
@@ -469,7 +455,7 @@ export default function Relatorios(): ReactElement {
                   <p className="text-2xl font-bold text-yellow-600 mt-1">
                     {kpis.taxaAprovacao.toFixed(0)}%
                   </p>
-                  <p className="text-xs text-gray-400 mt-0.5">
+                  <p className="text-xs text-gray-500 mt-0.5">
                     Orçamentos aprovados
                   </p>
                 </div>
@@ -484,7 +470,7 @@ export default function Relatorios(): ReactElement {
                   <p className="text-2xl font-bold text-violet-600 mt-1">
                     {kpis.totalClientesAtendidos}
                   </p>
-                  <p className="text-xs text-gray-400 mt-0.5">
+                  <p className="text-xs text-gray-500 mt-0.5">
                     Com OS no período
                   </p>
                 </div>
@@ -498,7 +484,7 @@ export default function Relatorios(): ReactElement {
                   <h2 className="text-lg font-bold text-gray-900">
                     Faturamento por mês
                   </h2>
-                  <BarChart3 className="w-5 h-5 text-gray-400" />
+                  <BarChart3 className="w-5 h-5 text-gray-500" />
                 </div>
 
                 {faturamentoPorMes.length === 0 ? (
@@ -538,7 +524,7 @@ export default function Relatorios(): ReactElement {
                   <h2 className="text-lg font-bold text-gray-900">
                     Status das OS
                   </h2>
-                  <Wrench className="w-5 h-5 text-gray-400" />
+                  <Wrench className="w-5 h-5 text-gray-500" />
                 </div>
 
                 {totalOS === 0 ? (
@@ -554,7 +540,7 @@ export default function Relatorios(): ReactElement {
                         <div key={status}>
                           <div className="flex justify-between text-sm mb-1">
                             <span
-                              className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${corStatus(status)}`}
+                              className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${classeStatus(status)}`}
                             >
                               {status}
                             </span>
@@ -565,11 +551,11 @@ export default function Relatorios(): ReactElement {
                           <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                             <div
                               className={`h-full rounded-full transition-all duration-500 ${
-                                status === "Concluída"
+                                status === STATUS_OS.CONCLUIDA
                                   ? "bg-emerald-500"
-                                  : status === "Em andamento" || status === "Aberta"
+                                  : status === STATUS_OS.EM_ANDAMENTO || status === STATUS_OS.ABERTA
                                   ? "bg-yellow-500"
-                                  : status === "Cancelada"
+                                  : status === STATUS_OS.CANCELADA
                                   ? "bg-red-500"
                                   : "bg-gray-400"
                               }`}
@@ -608,8 +594,8 @@ export default function Relatorios(): ReactElement {
                         <div
                           className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shrink-0 ${
                             idx === 0
-                              ? "bg-yellow-100 text-yellow-700"
-                              : "bg-gray-100 text-gray-700"
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-slate-100 text-slate-700"
                           }`}
                         >
                           {idx + 1}
@@ -644,7 +630,7 @@ export default function Relatorios(): ReactElement {
                   <h2 className="text-lg font-bold text-gray-900">
                     Itens mais vendidos
                   </h2>
-                  <Package className="w-5 h-5 text-gray-400" />
+                  <Package className="w-5 h-5 text-gray-500" />
                 </div>
 
                 {topItens.length === 0 ? (
@@ -731,7 +717,7 @@ export default function Relatorios(): ReactElement {
                       {faturamentoPorMes.map((m) => {
                         const osMes = ordensFiltradas.filter(
                           (o) =>
-                            o.status === "Concluída" &&
+                            o.status === STATUS_OS.CONCLUIDA &&
                             o.data_abertura.startsWith(m.chave)
                         );
                         return (

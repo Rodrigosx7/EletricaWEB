@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../supabase";
+import { formatarMoeda, formatarData } from "../utils/formatters";
+import { STATUS_OS, type StatusOS } from "../utils/constantes";
 import {
   Wrench,
   Eye,
@@ -13,7 +15,10 @@ import {
   X,
 } from "lucide-react";
 import ConfirmDialog from "./ConfirmDialog";
+import { usePaginacao } from "../hooks/usePaginacao";
+import ControlesPaginacao from "./ui/ControlesPaginacao";
 import { useToast } from "./ui/toast";
+import { classeStatus } from "../utils/statusBadge";
 
 type Cliente = {
   id: number;
@@ -80,6 +85,7 @@ export default function OrdensServico() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [orcamentos, setOrcamentos] = useState<Orcamento[]>([]);
   const [carregando, setCarregando] = useState(true);
+  const paginacao = usePaginacao(20);
 
   const [modalAberto, setModalAberto] = useState(false);
   const [modalVisualizacao, setModalVisualizacao] =
@@ -162,7 +168,7 @@ export default function OrdensServico() {
     useState("");
 
   const [status, setStatus] =
-    useState("Aberta");
+    useState<StatusOS>(STATUS_OS.ABERTA);
 
   const [descricao, setDescricao] =
     useState("");
@@ -178,7 +184,7 @@ export default function OrdensServico() {
 
   useEffect(() => {
     carregarDados();
-  }, []);
+  }, [paginacao.pagina, paginacao.tamanho]);
 
   async function carregarDados() {
     setCarregando(true);
@@ -206,14 +212,18 @@ export default function OrdensServico() {
       );
     }
 
-    const { data: ordensData, error: ordensError } =
+    const de = paginacao.offset;
+    const ate = de + paginacao.tamanho - 1;
+    const { data: ordensData, error: ordensError, count: ordensCount } =
       await supabase
         .from("ordens_servico")
         .select(
-          "id, numero, cliente_id, orcamento_id, data_abertura, data_inicio, data_previsao, data_conclusao, status, descricao, observacoes, valor_servico, custo_materiais, valor_total"
+          "id, numero, cliente_id, orcamento_id, data_abertura, data_inicio, data_previsao, data_conclusao, status, descricao, observacoes, valor_servico, custo_materiais, valor_total",
+          { count: "exact" }
         )
         .eq("user_id", user.id)
-        .order("numero", { ascending: false });
+        .order("numero", { ascending: false })
+        .range(de, ate);
 
     if (ordensError) {
       console.error(
@@ -244,6 +254,7 @@ export default function OrdensServico() {
     setClientes(clientesData || []);
     setOrdens(ordensData || []);
     setOrcamentos(orcamentosData || []);
+    paginacao.setTotal(ordensCount ?? 0);
 
     setCarregando(false);
   }
@@ -276,53 +287,6 @@ export default function OrdensServico() {
     return cliente?.endereco || "-";
   }
 
-  function formatarData(data: string | null) {
-    if (!data) {
-      return "-";
-    }
-
-    const partes = data.split("-");
-
-    if (partes.length !== 3) {
-      return data;
-    }
-
-    return (
-      partes[2] +
-      "/" +
-      partes[1] +
-      "/" +
-      partes[0]
-    );
-  }
-
-  function formatarValor(valor: number) {
-    return valor.toLocaleString("pt-BR", {
-      style: "currency",
-      currency: "BRL",
-    });
-  }
-
-  function classeStatus(statusAtual: string) {
-    if (statusAtual === "Aberta") {
-      return "bg-yellow-100 text-yellow-700";
-    }
-
-    if (statusAtual === "Em andamento") {
-      return "bg-blue-100 text-blue-700";
-    }
-
-    if (statusAtual === "Concluída") {
-      return "bg-green-100 text-green-700";
-    }
-
-    if (statusAtual === "Cancelada") {
-      return "bg-red-100 text-red-700";
-    }
-
-    return "bg-gray-100 text-gray-700";
-  }
-
   function abrirNovaOrdem() {
     setEditandoId(null);
 
@@ -335,7 +299,7 @@ export default function OrdensServico() {
     setDataPrevisao("");
     setDataConclusao("");
 
-    setStatus("Aberta");
+    setStatus(STATUS_OS.ABERTA);
     setDescricao("");
     setObservacoes("");
     setValorServico("");
@@ -453,7 +417,7 @@ export default function OrdensServico() {
           "x " +
           item.descricao +
           " - " +
-          formatarValor(
+          formatarMoeda(
             Number(item.valor_unitario) || 0
           )
       );
@@ -784,7 +748,7 @@ export default function OrdensServico() {
       ordem.data_conclusao || ""
     );
 
-    setStatus(ordem.status);
+    setStatus(ordem.status as StatusOS);
 
     setDescricao(
       ordem.descricao || ""
@@ -1209,7 +1173,7 @@ export default function OrdensServico() {
                   </td>
 
                   <td className="px-6 py-4 font-medium text-gray-700">
-                    {formatarValor(
+                    {formatarMoeda(
                       Number(
                         ordem.valor_total
                       ) || 0
@@ -1328,6 +1292,16 @@ export default function OrdensServico() {
 
         </table>
 
+        <ControlesPaginacao
+          pagina={paginacao.pagina}
+          totalPaginas={paginacao.totalPaginas}
+          total={paginacao.total}
+          tamanho={paginacao.tamanho}
+          onAnterior={paginacao.anterior}
+          onProxima={paginacao.proxima}
+          onMudarTamanho={paginacao.setTamanho}
+        />
+
       </div>
 
       {/* MODAL NOVA / EDITAR */}
@@ -1369,7 +1343,7 @@ export default function OrdensServico() {
               <button
                 onClick={fecharModal}
                 disabled={salvando}
-                className="text-gray-400 hover:text-gray-600 text-2xl disabled:opacity-50"
+                className="text-gray-500 hover:text-gray-600 text-2xl disabled:opacity-50"
               >
                 ×
               </button>
@@ -1505,7 +1479,7 @@ export default function OrdensServico() {
                                 orcamento.cliente_id
                               )}
                               {" - "}
-                              {formatarValor(
+                              {formatarMoeda(
                                 Number(
                                   orcamento.valor_total
                                 ) || 0
@@ -1660,34 +1634,21 @@ export default function OrdensServico() {
                   value={status}
                   onChange={(e) =>
                     setStatus(
-                      e.target.value
+                      e.target.value as StatusOS
                     )
                   }
                   className="w-full border border-gray-300 rounded-lg px-4 py-3"
                 >
-
-                  <option value="Aberta">
-                    Aberta
-                  </option>
-
-                  <option value="Em andamento">
-                    Em andamento
-                  </option>
-
-                  <option value="Concluída">
-                    Concluída
-                  </option>
-
-                  <option value="Cancelada">
-                    Cancelada
-                  </option>
-
+                  <option value={STATUS_OS.ABERTA}>Aberta</option>
+                  <option value={STATUS_OS.EM_ANDAMENTO}>Em andamento</option>
+                  <option value={STATUS_OS.CONCLUIDA}>Concluída</option>
+                  <option value={STATUS_OS.CANCELADA}>Cancelada</option>
                 </select>
 
               </div>
 
               {editandoId &&
-                status === "Concluída" && (
+                status === STATUS_OS.CONCLUIDA && (
 
                   <div>
 
@@ -1793,7 +1754,7 @@ export default function OrdensServico() {
                   </label>
 
                   <div className="w-full bg-gray-100 border border-gray-200 rounded-lg px-4 py-3 font-bold text-gray-800">
-                    {formatarValor(
+                    {formatarMoeda(
                       valorTotalFormulario
                     )}
                   </div>
@@ -1897,7 +1858,7 @@ export default function OrdensServico() {
                   onClick={
                     fecharVisualizacao
                   }
-                  className="text-gray-400 hover:text-gray-600 text-2xl"
+                  className="text-gray-500 hover:text-gray-600 text-2xl"
                 >
                   ×
                 </button>
@@ -2137,7 +2098,7 @@ export default function OrdensServico() {
                                 </td>
 
                                 <td className="px-4 py-3 text-sm text-right">
-                                  {formatarValor(
+                                  {formatarMoeda(
                                     Number(
                                       item.valor_unitario
                                     ) || 0
@@ -2145,7 +2106,7 @@ export default function OrdensServico() {
                                 </td>
 
                                 <td className="px-4 py-3 text-sm text-right font-medium">
-                                  {formatarValor(
+                                  {formatarMoeda(
                                     Number(
                                       item.subtotal
                                     ) || 0
@@ -2176,7 +2137,7 @@ export default function OrdensServico() {
                     </p>
 
                     <p className="text-xl font-bold text-gray-800 mt-1">
-                      {formatarValor(
+                      {formatarMoeda(
                         Number(
                           ordemVisualizada.valor_servico
                         ) || 0
@@ -2192,7 +2153,7 @@ export default function OrdensServico() {
                     </p>
 
                     <p className="text-xl font-bold text-gray-800 mt-1">
-                      {formatarValor(
+                      {formatarMoeda(
                         Number(
                           ordemVisualizada.custo_materiais
                         ) || 0
@@ -2208,7 +2169,7 @@ export default function OrdensServico() {
                     </p>
 
                     <p className="text-2xl font-bold mt-1">
-                      {formatarValor(
+                      {formatarMoeda(
                         Number(
                           ordemVisualizada.valor_total
                         ) || 0
@@ -2299,7 +2260,7 @@ export default function OrdensServico() {
               </strong>{" "}
               do valor de{" "}
               <strong className="text-gray-900">
-                {formatarValor(
+                {formatarMoeda(
                   Number(ordemParaExcluir.valor_total) || 0
                 )}
               </strong>
@@ -2378,7 +2339,7 @@ export default function OrdensServico() {
               <button
                 type="button"
                 onClick={fecharHistorico}
-                className="text-gray-400 hover:text-gray-700 transition p-1 rounded-lg hover:bg-gray-100"
+                className="text-gray-500 hover:text-gray-700 transition p-1 rounded-lg hover:bg-gray-100"
                 aria-label="Fechar"
               >
                 <X className="w-5 h-5" />
@@ -2466,8 +2427,8 @@ export default function OrdensServico() {
                                 mov.tipo === "entrada"
                                   ? "bg-emerald-100 text-emerald-700"
                                   : mov.tipo === "saida"
-                                  ? "bg-red-100 text-red-700"
-                                  : "bg-yellow-100 text-yellow-700"
+                                  ? "bg-red-100 text-red-800"
+                                  : "bg-amber-100 text-amber-800"
                               }`}
                             >
                               {mov.tipo === "entrada"
@@ -2488,7 +2449,7 @@ export default function OrdensServico() {
                               <p className="text-xs text-gray-500 mt-0.5">
                                 Estoque: {mov.estoque_anterior} →{" "}
                                 {mov.estoque_posterior}
-                                <span className="ml-2 text-gray-400">
+                                <span className="ml-2 text-gray-500">
                                   •{" "}
                                   {new Date(mov.created_at).toLocaleString(
                                     "pt-BR"

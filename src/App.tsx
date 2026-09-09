@@ -9,6 +9,7 @@ import Clientes from "./components/Clientes";
 import Servicos from "./components/Servicos";
 import Produtos from "./components/Produtos";
 import Orcamentos from "./components/Orcamentos";
+import OrcamentoRapido from "./components/OrcamentoRapido";
 import OrdensServico from "./components/OrdensServico";
 import Financeiro from "./components/Financeiro";
 import Relatorios from "./components/Relatorios";
@@ -30,6 +31,7 @@ import {
   BarChart3,
   Calculator as CalcIcon,
   Settings,
+  ClipboardList,
   type LucideIcon,
 } from "lucide-react";
 
@@ -137,6 +139,7 @@ function AppInterno() {
       },
       servicos: { titulo: "Serviços", icone: Zap },
       produtos: { titulo: "Produtos", icone: Package },
+      orcamentoRapido: { titulo: "Orçamento Rápido", icone: ClipboardList },
       financeiro: { titulo: "Financeiro", icone: Wallet },
       relatorios: { titulo: "Relatórios", icone: BarChart3 },
       calculadora: { titulo: "Calculadora Elétrica", icone: CalcIcon },
@@ -221,6 +224,9 @@ function AppInterno() {
         {pagina === "orcamentos" && (
           <Orcamentos setPagina={setPagina} />
         )}
+
+        {/* Orçamento Rápido */}
+        {pagina === "orcamentoRapido" && <OrcamentoRapido />}
 
         {/* Ordens de Serviço */}
         {pagina === "ordens-servico" && <OrdensServico />}

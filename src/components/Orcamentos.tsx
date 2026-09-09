@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
+import { STATUS_ORCAMENTO, STATUS_ORCAMENTO_VALORES, type StatusOrcamento } from "../utils/constantes";
 import { supabase } from "../supabase";
-import { jsPDF } from "jspdf";
-import autoTable from "jspdf-autotable";
+import { usePaginacao } from "../hooks/usePaginacao";
+import ControlesPaginacao from "./ui/ControlesPaginacao";
+import { formatarMoeda } from "../utils/formatters";
 import {
   FilePlus,
   X,
@@ -10,6 +12,7 @@ import {
   Eye,
   Pencil,
   Trash2,
+  Loader2,
 } from "lucide-react";
 import ConfirmDialog from "./ConfirmDialog";
 import { useToast } from "./ui/toast";
@@ -60,18 +63,16 @@ type Orcamento = {
   observacoes: string | null;
 };
 
-function formatarMoeda(valor: number) {
-  return valor.toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
-}
+// Cache de logos é por instância do componente (useRef) para não vazar
+// entre usuários/empresas diferentes nem reter logos desatualizadas.
+type LogoCache = { url: string; data: Promise<string> } | null;
 
-// Carrega uma URL de logo e devolve como data URL em base64.
-let logoCache: { url: string; data: Promise<string> } | null = null;
+type LogoResult = { data: Promise<string>; nextCache: LogoCache };
 
-function getLogoFromUrl(url: string): Promise<string> {
-  if (logoCache && logoCache.url === url) return logoCache.data;
+function getLogoFromUrl(url: string, cache: LogoCache): LogoResult {
+  if (cache && cache.url === url) {
+    return { data: cache.data, nextCache: cache };
+  }
 
   const promise = new Promise<string>((resolve, reject) => {
     const img = new Image();
@@ -92,8 +93,7 @@ function getLogoFromUrl(url: string): Promise<string> {
     img.src = url;
   });
 
-  logoCache = { url, data: promise };
-  return promise;
+  return { data: promise, nextCache: { url, data: promise } };
 }
 
 // Fallback para /logo.png do projeto
@@ -106,6 +106,8 @@ type OrcamentosProps = {
 function Orcamentos({ setPagina }: OrcamentosProps) {
   const [usuario, setUsuario] = useState<User | null>(null);
   const { empresa } = useEmpresa();
+  const logoCacheRef = useRef<LogoCache>(null);
+  const paginacao = usePaginacao(20);
 
   const [orcamentos, setOrcamentos] = useState<Orcamento[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -119,6 +121,7 @@ function Orcamentos({ setPagina }: OrcamentosProps) {
   const [orcamentoParaExcluir, setOrcamentoParaExcluir] =
     useState<Orcamento | null>(null);
   const [excluindo, setExcluindo] = useState(false);
+  const [gerandoPDF, setGerandoPDF] = useState<number | null>(null);
 
   const { mostrarToast } = useToast();
 
@@ -127,7 +130,7 @@ function Orcamentos({ setPagina }: OrcamentosProps) {
     new Date().toISOString().split("T")[0]
   );
   const [validade, setValidade] = useState("");
-  const [status, setStatus] = useState("Pendente");
+  const [status, setStatus] = useState<StatusOrcamento>(STATUS_ORCAMENTO.PENDENTE);
   const [desconto, setDesconto] = useState("");
   const [observacoes, setObservacoes] = useState("");
 
@@ -168,10 +171,9 @@ function Orcamentos({ setPagina }: OrcamentosProps) {
   }, []);
 
   useEffect(() => {
-    if (usuario) {
-      carregarDados();
-    }
-  }, [usuario]);
+    if (usuario) carregarDados();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usuario, paginacao.pagina, paginacao.tamanho]);
 
   async function carregarDados() {
     if (!usuario) return;
@@ -208,9 +210,10 @@ function Orcamentos({ setPagina }: OrcamentosProps) {
     desconto,
     valor_total,
     observacoes
-  `)
+  `, { count: "exact" })
   .eq("user_id", usuario.id)
-  .order("numero", { ascending: false }),
+  .order("numero", { ascending: false })
+  .range(paginacao.offset, paginacao.offset + paginacao.tamanho - 1),
       ]);
 
     if (clientesResult.error) {
@@ -233,6 +236,7 @@ function Orcamentos({ setPagina }: OrcamentosProps) {
     setServicos(servicosResult.data || []);
     setProdutos(produtosResult.data || []);
     setOrcamentos((orcamentosResult.data as Orcamento[]) || []);
+    paginacao.setTotal(orcamentosResult.count ?? 0);
   }
 
   function adicionarItem() {
@@ -312,9 +316,9 @@ function Orcamentos({ setPagina }: OrcamentosProps) {
     );
   }
 
-  const subtotal = itens.reduce(
-    (total, item) => total + item.subtotal,
-    0
+  const subtotal = useMemo(
+    () => itens.reduce((total, item) => total + item.subtotal, 0),
+    [itens]
   );
 
   const valorDesconto = Number(desconto) || 0;
@@ -327,7 +331,7 @@ function Orcamentos({ setPagina }: OrcamentosProps) {
   setClienteId("");
   setDataOrcamento(new Date().toISOString().split("T")[0]);
   setValidade("");
-  setStatus("Pendente");
+  setStatus(STATUS_ORCAMENTO.PENDENTE);
   setDesconto("");
   setObservacoes("");
   setItens([]);
@@ -374,7 +378,7 @@ async function editarOrcamento(orcamento: Orcamento) {
     setClienteId(String(orcamento.cliente_id));
     setDataOrcamento(orcamento.data_orcamento);
     setValidade(orcamento.validade || "");
-    setStatus(orcamento.status);
+    setStatus(orcamento.status as StatusOrcamento);
     setDesconto(String(orcamento.desconto || ""));
     setObservacoes(orcamento.observacoes || "");
 
@@ -672,6 +676,7 @@ async function editarOrcamento(orcamento: Orcamento) {
   async function gerarPDF(orcamento: Orcamento) {
   if (!usuario) return;
 
+  setGerandoPDF(orcamento.id);
   try {
     const { data: itensPDF, error } = await supabase
       .from("orcamento_itens")
@@ -698,6 +703,11 @@ async function editarOrcamento(orcamento: Orcamento) {
 
 const cliente = clienteCompleto?.nome || "Cliente";
 
+    const [{ jsPDF }, autoTableModule] = await Promise.all([
+      import("jspdf"),
+      import("jspdf-autotable"),
+    ]);
+    const autoTable = autoTableModule.default;
     const doc = new jsPDF();
 
     // =========================
@@ -713,7 +723,12 @@ const cliente = clienteCompleto?.nome || "Cliente";
     // =========================
     // Define a URL da logo: prioriza a da empresa, depois o fallback padrão
     const logoUrl = empresa?.logo_url || FALLBACK_LOGO_URL;
-    const logoBase64 = await getLogoFromUrl(logoUrl);
+    const { data: logoBase64Promise, nextCache } = getLogoFromUrl(
+      logoUrl,
+      logoCacheRef.current
+    );
+    logoCacheRef.current = nextCache;
+    const logoBase64 = await logoBase64Promise;
 
     // =========================
     // CABEÇALHO (fundo escuro)
@@ -844,7 +859,7 @@ const cliente = clienteCompleto?.nome || "Cliente";
       Pendente: [251, 191, 36], // amarelo
       Aprovado: [16, 185, 129], // verde
       Recusado: [239, 68, 68], // vermelho
-      "Concluído": [59, 130, 246], // azul
+      "Concluído": [59, 130, 246], // azul → kept as string (object key needs static literal)
     };
     const corStatus = coresStatus[statusTexto] || [100, 116, 139];
 
@@ -1257,6 +1272,8 @@ const cliente = clienteCompleto?.nome || "Cliente";
       "Erro ao gerar o PDF.",
       "erro"
     );
+  } finally {
+    setGerandoPDF(null);
   }
 }
 
@@ -1309,7 +1326,7 @@ const cliente = clienteCompleto?.nome || "Cliente";
             <h2 className="text-3xl font-bold text-yellow-600 mt-2">
               {
                 orcamentos.filter(
-                  (orcamento) => orcamento.status === "Pendente"
+                  (orcamento) => orcamento.status === STATUS_ORCAMENTO.PENDENTE
                 ).length
               }
             </h2>
@@ -1323,7 +1340,7 @@ const cliente = clienteCompleto?.nome || "Cliente";
             <h2 className="text-3xl font-bold text-green-600 mt-2">
               {
                 orcamentos.filter(
-                  (orcamento) => orcamento.status === "Aprovado"
+                  (orcamento) => orcamento.status === STATUS_ORCAMENTO.APROVADO
                 ).length
               }
             </h2>
@@ -1347,6 +1364,7 @@ const cliente = clienteCompleto?.nome || "Cliente";
 
             </div>
           ) : (
+            <>
             <div className="overflow-x-auto">
 
               <table className="w-full">
@@ -1408,15 +1426,15 @@ const cliente = clienteCompleto?.nome || "Cliente";
                       <td className="px-6 py-4">
   <span
     className={`px-3 py-1 rounded-full text-xs font-semibold ${
-      orcamento.status === "Pendente"
-        ? "bg-yellow-100 text-yellow-700"
-        : orcamento.status === "Aprovado"
-        ? "bg-green-100 text-green-700"
-        : orcamento.status === "Recusado"
-        ? "bg-red-100 text-red-700"
-        : orcamento.status === "Concluído"
-        ? "bg-blue-100 text-blue-700"
-        : "bg-gray-100 text-gray-700"
+      orcamento.status === STATUS_ORCAMENTO.PENDENTE
+        ? "bg-amber-100 text-amber-800"
+        : orcamento.status === STATUS_ORCAMENTO.APROVADO
+        ? "bg-emerald-100 text-emerald-800"
+        : orcamento.status === STATUS_ORCAMENTO.RECUSADO
+        ? "bg-red-100 text-red-800"
+        : orcamento.status === STATUS_ORCAMENTO.CONCLUIDO
+        ? "bg-blue-100 text-blue-800"
+        : "bg-slate-100 text-slate-700"
     }`}
   >
     {orcamento.status}
@@ -1451,13 +1469,18 @@ const cliente = clienteCompleto?.nome || "Cliente";
                           <button
                             type="button"
                             onClick={() => gerarPDF(orcamento)}
+                            disabled={gerandoPDF === orcamento.id}
                             title="Baixar PDF"
                             aria-label="Baixar PDF"
-                            className="inline-flex items-center gap-1 text-gray-700 hover:text-gray-900 font-medium transition"
+                            className="inline-flex items-center gap-1 text-gray-700 hover:text-gray-900 font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            <FileText className="w-4 h-4" />
+                            {gerandoPDF === orcamento.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <FileText className="w-4 h-4" />
+                            )}
                             <span className="hidden lg:inline">
-                              PDF
+                              {gerandoPDF === orcamento.id ? "Gerando..." : "PDF"}
                             </span>
                           </button>
 
@@ -1501,6 +1524,16 @@ const cliente = clienteCompleto?.nome || "Cliente";
               </table>
 
             </div>
+            <ControlesPaginacao
+              pagina={paginacao.pagina}
+              totalPaginas={paginacao.totalPaginas}
+              total={paginacao.total}
+              tamanho={paginacao.tamanho}
+              onAnterior={paginacao.anterior}
+              onProxima={paginacao.proxima}
+              onMudarTamanho={paginacao.setTamanho}
+            />
+          </>
           )}
 
         </div>
@@ -1549,7 +1582,7 @@ const cliente = clienteCompleto?.nome || "Cliente";
                 type="button"
                 onClick={() => setModalAberto(false)}
                 disabled={salvando}
-                className="text-gray-400 hover:text-gray-700 transition p-1 rounded-lg hover:bg-gray-100 disabled:opacity-30"
+                className="text-gray-500 hover:text-gray-700 transition p-1 rounded-lg hover:bg-gray-100 disabled:opacity-30"
                 aria-label="Fechar"
               >
                 <X className="w-5 h-5" />
@@ -1607,13 +1640,12 @@ const cliente = clienteCompleto?.nome || "Cliente";
   <select
     id="orc_status"
     value={status}
-    onChange={(e) => setStatus(e.target.value)}
+    onChange={(e) => setStatus(e.target.value as StatusOrcamento)}
     className="w-full border border-gray-300 rounded-lg px-3 py-2"
   >
-    <option value="Pendente">Pendente</option>
-    <option value="Aprovado">Aprovado</option>
-    <option value="Recusado">Recusado</option>
-    <option value="Concluído">Concluído</option>
+    {STATUS_ORCAMENTO_VALORES.map((s: StatusOrcamento) => (
+      <option key={s} value={s}>{s}</option>
+    ))}
   </select>
 </div>
 
@@ -1988,7 +2020,7 @@ const cliente = clienteCompleto?.nome || "Cliente";
 
               <button
   onClick={fecharVisualizacao}
-  className="text-gray-400 hover:text-gray-600 text-2xl"
+  className="text-gray-500 hover:text-gray-600 text-2xl"
 >
   ×
 </button>
@@ -2030,12 +2062,12 @@ const cliente = clienteCompleto?.nome || "Cliente";
                     <span
                       className={`inline-flex mt-2 px-3 py-1 rounded-full text-xs font-semibold ${
                         orcamentoVisualizado.status ===
-                        "Aprovado"
-                          ? "bg-green-100 text-green-700"
+                        STATUS_ORCAMENTO.APROVADO
+                          ? "bg-emerald-100 text-emerald-800"
                           : orcamentoVisualizado.status ===
-                            "Recusado"
-                          ? "bg-red-100 text-red-700"
-                          : "bg-yellow-100 text-yellow-700"
+                            STATUS_ORCAMENTO.RECUSADO
+                          ? "bg-red-100 text-red-800"
+                          : "bg-amber-100 text-amber-800"
                       }`}
                     >
                       {orcamentoVisualizado.status}
@@ -2279,9 +2311,13 @@ const cliente = clienteCompleto?.nome || "Cliente";
 
               <button
   onClick={() => gerarPDF(orcamentoVisualizado)}
-  className="px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+  disabled={gerandoPDF === orcamentoVisualizado.id}
+  className="px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
 >
-  Gerar PDF
+  {gerandoPDF === orcamentoVisualizado.id && (
+    <Loader2 className="w-4 h-4 animate-spin" />
+  )}
+  {gerandoPDF === orcamentoVisualizado.id ? "Gerando PDF..." : "Gerar PDF"}
 </button>
 
             </div>

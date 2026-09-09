@@ -13,8 +13,18 @@ import {
   ArrowUpFromLine,
 } from "lucide-react";
 import { supabase } from "../supabase";
+import {
+  formatarMoeda,
+  formatarInputMoeda,
+  mascaraMoeda,
+  mascaraNumero,
+  converterNumero,
+  margemLucro,
+} from "../utils/formatters";
 import ConfirmDialog from "./ConfirmDialog";
 import { useToast } from "./ui/toast";
+import { usePaginacao } from "../hooks/usePaginacao";
+import ControlesPaginacao from "./ui/ControlesPaginacao";
 
 type Produto = {
   id: number;
@@ -31,56 +41,10 @@ type Produto = {
   created_at?: string;
 };
 
-function formatarMoeda(valor: number) {
-  return Number(valor).toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
-}
-
-function formatarInputMoeda(valor: number) {
-  return Number(valor).toLocaleString("pt-BR", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
-
-/**
- * Converte string formatada em moeda ("1.234,56") em número (1234.56).
- */
-function converterNumero(valor: string): number {
-  return Number(valor.replace(/\./g, "").replace(",", "."));
-}
-
-/**
- * Máscara monetária: ao digitar "1234", vira "12,34"; "123456" vira "1.234,56".
- */
-function mascaraMoeda(valor: string): string {
-  const digitos = valor.replace(/\D/g, "");
-  if (!digitos) return "";
-  const numero = Number(digitos) / 100;
-  return numero.toLocaleString("pt-BR", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
-
-/**
- * Máscara de estoque: aceita números com até 3 casas decimais (ex: 1.5, 0.250).
- */
-function mascaraNumero(valor: string): string {
-  const limpo = valor.replace(/[^\d,]/g, "");
-  const partes = limpo.split(",");
-  if (partes.length > 2) return `${partes[0]},${partes.slice(1).join("").slice(0, 3)}`;
-  if (partes[1] && partes[1].length > 3) {
-    return `${partes[0]},${partes[1].slice(0, 3)}`;
-  }
-  return limpo;
-}
-
 export default function Produtos() {
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [usuario, setUsuario] = useState<User | null>(null);
+  const paginacao = usePaginacao(20);
 
   const [nome, setNome] = useState("");
   const [categoria, setCategoria] = useState("");
@@ -140,14 +104,8 @@ export default function Produtos() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-
       setUsuario(user);
-
-      if (user) {
-        carregarProdutos(user.id);
-      }
     }
-
     iniciar();
 
     // Auto-refresh quando volta para a aba
@@ -158,12 +116,20 @@ export default function Produtos() {
     return () => window.removeEventListener("focus", onFocus);
   }, []);
 
+  useEffect(() => {
+    if (usuario) carregarProdutos(usuario.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usuario, paginacao.pagina, paginacao.tamanho]);
+
   async function carregarProdutos(userId: string) {
-    const { data, error } = await supabase
+    const de = paginacao.offset;
+    const ate = de + paginacao.tamanho - 1;
+    const { data, error, count } = await supabase
       .from("produtos")
-      .select("*")
+      .select("*", { count: "exact" })
       .eq("user_id", userId)
-      .order("id", { ascending: false });
+      .order("id", { ascending: false })
+      .range(de, ate);
 
     if (error) {
       console.error("Erro ao carregar produtos:", error);
@@ -172,6 +138,7 @@ export default function Produtos() {
     }
 
     setProdutos(data || []);
+    paginacao.setTotal(count ?? 0);
   }
 
   function limparFormulario() {
@@ -450,25 +417,21 @@ export default function Produtos() {
     );
   });
 
-  function margemLucro(p: Produto): number {
-    if (!p.preco_custo || p.preco_custo === 0) return 0;
-    return ((p.preco_venda - p.preco_custo) / p.preco_custo) * 100;
-  }
 
   function estoqueBaixo(produto: Produto) {
     return produto.estoque <= produto.estoque_minimo;
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 p-6 md:p-8">
+    <div className="min-h-screen bg-slate-100 p-6 md:p-8">
       <div className="max-w-7xl mx-auto">
         {/* Cabeçalho */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">
+            <h1 className="text-3xl font-bold text-slate-900">
               Produtos
             </h1>
-            <p className="text-gray-500 mt-1">
+            <p className="text-slate-500 mt-1">
               Gerencie materiais, preços e estoque
             </p>
           </div>
@@ -489,10 +452,10 @@ export default function Produtos() {
               <Boxes className="w-6 h-6 text-[#FFD60A]" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-slate-500">
                 Total de produtos
               </p>
-              <p className="text-3xl font-bold text-gray-900 mt-1">
+              <p className="text-3xl font-bold text-slate-900 mt-1">
                 {produtos.length}
               </p>
             </div>
@@ -506,7 +469,7 @@ export default function Produtos() {
             className={`text-left bg-white rounded-xl shadow-sm p-6 flex items-start gap-4 transition border-2 ${
               filtroEstoqueBaixo
                 ? "border-red-300 bg-red-50/50"
-                : "border-transparent hover:border-gray-200"
+                : "border-transparent hover:border-slate-200"
             }`}
           >
             <div
@@ -525,13 +488,13 @@ export default function Produtos() {
               />
             </div>
             <div className="flex-1">
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-slate-500">
                 Estoque baixo
               </p>
               <p className="text-3xl font-bold text-red-600 mt-1">
                 {produtosEstoqueBaixo.length}
               </p>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-slate-500 mt-1">
                 {filtroEstoqueBaixo
                   ? "Clique para remover o filtro"
                   : "Clique para filtrar"}
@@ -544,10 +507,10 @@ export default function Produtos() {
               <DollarSign className="w-6 h-6 text-green-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-slate-500">
                 Valor do estoque
               </p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">
+              <p className="text-2xl font-bold text-slate-900 mt-1">
                 {formatarMoeda(valorEstoque)}
               </p>
             </div>
@@ -558,27 +521,27 @@ export default function Produtos() {
         <div className="bg-white rounded-xl shadow-sm p-5 mb-6">
           <label
             htmlFor="busca_produto"
-            className="block text-sm font-semibold text-gray-700 mb-2"
+            className="block text-sm font-semibold text-slate-700 mb-2"
           >
             Buscar produto
           </label>
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 pointer-events-none" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 w-5 h-5 pointer-events-none" />
             <input
               id="busca_produto"
               type="text"
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
               placeholder="Nome, categoria, código ou fornecedor..."
-              className="w-full border border-gray-200 rounded-lg pl-10 pr-4 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A] focus:border-transparent transition"
+              className="w-full border border-slate-200 rounded-lg pl-10 pr-4 py-3 outline-none transition"
             />
           </div>
         </div>
 
         {/* Lista */}
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-            <h2 className="text-xl font-bold text-gray-900">
+          <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+            <h2 className="text-xl font-bold text-slate-900">
               Produtos cadastrados
             </h2>
             <div className="flex items-center gap-3">
@@ -588,7 +551,7 @@ export default function Produtos() {
                   Filtrando: estoque baixo
                 </span>
               )}
-              <span className="text-sm text-gray-500">
+              <span className="text-sm text-slate-500">
                 {produtosFiltrados.length}{" "}
                 {produtosFiltrados.length === 1
                   ? "produto"
@@ -602,12 +565,12 @@ export default function Produtos() {
               <div className="inline-flex w-16 h-16 rounded-full bg-yellow-50 items-center justify-center mb-4">
                 <Package className="w-8 h-8 text-[#FFD60A]" />
               </div>
-              <h3 className="font-semibold text-gray-900">
+              <h3 className="font-semibold text-slate-900">
                 {busca || filtroEstoqueBaixo
                   ? "Nenhum produto encontrado"
                   : "Nenhum produto cadastrado"}
               </h3>
-              <p className="text-gray-500 text-sm mt-1 max-w-sm mx-auto">
+              <p className="text-slate-500 text-sm mt-1 max-w-sm mx-auto">
                 {busca
                   ? "Tente pesquisar por outro termo."
                   : filtroEstoqueBaixo
@@ -625,50 +588,51 @@ export default function Produtos() {
               )}
             </div>
           ) : (
+            <>
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="bg-gray-50">
+                <thead className="bg-slate-50">
                   <tr>
                     <th
                       scope="col"
-                      className="text-left px-6 py-4 text-sm font-semibold text-gray-600"
+                      className="text-left px-6 py-4 text-sm font-semibold text-slate-600"
                     >
                       Produto
                     </th>
                     <th
                       scope="col"
-                      className="text-left px-6 py-4 text-sm font-semibold text-gray-600"
+                      className="text-left px-6 py-4 text-sm font-semibold text-slate-600"
                     >
                       Categoria
                     </th>
                     <th
                       scope="col"
-                      className="text-left px-6 py-4 text-sm font-semibold text-gray-600"
+                      className="text-left px-6 py-4 text-sm font-semibold text-slate-600"
                     >
                       Preço
                     </th>
                     <th
                       scope="col"
-                      className="text-left px-6 py-4 text-sm font-semibold text-gray-600"
+                      className="text-left px-6 py-4 text-sm font-semibold text-slate-600"
                     >
                       Estoque
                     </th>
                     <th
                       scope="col"
-                      className="text-right px-6 py-4 text-sm font-semibold text-gray-600"
+                      className="text-right px-6 py-4 text-sm font-semibold text-slate-600"
                     >
                       Ações
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-slate-100">
                   {produtosFiltrados.map((produto) => {
                     const baixo = estoqueBaixo(produto);
-                    const margem = margemLucro(produto);
+                    const margem = margemLucro(produto.preco_venda, produto.preco_custo);
                     return (
                       <tr
                         key={produto.id}
-                        className={`hover:bg-gray-50 transition ${
+                        className={`hover:bg-slate-50 transition ${
                           baixo ? "bg-red-50/30" : ""
                         }`}
                       >
@@ -678,10 +642,10 @@ export default function Produtos() {
                               <Package className="w-5 h-5" />
                             </div>
                             <div className="min-w-0">
-                              <p className="font-semibold text-gray-900 truncate">
+                              <p className="font-semibold text-slate-900 truncate">
                                 {produto.nome}
                               </p>
-                              <p className="text-xs text-gray-400 truncate">
+                              <p className="text-xs text-slate-500 truncate">
                                 {produto.codigo
                                   ? `Código: ${produto.codigo}`
                                   : `Produto #${produto.id}`}
@@ -692,34 +656,38 @@ export default function Produtos() {
 
                         <td className="px-6 py-4">
                           {produto.categoria ? (
-                            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-gray-100 text-gray-700 text-sm">
+                            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-sm">
                               <Tag className="w-3 h-3" />
                               {produto.categoria}
                             </span>
                           ) : (
-                            <span className="text-sm text-gray-400 italic">
+                            <span className="text-sm text-slate-500 italic">
                               Sem categoria
                             </span>
                           )}
                         </td>
 
                         <td className="px-6 py-4">
-                          <p className="font-bold text-gray-900">
+                          <p className="font-bold text-slate-900">
                             {formatarMoeda(produto.preco_venda)}
                           </p>
-                          <p className="text-xs text-gray-400">
+                          <p className="text-xs text-slate-500">
                             Custo:{" "}
                             {formatarMoeda(produto.preco_custo)}
-                            {margem > 0 && (
+                            {margem >= 0 ? (
                               <span
                                 className={`ml-1 font-semibold ${
                                   margem > 30
                                     ? "text-green-600"
                                     : margem > 15
                                     ? "text-yellow-600"
-                                    : "text-red-600"
+                                    : "text-orange-600"
                                 }`}
                               >
+                                ({margem.toFixed(0)}%)
+                              </span>
+                            ) : (
+                              <span className="ml-1 font-semibold text-red-600">
                                 ({margem.toFixed(0)}%)
                               </span>
                             )}
@@ -739,12 +707,12 @@ export default function Produtos() {
                                 className={`font-bold ${
                                   baixo
                                     ? "text-red-600"
-                                    : "text-gray-900"
+                                    : "text-slate-900"
                                 }`}
                               >
                                 {produto.estoque} {produto.unidade}
                               </p>
-                              <p className="text-xs text-gray-400">
+                              <p className="text-xs text-slate-500">
                                 Mín: {produto.estoque_minimo}{" "}
                                 {produto.unidade}
                               </p>
@@ -782,7 +750,7 @@ export default function Produtos() {
                               onClick={() =>
                                 abrirEditarProduto(produto)
                               }
-                              className="px-3 py-2 rounded-lg text-sm font-medium text-[#0D1B2A] bg-gray-100 hover:bg-gray-200 transition"
+                              className="px-3 py-2 rounded-lg text-sm font-medium text-[#0D1B2A] bg-slate-100 hover:bg-slate-200 transition"
                             >
                               Editar
                             </button>
@@ -803,6 +771,16 @@ export default function Produtos() {
                 </tbody>
               </table>
             </div>
+            <ControlesPaginacao
+              pagina={paginacao.pagina}
+              totalPaginas={paginacao.totalPaginas}
+              total={paginacao.total}
+              tamanho={paginacao.tamanho}
+              onAnterior={paginacao.anterior}
+              onProxima={paginacao.proxima}
+              onMudarTamanho={paginacao.setTamanho}
+            />
+          </>
           )}
         </div>
       </div>
@@ -811,14 +789,14 @@ export default function Produtos() {
       {mostrarFormulario && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl my-8">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 sticky top-0 bg-white rounded-t-2xl z-10">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 sticky top-0 bg-white rounded-t-2xl z-10">
               <div>
-                <h2 className="text-xl font-bold text-gray-900">
+                <h2 className="text-xl font-bold text-slate-900">
                   {produtoEditando
                     ? "Editar produto"
                     : "Novo produto"}
                 </h2>
-                <p className="text-sm text-gray-500 mt-1">
+                <p className="text-sm text-slate-500 mt-1">
                   Cadastre os dados do material e controle seu
                   estoque.
                 </p>
@@ -829,7 +807,7 @@ export default function Produtos() {
                   limparFormulario();
                   setMostrarFormulario(false);
                 }}
-                className="text-gray-400 hover:text-gray-700 transition p-1 rounded-lg hover:bg-gray-100"
+                className="text-slate-500 hover:text-slate-700 transition p-1 rounded-lg hover:bg-slate-100"
                 aria-label="Fechar"
               >
                 <X className="w-5 h-5" />
@@ -842,7 +820,7 @@ export default function Produtos() {
                 <div className="md:col-span-2">
                   <label
                     htmlFor="produto_nome"
-                    className="block text-sm font-semibold text-gray-700 mb-1"
+                    className="block text-sm font-semibold text-slate-700 mb-1"
                   >
                     Nome do produto{" "}
                     <span className="text-red-500">*</span>
@@ -853,7 +831,7 @@ export default function Produtos() {
                     value={nome}
                     onChange={(e) => setNome(e.target.value)}
                     placeholder="Ex: Cabo flexível 2,5mm²"
-                    className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A] focus:border-transparent transition"
+                    className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition"
                     required
                   />
                 </div>
@@ -862,7 +840,7 @@ export default function Produtos() {
                 <div>
                   <label
                     htmlFor="produto_categoria"
-                    className="block text-sm font-semibold text-gray-700 mb-1"
+                    className="block text-sm font-semibold text-slate-700 mb-1"
                   >
                     Categoria
                   </label>
@@ -872,7 +850,7 @@ export default function Produtos() {
                     value={categoria}
                     onChange={(e) => setCategoria(e.target.value)}
                     placeholder="Ex: Cabos"
-                    className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A] focus:border-transparent transition"
+                    className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition"
                   />
                 </div>
 
@@ -880,7 +858,7 @@ export default function Produtos() {
                 <div>
                   <label
                     htmlFor="produto_unidade"
-                    className="block text-sm font-semibold text-gray-700 mb-1"
+                    className="block text-sm font-semibold text-slate-700 mb-1"
                   >
                     Unidade{" "}
                     <span className="text-red-500">*</span>
@@ -889,7 +867,7 @@ export default function Produtos() {
                     id="produto_unidade"
                     value={unidade}
                     onChange={(e) => setUnidade(e.target.value)}
-                    className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A] bg-white transition"
+                    className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none bg-white transition"
                   >
                     <option value="un">Unidade (un)</option>
                     <option value="m">Metro (m)</option>
@@ -907,12 +885,12 @@ export default function Produtos() {
                 <div>
                   <label
                     htmlFor="produto_custo"
-                    className="block text-sm font-semibold text-gray-700 mb-1"
+                    className="block text-sm font-semibold text-slate-700 mb-1"
                   >
                     Preço de custo
                   </label>
                   <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
                       R$
                     </span>
                     <input
@@ -924,7 +902,7 @@ export default function Produtos() {
                         setPrecoCusto(mascaraMoeda(e.target.value))
                       }
                       placeholder="0,00"
-                      className="w-full border border-gray-200 rounded-lg pl-12 pr-4 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A] focus:border-transparent transition"
+                      className="w-full border border-slate-200 rounded-lg pl-12 pr-4 py-3 outline-none transition"
                     />
                   </div>
                 </div>
@@ -933,12 +911,12 @@ export default function Produtos() {
                 <div>
                   <label
                     htmlFor="produto_venda"
-                    className="block text-sm font-semibold text-gray-700 mb-1"
+                    className="block text-sm font-semibold text-slate-700 mb-1"
                   >
                     Preço de venda
                   </label>
                   <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
                       R$
                     </span>
                     <input
@@ -950,7 +928,7 @@ export default function Produtos() {
                         setPrecoVenda(mascaraMoeda(e.target.value))
                       }
                       placeholder="0,00"
-                      className="w-full border border-gray-200 rounded-lg pl-12 pr-4 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A] focus:border-transparent transition"
+                      className="w-full border border-slate-200 rounded-lg pl-12 pr-4 py-3 outline-none transition"
                     />
                   </div>
                 </div>
@@ -959,7 +937,7 @@ export default function Produtos() {
                 <div>
                   <label
                     htmlFor="produto_estoque"
-                    className="block text-sm font-semibold text-gray-700 mb-1"
+                    className="block text-sm font-semibold text-slate-700 mb-1"
                   >
                     Estoque atual
                   </label>
@@ -972,7 +950,7 @@ export default function Produtos() {
                       setEstoque(mascaraNumero(e.target.value))
                     }
                     placeholder="Ex: 150"
-                    className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A] focus:border-transparent transition"
+                    className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition"
                   />
                 </div>
 
@@ -980,7 +958,7 @@ export default function Produtos() {
                 <div>
                   <label
                     htmlFor="produto_estoque_minimo"
-                    className="block text-sm font-semibold text-gray-700 mb-1"
+                    className="block text-sm font-semibold text-slate-700 mb-1"
                   >
                     Estoque mínimo
                   </label>
@@ -993,7 +971,7 @@ export default function Produtos() {
                       setEstoqueMinimo(mascaraNumero(e.target.value))
                     }
                     placeholder="Ex: 30"
-                    className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A] focus:border-transparent transition"
+                    className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition"
                   />
                 </div>
 
@@ -1001,7 +979,7 @@ export default function Produtos() {
                 <div>
                   <label
                     htmlFor="produto_codigo"
-                    className="block text-sm font-semibold text-gray-700 mb-1"
+                    className="block text-sm font-semibold text-slate-700 mb-1"
                   >
                     Código / SKU
                   </label>
@@ -1011,7 +989,7 @@ export default function Produtos() {
                     value={codigo}
                     onChange={(e) => setCodigo(e.target.value)}
                     placeholder="Ex: CAB25"
-                    className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A] focus:border-transparent transition"
+                    className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition"
                   />
                 </div>
 
@@ -1019,7 +997,7 @@ export default function Produtos() {
                 <div>
                   <label
                     htmlFor="produto_fornecedor"
-                    className="block text-sm font-semibold text-gray-700 mb-1"
+                    className="block text-sm font-semibold text-slate-700 mb-1"
                   >
                     Fornecedor
                   </label>
@@ -1029,7 +1007,7 @@ export default function Produtos() {
                     value={fornecedor}
                     onChange={(e) => setFornecedor(e.target.value)}
                     placeholder="Nome do fornecedor"
-                    className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A] focus:border-transparent transition"
+                    className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition"
                   />
                 </div>
               </div>
@@ -1041,7 +1019,7 @@ export default function Produtos() {
                     limparFormulario();
                     setMostrarFormulario(false);
                   }}
-                  className="px-5 py-3 rounded-lg border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition"
+                  className="px-5 py-3 rounded-lg border border-slate-200 text-slate-700 font-medium hover:bg-slate-50 transition"
                 >
                   Cancelar
                 </button>
@@ -1072,7 +1050,7 @@ export default function Produtos() {
         descricao={
           <>
             Tem certeza que deseja excluir{" "}
-            <strong className="text-gray-900">
+            <strong className="text-slate-900">
               {produtoParaExcluir?.nome}
             </strong>
             ? Esta ação não pode ser desfeita.
@@ -1089,14 +1067,14 @@ export default function Produtos() {
       {produtoMovimentando && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
               <div>
-                <h2 className="text-xl font-bold text-gray-900">
+                <h2 className="text-xl font-bold text-slate-900">
                   Movimentar estoque
                 </h2>
-                <p className="text-sm text-gray-500 mt-1">
+                <p className="text-sm text-slate-500 mt-1">
                   {produtoMovimentando.nome} — Estoque atual:{" "}
-                  <strong className="text-gray-900">
+                  <strong className="text-slate-900">
                     {produtoMovimentando.estoque}{" "}
                     {produtoMovimentando.unidade}
                   </strong>
@@ -1105,7 +1083,7 @@ export default function Produtos() {
               <button
                 type="button"
                 onClick={fecharMovimentacao}
-                className="text-gray-400 hover:text-gray-700 transition p-1 rounded-lg hover:bg-gray-100"
+                className="text-slate-500 hover:text-slate-700 transition p-1 rounded-lg hover:bg-slate-100"
                 aria-label="Fechar"
               >
                 <X className="w-5 h-5" />
@@ -1114,7 +1092,7 @@ export default function Produtos() {
 
             <div className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
                   Tipo de movimentação
                 </label>
                 <div className="grid grid-cols-3 gap-2">
@@ -1124,7 +1102,7 @@ export default function Produtos() {
                     className={`p-3 rounded-lg border-2 text-sm font-medium transition ${
                       tipoMov === "entrada"
                         ? "border-emerald-500 bg-emerald-50 text-emerald-700"
-                        : "border-gray-200 text-gray-600 hover:border-gray-300"
+                        : "border-slate-200 text-slate-600 hover:border-slate-300"
                     }`}
                   >
                     <ArrowDownToLine className="w-4 h-4 mx-auto mb-1" />
@@ -1136,7 +1114,7 @@ export default function Produtos() {
                     className={`p-3 rounded-lg border-2 text-sm font-medium transition ${
                       tipoMov === "saida"
                         ? "border-red-500 bg-red-50 text-red-700"
-                        : "border-gray-200 text-gray-600 hover:border-gray-300"
+                        : "border-slate-200 text-slate-600 hover:border-slate-300"
                     }`}
                   >
                     <ArrowUpFromLine className="w-4 h-4 mx-auto mb-1" />
@@ -1148,7 +1126,7 @@ export default function Produtos() {
                     className={`p-3 rounded-lg border-2 text-sm font-medium transition ${
                       tipoMov === "ajuste"
                         ? "border-yellow-500 bg-yellow-50 text-yellow-700"
-                        : "border-gray-200 text-gray-600 hover:border-gray-300"
+                        : "border-slate-200 text-slate-600 hover:border-slate-300"
                     }`}
                   >
                     <Boxes className="w-4 h-4 mx-auto mb-1" />
@@ -1160,7 +1138,7 @@ export default function Produtos() {
               <div>
                 <label
                   htmlFor="mov_qtd"
-                  className="block text-sm font-semibold text-gray-700 mb-2"
+                  className="block text-sm font-semibold text-slate-700 mb-2"
                 >
                   {tipoMov === "ajuste"
                     ? "Estoque final desejado"
@@ -1173,20 +1151,20 @@ export default function Produtos() {
                   value={qtdMov}
                   onChange={(e) => setQtdMov(e.target.value)}
                   placeholder={tipoMov === "ajuste" ? "0" : "Ex: 10"}
-                  className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A] focus:border-transparent transition"
+                  className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition"
                 />
                 {tipoMov === "entrada" && (
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-slate-500 mt-1">
                     Será somado ao estoque atual.
                   </p>
                 )}
                 {tipoMov === "saida" && (
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-slate-500 mt-1">
                     Será subtraído do estoque atual.
                   </p>
                 )}
                 {tipoMov === "ajuste" && (
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-slate-500 mt-1">
                     O estoque será definido exatamente neste valor.
                   </p>
                 )}
@@ -1195,7 +1173,7 @@ export default function Produtos() {
               <div>
                 <label
                   htmlFor="mov_obs"
-                  className="block text-sm font-semibold text-gray-700 mb-2"
+                  className="block text-sm font-semibold text-slate-700 mb-2"
                 >
                   Observação
                 </label>
@@ -1205,7 +1183,7 @@ export default function Produtos() {
                   onChange={(e) => setObsMov(e.target.value)}
                   rows={2}
                   placeholder="Ex: Compra do fornecedor X, ajuste de inventário..."
-                  className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A] focus:border-transparent transition resize-none"
+                  className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition resize-none"
                 />
               </div>
 
@@ -1213,7 +1191,7 @@ export default function Produtos() {
                 <button
                   type="button"
                   onClick={fecharMovimentacao}
-                  className="px-5 py-3 rounded-lg border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition"
+                  className="px-5 py-3 rounded-lg border border-slate-200 text-slate-700 font-medium hover:bg-slate-50 transition"
                 >
                   Cancelar
                 </button>
@@ -1238,19 +1216,19 @@ export default function Produtos() {
       {produtoHistorico && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
               <div>
-                <h2 className="text-xl font-bold text-gray-900">
+                <h2 className="text-xl font-bold text-slate-900">
                   Histórico de movimentações
                 </h2>
-                <p className="text-sm text-gray-500 mt-1">
+                <p className="text-sm text-slate-500 mt-1">
                   {produtoHistorico.nome} — Últimas 50 movimentações
                 </p>
               </div>
               <button
                 type="button"
                 onClick={fecharHistorico}
-                className="text-gray-400 hover:text-gray-700 transition p-1 rounded-lg hover:bg-gray-100"
+                className="text-slate-500 hover:text-slate-700 transition p-1 rounded-lg hover:bg-slate-100"
                 aria-label="Fechar"
               >
                 <X className="w-5 h-5" />
@@ -1259,11 +1237,11 @@ export default function Produtos() {
 
             <div className="p-6 overflow-y-auto">
               {carregandoHistorico ? (
-                <div className="text-center text-gray-500 py-8">
+                <div className="text-center text-slate-500 py-8">
                   Carregando...
                 </div>
               ) : historico.length === 0 ? (
-                <div className="text-center text-gray-500 py-8">
+                <div className="text-center text-slate-500 py-8">
                   Nenhuma movimentação registrada para este produto.
                 </div>
               ) : (
@@ -1271,15 +1249,15 @@ export default function Produtos() {
                   {historico.map((mov) => (
                     <div
                       key={mov.id}
-                      className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg"
+                      className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg"
                     >
                       <div
                         className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
                           mov.tipo === "entrada"
                             ? "bg-emerald-100 text-emerald-700"
                             : mov.tipo === "saida"
-                            ? "bg-red-100 text-red-700"
-                            : "bg-yellow-100 text-yellow-700"
+                            ? "bg-red-100 text-red-800"
+                            : "bg-amber-100 text-amber-800"
                         }`}
                       >
                         {mov.tipo === "entrada" ? (
@@ -1292,7 +1270,7 @@ export default function Produtos() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <p className="font-medium text-gray-900">
+                          <p className="font-medium text-slate-900">
                             {mov.tipo === "entrada"
                               ? "Entrada"
                               : mov.tipo === "saida"
@@ -1304,18 +1282,18 @@ export default function Produtos() {
                               {produtoHistorico.unidade}
                             </strong>
                           </p>
-                          <span className="text-xs text-gray-500">
+                          <span className="text-xs text-slate-500">
                             {new Date(mov.created_at).toLocaleString(
                               "pt-BR"
                             )}
                           </span>
                         </div>
-                        <p className="text-sm text-gray-600 mt-0.5">
+                        <p className="text-sm text-slate-600 mt-0.5">
                           {mov.estoque_anterior} →{" "}
                           {mov.estoque_posterior}{" "}
                           {produtoHistorico.unidade}
                           {mov.observacao && (
-                            <span className="block text-xs text-gray-500 mt-1">
+                            <span className="block text-xs text-slate-500 mt-1">
                               {mov.observacao}
                               {mov.ordem_servico_id &&
                                 ` (OS #${mov.ordem_servico_id})`}
@@ -1329,11 +1307,11 @@ export default function Produtos() {
               )}
             </div>
 
-            <div className="px-6 py-4 border-t border-gray-100 flex justify-end">
+            <div className="px-6 py-4 border-t border-slate-100 flex justify-end">
               <button
                 type="button"
                 onClick={fecharHistorico}
-                className="px-5 py-2 rounded-lg border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition"
+                className="px-5 py-2 rounded-lg border border-slate-200 text-slate-700 font-medium hover:bg-slate-50 transition"
               >
                 Fechar
               </button>

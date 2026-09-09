@@ -12,6 +12,7 @@ import {
 import { supabase } from "../supabase";
 import ConfirmDialog from "./ConfirmDialog";
 import { useToast } from "./ui/toast";
+import { mascaraTelefone, iniciais } from "../utils/formatters";
 
 type Cliente = {
   id: number;
@@ -22,31 +23,6 @@ type Cliente = {
   user_id: string;
   created_at?: string;
 };
-
-function iniciais(nome: string): string {
-  const partes = nome.trim().split(/\s+/);
-  if (partes.length === 0 || !partes[0]) return "?";
-  if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase();
-  return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase();
-}
-
-/**
- * Aplica máscara brasileira de telefone: (11) 98765-4321 ou (11) 1234-5678.
- * Aceita 10 (fixo) ou 11 (celular) dígitos.
- */
-function mascaraTelefone(valor: string): string {
-  const digitos = valor.replace(/\D/g, "").slice(0, 11);
-
-  if (digitos.length === 0) return "";
-  if (digitos.length <= 2) return `(${digitos}`;
-  if (digitos.length <= 6) {
-    return `(${digitos.slice(0, 2)}) ${digitos.slice(2)}`;
-  }
-  if (digitos.length <= 10) {
-    return `(${digitos.slice(0, 2)}) ${digitos.slice(2, 6)}-${digitos.slice(6)}`;
-  }
-  return `(${digitos.slice(0, 2)}) ${digitos.slice(2, 7)}-${digitos.slice(7)}`;
-}
 
 function emailValido(email: string): boolean {
   // Validação simples, suficiente para a UX inline
@@ -90,10 +66,15 @@ export default function Clientes() {
     iniciar();
   }, []);
 
+  useEffect(() => {
+    if (usuario) carregarClientes(usuario.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usuario]);
+
   async function carregarClientes(userId: string) {
     const { data, error } = await supabase
       .from("clientes")
-      .select("*")
+      .select("*", { count: "exact" })
       .eq("user_id", userId)
       .order("id", { ascending: false });
 
@@ -229,15 +210,15 @@ export default function Clientes() {
   });
 
   return (
-    <div className="min-h-screen bg-gray-100 p-6 md:p-8">
+    <div className="min-h-screen bg-slate-100 p-6 md:p-8">
       <div className="max-w-7xl mx-auto">
         {/* Cabeçalho */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">
+            <h1 className="text-3xl font-bold text-slate-900">
               Clientes
             </h1>
-            <p className="text-gray-500 mt-1">
+            <p className="text-slate-500 mt-1">
               Gerencie os clientes do seu negócio
             </p>
           </div>
@@ -254,13 +235,13 @@ export default function Clientes() {
         {/* Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
           <div className="bg-white rounded-xl shadow-sm p-6">
-            <p className="text-sm text-gray-500">Total de clientes</p>
-            <p className="text-3xl font-bold text-gray-900 mt-2">
+            <p className="text-sm text-slate-500">Total de clientes</p>
+            <p className="text-3xl font-bold text-slate-900 mt-2">
               {clientes.length}
             </p>
           </div>
           <div className="bg-white rounded-xl shadow-sm p-6">
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-slate-500">
               Clientes encontrados
             </p>
             <p className="text-3xl font-bold text-[#0D1B2A] mt-2">
@@ -273,30 +254,30 @@ export default function Clientes() {
         <div className="bg-white rounded-xl shadow-sm p-5 mb-6">
           <label
             htmlFor="busca_cliente"
-            className="block text-sm font-semibold text-gray-700 mb-2"
+            className="block text-sm font-semibold text-slate-700 mb-2"
           >
             Buscar cliente
           </label>
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 pointer-events-none" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 w-5 h-5 pointer-events-none" />
             <input
               id="busca_cliente"
               type="text"
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
               placeholder="Digite nome, telefone ou e-mail..."
-              className="w-full border border-gray-200 rounded-lg pl-10 pr-4 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A] focus:border-transparent transition"
+              className="w-full border border-slate-200 rounded-lg pl-10 pr-4 py-3 outline-none transition"
             />
           </div>
         </div>
 
         {/* Lista */}
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-            <h2 className="text-xl font-bold text-gray-900">
+          <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+            <h2 className="text-xl font-bold text-slate-900">
               Clientes cadastrados
             </h2>
-            <span className="text-sm text-gray-500">
+            <span className="text-sm text-slate-500">
               {clientesFiltrados.length}{" "}
               {clientesFiltrados.length === 1
                 ? "cliente"
@@ -309,12 +290,12 @@ export default function Clientes() {
               <div className="inline-flex w-16 h-16 rounded-full bg-yellow-50 items-center justify-center mb-4">
                 <IconeUser className="w-8 h-8 text-[#FFD60A]" />
               </div>
-              <h3 className="font-semibold text-gray-900">
+              <h3 className="font-semibold text-slate-900">
                 {busca
                   ? "Nenhum cliente encontrado"
                   : "Nenhum cliente cadastrado"}
               </h3>
-              <p className="text-gray-500 text-sm mt-1 max-w-sm mx-auto">
+              <p className="text-slate-500 text-sm mt-1 max-w-sm mx-auto">
                 {busca
                   ? "Tente pesquisar por outro nome, telefone ou e-mail."
                   : "Cadastre seu primeiro cliente para começar."}
@@ -332,95 +313,95 @@ export default function Clientes() {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="bg-gray-50">
+                <thead className="bg-slate-50">
                   <tr>
                     <th
                       scope="col"
-                      className="text-left px-6 py-4 text-sm font-semibold text-gray-600"
+                      className="text-left px-6 py-4 text-sm font-semibold text-slate-600"
                     >
                       Cliente
                     </th>
                     <th
                       scope="col"
-                      className="text-left px-6 py-4 text-sm font-semibold text-gray-600"
+                      className="text-left px-6 py-4 text-sm font-semibold text-slate-600"
                     >
                       Telefone
                     </th>
                     <th
                       scope="col"
-                      className="text-left px-6 py-4 text-sm font-semibold text-gray-600"
+                      className="text-left px-6 py-4 text-sm font-semibold text-slate-600"
                     >
                       E-mail
                     </th>
                     <th
                       scope="col"
-                      className="text-left px-6 py-4 text-sm font-semibold text-gray-600"
+                      className="text-left px-6 py-4 text-sm font-semibold text-slate-600"
                     >
                       Endereço
                     </th>
                     <th
                       scope="col"
-                      className="text-right px-6 py-4 text-sm font-semibold text-gray-600"
+                      className="text-right px-6 py-4 text-sm font-semibold text-slate-600"
                     >
                       Ações
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-slate-100">
                   {clientesFiltrados.map((cliente) => (
                     <tr
                       key={cliente.id}
-                      className="hover:bg-gray-50 transition"
+                      className="hover:bg-slate-50 transition"
                     >
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#FFD60A] to-yellow-500 text-[#0D1B2A] font-bold flex items-center justify-center shrink-0">
                             {iniciais(cliente.nome)}
                           </div>
-                          <p className="font-semibold text-gray-900">
+                          <p className="font-semibold text-slate-900">
                             {cliente.nome}
                           </p>
                         </div>
                       </td>
 
-                      <td className="px-6 py-4 text-sm text-gray-600">
+                      <td className="px-6 py-4 text-sm text-slate-600">
                         {cliente.telefone ? (
                           <span className="inline-flex items-center gap-1.5">
-                            <Phone className="w-3.5 h-3.5 text-gray-400" />
+                            <Phone className="w-3.5 h-3.5 text-slate-500" />
                             {cliente.telefone}
                           </span>
                         ) : (
-                          <span className="text-gray-400 italic">
+                          <span className="text-slate-500 italic">
                             Não informado
                           </span>
                         )}
                       </td>
 
-                      <td className="px-6 py-4 text-sm text-gray-600">
+                      <td className="px-6 py-4 text-sm text-slate-600">
                         {cliente.email ? (
                           <span className="inline-flex items-center gap-1.5">
-                            <Mail className="w-3.5 h-3.5 text-gray-400" />
+                            <Mail className="w-3.5 h-3.5 text-slate-500" />
                             <span className="truncate max-w-[200px]">
                               {cliente.email}
                             </span>
                           </span>
                         ) : (
-                          <span className="text-gray-400 italic">
+                          <span className="text-slate-500 italic">
                             Não informado
                           </span>
                         )}
                       </td>
 
-                      <td className="px-6 py-4 text-sm text-gray-600 max-w-xs">
+                      <td className="px-6 py-4 text-sm text-slate-600 max-w-xs">
                         {cliente.endereco ? (
                           <span className="inline-flex items-center gap-1.5">
-                            <MapPin className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                            <MapPin className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                             <span className="line-clamp-1">
                               {cliente.endereco}
                             </span>
                           </span>
                         ) : (
-                          <span className="text-gray-400 italic">
+                          <span className="text-slate-500 italic">
                             Não informado
                           </span>
                         )}
@@ -430,7 +411,7 @@ export default function Clientes() {
                         <div className="flex justify-end gap-2">
                           <button
                             onClick={() => abrirEditarCliente(cliente)}
-                            className="px-3 py-2 rounded-lg text-sm font-medium text-[#0D1B2A] bg-gray-100 hover:bg-gray-200 transition"
+                            className="px-3 py-2 rounded-lg text-sm font-medium text-[#0D1B2A] bg-slate-100 hover:bg-slate-200 transition"
                           >
                             Editar
                           </button>
@@ -457,14 +438,14 @@ export default function Clientes() {
       {mostrarFormulario && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
               <div>
-                <h2 className="text-xl font-bold text-gray-900">
+                <h2 className="text-xl font-bold text-slate-900">
                   {clienteEditando
                     ? "Editar cliente"
                     : "Novo cliente"}
                 </h2>
-                <p className="text-sm text-gray-500 mt-1">
+                <p className="text-sm text-slate-500 mt-1">
                   {clienteEditando
                     ? "Atualize os dados do cliente."
                     : "Cadastre um novo cliente."}
@@ -476,7 +457,7 @@ export default function Clientes() {
                   limparFormulario();
                   setMostrarFormulario(false);
                 }}
-                className="text-gray-400 hover:text-gray-700 transition p-1 rounded-lg hover:bg-gray-100"
+                className="text-slate-500 hover:text-slate-700 transition p-1 rounded-lg hover:bg-slate-100"
                 aria-label="Fechar"
               >
                 <X className="w-5 h-5" />
@@ -488,7 +469,7 @@ export default function Clientes() {
                 <div className="md:col-span-2">
                   <label
                     htmlFor="cliente_nome"
-                    className="block text-sm font-semibold text-gray-700 mb-1"
+                    className="block text-sm font-semibold text-slate-700 mb-1"
                   >
                     Nome <span className="text-red-500">*</span>
                   </label>
@@ -498,7 +479,7 @@ export default function Clientes() {
                     value={nome}
                     onChange={(e) => setNome(e.target.value)}
                     placeholder="Nome completo"
-                    className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A] focus:border-transparent transition"
+                    className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition"
                     required
                   />
                 </div>
@@ -506,7 +487,7 @@ export default function Clientes() {
                 <div>
                   <label
                     htmlFor="cliente_telefone"
-                    className="block text-sm font-semibold text-gray-700 mb-1"
+                    className="block text-sm font-semibold text-slate-700 mb-1"
                   >
                     Telefone
                   </label>
@@ -520,14 +501,14 @@ export default function Clientes() {
                     }
                     placeholder="(11) 98765-4321"
                     maxLength={16}
-                    className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A] focus:border-transparent transition"
+                    className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition"
                   />
                 </div>
 
                 <div>
                   <label
                     htmlFor="cliente_email"
-                    className="block text-sm font-semibold text-gray-700 mb-1"
+                    className="block text-sm font-semibold text-slate-700 mb-1"
                   >
                     E-mail
                   </label>
@@ -537,14 +518,14 @@ export default function Clientes() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="cliente@email.com"
-                    className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A] focus:border-transparent transition"
+                    className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition"
                   />
                 </div>
 
                 <div className="md:col-span-2">
                   <label
                     htmlFor="cliente_endereco"
-                    className="block text-sm font-semibold text-gray-700 mb-1"
+                    className="block text-sm font-semibold text-slate-700 mb-1"
                   >
                     Endereço
                   </label>
@@ -554,7 +535,7 @@ export default function Clientes() {
                     value={endereco}
                     onChange={(e) => setEndereco(e.target.value)}
                     placeholder="Rua, número, bairro..."
-                    className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A] focus:border-transparent transition"
+                    className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition"
                   />
                 </div>
               </div>
@@ -566,7 +547,7 @@ export default function Clientes() {
                     limparFormulario();
                     setMostrarFormulario(false);
                   }}
-                  className="px-5 py-3 rounded-lg border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition"
+                  className="px-5 py-3 rounded-lg border border-slate-200 text-slate-700 font-medium hover:bg-slate-50 transition"
                 >
                   Cancelar
                 </button>
@@ -597,7 +578,7 @@ export default function Clientes() {
         descricao={
           <>
             Tem certeza que deseja excluir{" "}
-            <strong className="text-gray-900">
+            <strong className="text-slate-900">
               {clienteParaExcluir?.nome}
             </strong>
             ? Esta ação não pode ser desfeita.

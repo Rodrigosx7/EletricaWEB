@@ -9,4 +9,37 @@
   --color-primary-hsl: 51 100% 52%;
   --color-primary-hover: #FFE552;
   --color-secondary: #0D1B2A;
+
+  /* Tokens de design — radius */
+  --radius-input: 0.5rem;   /* rounded-lg */
+  --radius-card: 0.75rem;   /* rounded-xl */
+  --radius-modal: 1rem;     /* rounded-2xl */
+
+  /* Tokens de design — sombra */
+  --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-popover: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-modal: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+
+  /* Backgrounds contextuais (slate-cool, harmoniza com paleta amarelo+navy) */
+  --color-bg-page: #F8FAFC;            /* slate-50 */
+  --color-bg-table-header: #F1F5F9;    /* slate-100 */
+
+  /* Border refinements */
+  --color-border-subtle: #F1F5F9;      /* slate-100 */
+  --color-border-default: #E2E8F0;     /* slate-200 */
+
+  /* Texto muted */
+  --color-text-muted: #64748B;         /* slate-500 */
+}
+
+/* Foco global para acessibilidade (WCAG 2.4.7) */
+*:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: 0.25rem;
+}
+
+/* Remove outline padrão em mouse, mantém em teclado */
+*:focus:not(:focus-visible) {
+  outline: none;
 }

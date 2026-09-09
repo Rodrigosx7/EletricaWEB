@@ -71,9 +71,9 @@ function Cadastro({ voltarLogin }: CadastroProps) {
     setSenha("");
     setConfirmarSenha("");
 
-    voltarLogin();
-
     setCarregando(false);
+
+    voltarLogin();
   }
 
   return (

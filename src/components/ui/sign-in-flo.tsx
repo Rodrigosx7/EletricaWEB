@@ -68,7 +68,7 @@ function AnimatedFormField({
         onMouseEnter={() => setIsHovering(true)}
         onMouseLeave={() => setIsHovering(false)}
       >
-        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors duration-200 group-focus-within:text-[#FFD60A] pointer-events-none z-10">
+        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 transition-colors duration-200 group-focus-within:text-[#FFD60A] pointer-events-none z-10">
           {icon}
         </div>
 
@@ -89,7 +89,7 @@ function AnimatedFormField({
           className={`absolute left-10 transition-all duration-200 ease-in-out pointer-events-none z-0 ${
             isFocused || value
               ? "top-1.5 text-xs text-[#FFD60A] font-medium"
-              : "top-1/2 -translate-y-1/2 text-sm text-gray-400"
+              : "top-1/2 -translate-y-1/2 text-sm text-gray-500"
           }`}
         >
           {placeholder}
@@ -99,7 +99,7 @@ function AnimatedFormField({
           <button
             type="button"
             onClick={onToggle}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors"
             aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
           >
             {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}

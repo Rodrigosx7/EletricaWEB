@@ -120,7 +120,7 @@ function ToastItem({
       <button
         type="button"
         onClick={aoFechar}
-        className="text-gray-400 hover:text-gray-600 transition shrink-0"
+        className="text-gray-500 hover:text-gray-600 transition shrink-0"
         aria-label="Fechar notificação"
       >
         <X className="w-4 h-4" />

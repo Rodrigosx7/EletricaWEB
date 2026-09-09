@@ -10,8 +10,15 @@ import {
   ListChecks,
 } from "lucide-react";
 import { supabase } from "../supabase";
+import {
+  formatarMoeda,
+  mascaraMoeda,
+  converterNumero,
+} from "../utils/formatters";
 import ConfirmDialog from "./ConfirmDialog";
 import { useToast } from "./ui/toast";
+import { usePaginacao } from "../hooks/usePaginacao";
+import ControlesPaginacao from "./ui/ControlesPaginacao";
 
 type Servico = {
   id: number;
@@ -23,33 +30,10 @@ type Servico = {
   created_at?: string;
 };
 
-function formatarMoeda(valor: number) {
-  return Number(valor).toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
-}
-
-/**
- * Máscara monetária: "1234" → "12,34"; "123456" → "1.234,56".
- */
-function mascaraMoeda(valor: string): string {
-  const digitos = valor.replace(/\D/g, "");
-  if (!digitos) return "";
-  const numero = Number(digitos) / 100;
-  return numero.toLocaleString("pt-BR", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
-
-function converterNumero(valor: string): number {
-  return Number(valor.replace(/\./g, "").replace(",", "."));
-}
-
 export default function Servicos() {
   const [servicos, setServicos] = useState<Servico[]>([]);
   const [usuario, setUsuario] = useState<User | null>(null);
+  const paginacao = usePaginacao(20);
 
   const [nome, setNome] = useState("");
   const [categoria, setCategoria] = useState("");
@@ -73,23 +57,25 @@ export default function Servicos() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-
       setUsuario(user);
-
-      if (user) {
-        carregarServicos(user.id);
-      }
     }
-
     iniciar();
   }, []);
 
+  useEffect(() => {
+    if (usuario) carregarServicos(usuario.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usuario, paginacao.pagina, paginacao.tamanho]);
+
   async function carregarServicos(userId: string) {
-    const { data, error } = await supabase
+    const de = paginacao.offset;
+    const ate = de + paginacao.tamanho - 1;
+    const { data, error, count } = await supabase
       .from("servicos")
-      .select("*")
+      .select("*", { count: "exact" })
       .eq("user_id", userId)
-      .order("id", { ascending: false });
+      .order("id", { ascending: false })
+      .range(de, ate);
 
     if (error) {
       console.error("Erro ao carregar serviços:", error);
@@ -98,6 +84,7 @@ export default function Servicos() {
     }
 
     setServicos(data || []);
+    paginacao.setTotal(count ?? 0);
   }
 
   function limparFormulario() {
@@ -236,15 +223,15 @@ export default function Servicos() {
       : 0;
 
   return (
-    <div className="min-h-screen bg-gray-100 p-6 md:p-8">
+    <div className="min-h-screen bg-slate-100 p-6 md:p-8">
       <div className="max-w-7xl mx-auto">
         {/* Cabeçalho */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">
+            <h1 className="text-3xl font-bold text-slate-900">
               Serviços
             </h1>
-            <p className="text-gray-500 mt-1">
+            <p className="text-slate-500 mt-1">
               Cadastre e gerencie os serviços que você oferece
             </p>
           </div>
@@ -265,10 +252,10 @@ export default function Servicos() {
               <ListChecks className="w-6 h-6 text-[#FFD60A]" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-slate-500">
                 Total de serviços
               </p>
-              <p className="text-3xl font-bold text-gray-900 mt-1">
+              <p className="text-3xl font-bold text-slate-900 mt-1">
                 {servicos.length}
               </p>
             </div>
@@ -279,7 +266,7 @@ export default function Servicos() {
               <Zap className="w-6 h-6 text-[#FFD60A]" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-slate-500">
                 Serviços encontrados
               </p>
               <p className="text-3xl font-bold text-[#0D1B2A] mt-1">
@@ -293,10 +280,10 @@ export default function Servicos() {
               <DollarSign className="w-6 h-6 text-green-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-slate-500">
                 Preço médio
               </p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">
+              <p className="text-2xl font-bold text-slate-900 mt-1">
                 {formatarMoeda(precoMedio)}
               </p>
             </div>
@@ -307,30 +294,30 @@ export default function Servicos() {
         <div className="bg-white rounded-xl shadow-sm p-5 mb-6">
           <label
             htmlFor="busca_servico"
-            className="block text-sm font-semibold text-gray-700 mb-2"
+            className="block text-sm font-semibold text-slate-700 mb-2"
           >
             Buscar serviço
           </label>
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 pointer-events-none" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 w-5 h-5 pointer-events-none" />
             <input
               id="busca_servico"
               type="text"
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
               placeholder="Digite o nome ou categoria..."
-              className="w-full border border-gray-200 rounded-lg pl-10 pr-4 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A] focus:border-transparent transition"
+              className="w-full border border-slate-200 rounded-lg pl-10 pr-4 py-3 outline-none transition"
             />
           </div>
         </div>
 
         {/* Lista */}
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-            <h2 className="text-xl font-bold text-gray-900">
+          <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+            <h2 className="text-xl font-bold text-slate-900">
               Serviços cadastrados
             </h2>
-            <span className="text-sm text-gray-500">
+            <span className="text-sm text-slate-500">
               {servicosFiltrados.length}{" "}
               {servicosFiltrados.length === 1
                 ? "serviço"
@@ -343,12 +330,12 @@ export default function Servicos() {
               <div className="inline-flex w-16 h-16 rounded-full bg-yellow-50 items-center justify-center mb-4">
                 <Zap className="w-8 h-8 text-[#FFD60A]" />
               </div>
-              <h3 className="font-semibold text-gray-900">
+              <h3 className="font-semibold text-slate-900">
                 {busca
                   ? "Nenhum serviço encontrado"
                   : "Nenhum serviço cadastrado"}
               </h3>
-              <p className="text-gray-500 text-sm mt-1 max-w-sm mx-auto">
+              <p className="text-slate-500 text-sm mt-1 max-w-sm mx-auto">
                 {busca
                   ? "Tente pesquisar por outro nome ou categoria."
                   : "Cadastre seus serviços para utilizá-los futuramente nos orçamentos."}
@@ -364,47 +351,48 @@ export default function Servicos() {
               )}
             </div>
           ) : (
+            <>
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="bg-gray-50">
+                <thead className="bg-slate-50">
                   <tr>
                     <th
                       scope="col"
-                      className="text-left px-6 py-4 text-sm font-semibold text-gray-600"
+                      className="text-left px-6 py-4 text-sm font-semibold text-slate-600"
                     >
                       Serviço
                     </th>
                     <th
                       scope="col"
-                      className="text-left px-6 py-4 text-sm font-semibold text-gray-600"
+                      className="text-left px-6 py-4 text-sm font-semibold text-slate-600"
                     >
                       Categoria
                     </th>
                     <th
                       scope="col"
-                      className="text-left px-6 py-4 text-sm font-semibold text-gray-600"
+                      className="text-left px-6 py-4 text-sm font-semibold text-slate-600"
                     >
                       Descrição
                     </th>
                     <th
                       scope="col"
-                      className="text-left px-6 py-4 text-sm font-semibold text-gray-600"
+                      className="text-left px-6 py-4 text-sm font-semibold text-slate-600"
                     >
                       Preço
                     </th>
                     <th
                       scope="col"
-                      className="text-right px-6 py-4 text-sm font-semibold text-gray-600"
+                      className="text-right px-6 py-4 text-sm font-semibold text-slate-600"
                     >
                       Ações
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-slate-100">
                   {servicosFiltrados.map((servico) => (
                     <tr
                       key={servico.id}
-                      className="hover:bg-gray-50 transition"
+                      className="hover:bg-slate-50 transition"
                     >
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
@@ -412,10 +400,10 @@ export default function Servicos() {
                             <Zap className="w-5 h-5" />
                           </div>
                           <div className="min-w-0">
-                            <p className="font-semibold text-gray-900 truncate">
+                            <p className="font-semibold text-slate-900 truncate">
                               {servico.nome}
                             </p>
-                            <p className="text-xs text-gray-400 truncate">
+                            <p className="text-xs text-slate-500 truncate">
                               Serviço #{servico.id}
                             </p>
                           </div>
@@ -424,21 +412,21 @@ export default function Servicos() {
 
                       <td className="px-6 py-4">
                         {servico.categoria ? (
-                          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-gray-100 text-gray-700 text-sm">
+                          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-sm">
                             <Tag className="w-3 h-3" />
                             {servico.categoria}
                           </span>
                         ) : (
-                          <span className="text-sm text-gray-400 italic">
+                          <span className="text-sm text-slate-500 italic">
                             Sem categoria
                           </span>
                         )}
                       </td>
 
-                      <td className="px-6 py-4 text-sm text-gray-600 max-w-xs">
+                      <td className="px-6 py-4 text-sm text-slate-600 max-w-xs">
                         <span className="line-clamp-2">
                           {servico.descricao || (
-                            <span className="italic text-gray-400">
+                            <span className="italic text-slate-500">
                               Sem descrição
                             </span>
                           )}
@@ -446,7 +434,7 @@ export default function Servicos() {
                       </td>
 
                       <td className="px-6 py-4">
-                        <span className="font-bold text-gray-900 text-base">
+                        <span className="font-bold text-slate-900 text-base">
                           {formatarMoeda(servico.preco)}
                         </span>
                       </td>
@@ -458,7 +446,7 @@ export default function Servicos() {
                             onClick={() =>
                               abrirEditarServico(servico)
                             }
-                            className="px-3 py-2 rounded-lg text-sm font-medium text-[#0D1B2A] bg-gray-100 hover:bg-gray-200 transition"
+                            className="px-3 py-2 rounded-lg text-sm font-medium text-[#0D1B2A] bg-slate-100 hover:bg-slate-200 transition"
                           >
                             Editar
                           </button>
@@ -478,6 +466,16 @@ export default function Servicos() {
                 </tbody>
               </table>
             </div>
+            <ControlesPaginacao
+              pagina={paginacao.pagina}
+              totalPaginas={paginacao.totalPaginas}
+              total={paginacao.total}
+              tamanho={paginacao.tamanho}
+              onAnterior={paginacao.anterior}
+              onProxima={paginacao.proxima}
+              onMudarTamanho={paginacao.setTamanho}
+            />
+          </>
           )}
         </div>
       </div>
@@ -486,14 +484,14 @@ export default function Servicos() {
       {mostrarFormulario && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl my-8">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 sticky top-0 bg-white rounded-t-2xl z-10">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 sticky top-0 bg-white rounded-t-2xl z-10">
               <div>
-                <h2 className="text-xl font-bold text-gray-900">
+                <h2 className="text-xl font-bold text-slate-900">
                   {servicoEditando
                     ? "Editar serviço"
                     : "Novo serviço"}
                 </h2>
-                <p className="text-sm text-gray-500 mt-1">
+                <p className="text-sm text-slate-500 mt-1">
                   {servicoEditando
                     ? "Atualize os dados do serviço."
                     : "Cadastre um serviço que você oferece."}
@@ -505,7 +503,7 @@ export default function Servicos() {
                   limparFormulario();
                   setMostrarFormulario(false);
                 }}
-                className="text-gray-400 hover:text-gray-700 transition p-1 rounded-lg hover:bg-gray-100"
+                className="text-slate-500 hover:text-slate-700 transition p-1 rounded-lg hover:bg-slate-100"
                 aria-label="Fechar"
               >
                 <X className="w-5 h-5" />
@@ -518,7 +516,7 @@ export default function Servicos() {
                 <div className="md:col-span-2">
                   <label
                     htmlFor="servico_nome"
-                    className="block text-sm font-semibold text-gray-700 mb-1"
+                    className="block text-sm font-semibold text-slate-700 mb-1"
                   >
                     Nome do serviço{" "}
                     <span className="text-red-500">*</span>
@@ -529,7 +527,7 @@ export default function Servicos() {
                     value={nome}
                     onChange={(e) => setNome(e.target.value)}
                     placeholder="Ex: Instalação de tomada"
-                    className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A] focus:border-transparent transition"
+                    className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition"
                     required
                   />
                 </div>
@@ -538,7 +536,7 @@ export default function Servicos() {
                 <div>
                   <label
                     htmlFor="servico_categoria"
-                    className="block text-sm font-semibold text-gray-700 mb-1"
+                    className="block text-sm font-semibold text-slate-700 mb-1"
                   >
                     Categoria
                   </label>
@@ -548,7 +546,7 @@ export default function Servicos() {
                     value={categoria}
                     onChange={(e) => setCategoria(e.target.value)}
                     placeholder="Ex: Instalação"
-                    className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A] focus:border-transparent transition"
+                    className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition"
                   />
                 </div>
 
@@ -556,12 +554,12 @@ export default function Servicos() {
                 <div>
                   <label
                     htmlFor="servico_preco"
-                    className="block text-sm font-semibold text-gray-700 mb-1"
+                    className="block text-sm font-semibold text-slate-700 mb-1"
                   >
                     Preço base
                   </label>
                   <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
                       R$
                     </span>
                     <input
@@ -573,7 +571,7 @@ export default function Servicos() {
                         setPreco(mascaraMoeda(e.target.value))
                       }
                       placeholder="0,00"
-                      className="w-full border border-gray-200 rounded-lg pl-12 pr-4 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A] focus:border-transparent transition"
+                      className="w-full border border-slate-200 rounded-lg pl-12 pr-4 py-3 outline-none transition"
                     />
                   </div>
                 </div>
@@ -582,7 +580,7 @@ export default function Servicos() {
                 <div className="md:col-span-2">
                   <label
                     htmlFor="servico_descricao"
-                    className="block text-sm font-semibold text-gray-700 mb-1"
+                    className="block text-sm font-semibold text-slate-700 mb-1"
                   >
                     Descrição
                   </label>
@@ -592,7 +590,7 @@ export default function Servicos() {
                     onChange={(e) => setDescricao(e.target.value)}
                     placeholder="Descreva o que está incluído no serviço..."
                     rows={4}
-                    className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A] focus:border-transparent transition resize-none"
+                    className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition resize-none"
                   />
                 </div>
               </div>
@@ -604,7 +602,7 @@ export default function Servicos() {
                     limparFormulario();
                     setMostrarFormulario(false);
                   }}
-                  className="px-5 py-3 rounded-lg border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition"
+                  className="px-5 py-3 rounded-lg border border-slate-200 text-slate-700 font-medium hover:bg-slate-50 transition"
                 >
                   Cancelar
                 </button>
@@ -635,7 +633,7 @@ export default function Servicos() {
         descricao={
           <>
             Tem certeza que deseja excluir{" "}
-            <strong className="text-gray-900">
+            <strong className="text-slate-900">
               {servicoParaExcluir?.nome}
             </strong>
             ? Esta ação não pode ser desfeita.

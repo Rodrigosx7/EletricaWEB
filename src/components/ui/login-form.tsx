@@ -319,7 +319,7 @@ export function LoginForm({
         {/* Divisor */}
         <div className="relative flex py-2 items-center">
           <div className="flex-grow border-t border-white/20"></div>
-          <span className="flex-shrink mx-4 text-gray-400 text-xs">
+          <span className="flex-shrink mx-4 text-gray-500 text-xs">
             OU CONTINUE COM
           </span>
           <div className="flex-grow border-t border-white/20"></div>
@@ -355,7 +355,7 @@ export function LoginForm({
         </button>
       </form>
 
-      <p className="text-center text-xs text-gray-400">
+      <p className="text-center text-xs text-gray-500">
         Ainda não tem conta?{" "}
         <button
           type="button"

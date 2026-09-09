@@ -14,8 +14,16 @@ import {
   FileDown,
 } from "lucide-react";
 import { supabase } from "../supabase";
+import {
+  formatarMoeda,
+  formatarData,
+  dataIsoAtual,
+  primeiroDiaMes,
+} from "../utils/formatters";
 import ConfirmDialog from "./ConfirmDialog";
 import { useToast } from "./ui/toast";
+import { usePaginacao } from "../hooks/usePaginacao";
+import ControlesPaginacao from "./ui/ControlesPaginacao";
 
 type TipoMovimento = "receita" | "despesa";
 
@@ -60,48 +68,26 @@ const FORMAS_PAGAMENTO = [
   "Cheque",
 ];
 
-function formatarMoeda(valor: number): string {
-  return valor.toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
-}
-
-function formatarData(data: string): string {
-  const partes = data.split("-");
-  if (partes.length !== 3) return data;
-  return `${partes[2]}/${partes[1]}/${partes[0]}`;
-}
-
-function dataIsoAtual(): string {
-  return new Date().toISOString().split("T")[0];
-}
-
-function primeiroDiaMes(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
-}
-
 function corCategoria(cat: string): string {
-  // Mapeia categorias conhecidas para cores consistentes
   const mapa: Record<string, string> = {
-    "Serviço prestado": "bg-emerald-100 text-emerald-700",
-    "Orçamento aprovado": "bg-emerald-100 text-emerald-700",
-    "Venda de produto": "bg-emerald-100 text-emerald-700",
-    Material: "bg-amber-100 text-amber-700",
-    Combustível: "bg-orange-100 text-orange-700",
-    Alimentação: "bg-pink-100 text-pink-700",
-    Ferramenta: "bg-indigo-100 text-indigo-700",
-    Transporte: "bg-blue-100 text-blue-700",
-    Outros: "bg-gray-100 text-gray-700",
+    "Serviço prestado": "bg-emerald-100 text-emerald-800",
+    "Orçamento aprovado": "bg-emerald-100 text-emerald-800",
+    "Venda de produto": "bg-emerald-100 text-emerald-800",
+    Material: "bg-amber-100 text-amber-800",
+    "Combustível": "bg-orange-100 text-orange-800",
+    "Alimentação": "bg-pink-100 text-pink-800",
+    Ferramenta: "bg-indigo-100 text-indigo-800",
+    Transporte: "bg-blue-100 text-blue-800",
+    Outros: "bg-slate-100 text-slate-700",
   };
-  return mapa[cat] || "bg-gray-100 text-gray-700";
+  return mapa[cat] || "bg-slate-100 text-slate-700";
 }
 
 export default function Financeiro(): ReactElement {
   const [usuario, setUsuario] = useState<User | null>(null);
   const [movimentos, setMovimentos] = useState<Movimento[]>([]);
   const [carregando, setCarregando] = useState(true);
+  const paginacao = usePaginacao(20);
 
   const [busca, setBusca] = useState("");
   const [filtroTipo, setFiltroTipo] = useState<"todos" | TipoMovimento>(
@@ -109,7 +95,6 @@ export default function Financeiro(): ReactElement {
   );
   const [dataInicio, setDataInicio] = useState(primeiroDiaMes());
   const [dataFim, setDataFim] = useState(dataIsoAtual());
-
   const [modalAberto, setModalAberto] = useState(false);
   const [salvando, setSalvando] = useState(false);
 
@@ -151,13 +136,21 @@ export default function Financeiro(): ReactElement {
     return () => window.removeEventListener("focus", onFocus);
   }, []);
 
+  useEffect(() => {
+    if (usuario) carregarMovimentos(usuario.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usuario, paginacao.pagina, paginacao.tamanho]);
+
   async function carregarMovimentos(userId: string) {
-    const { data, error } = await supabase
+    const de = paginacao.offset;
+    const ate = de + paginacao.tamanho - 1;
+    const { data, error, count } = await supabase
       .from("movimentacoes")
-      .select("*")
+      .select("*", { count: "exact" })
       .eq("user_id", userId)
       .order("data_movimento", { ascending: false })
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .range(de, ate);
 
     setCarregando(false);
 
@@ -168,6 +161,7 @@ export default function Financeiro(): ReactElement {
     }
 
     setMovimentos(data || []);
+    paginacao.setTotal(count ?? 0);
   }
 
   function limparFormulario() {
@@ -486,14 +480,14 @@ export default function Financeiro(): ReactElement {
                 Buscar
               </label>
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 pointer-events-none" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 w-5 h-5 pointer-events-none" />
                 <input
                   id="fin_busca"
                   type="text"
                   value={busca}
                   onChange={(e) => setBusca(e.target.value)}
                   placeholder="Descrição, categoria..."
-                  className="w-full border border-gray-200 rounded-lg pl-10 pr-4 py-2.5 outline-none focus:ring-2 focus:ring-[#FFD60A] focus:border-transparent transition"
+                  className="w-full border border-gray-200 rounded-lg pl-10 pr-4 py-2.5 outline-none transition"
                 />
               </div>
             </div>
@@ -513,7 +507,7 @@ export default function Financeiro(): ReactElement {
                     e.target.value as "todos" | TipoMovimento
                   )
                 }
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 outline-none focus:ring-2 focus:ring-[#FFD60A] bg-white"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 outline-none bg-white"
               >
                 <option value="todos">Todos</option>
                 <option value="receita">Receitas</option>
@@ -533,7 +527,7 @@ export default function Financeiro(): ReactElement {
                 type="date"
                 value={dataInicio}
                 onChange={(e) => setDataInicio(e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 outline-none focus:ring-2 focus:ring-[#FFD60A]"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 outline-none"
               />
             </div>
 
@@ -549,7 +543,7 @@ export default function Financeiro(): ReactElement {
                 type="date"
                 value={dataFim}
                 onChange={(e) => setDataFim(e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 outline-none focus:ring-2 focus:ring-[#FFD60A]"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 outline-none"
               />
             </div>
           </div>
@@ -598,6 +592,7 @@ export default function Financeiro(): ReactElement {
               )}
             </div>
           ) : (
+            <>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gray-50">
@@ -648,7 +643,7 @@ export default function Financeiro(): ReactElement {
                     >
                       <td className="px-6 py-4 text-sm text-gray-700">
                         <span className="inline-flex items-center gap-1.5">
-                          <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                          <Calendar className="w-3.5 h-3.5 text-gray-500" />
                           {formatarData(mov.data_movimento)}
                         </span>
                       </td>
@@ -657,7 +652,7 @@ export default function Financeiro(): ReactElement {
                           className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${
                             mov.tipo === "receita"
                               ? "bg-emerald-100 text-emerald-700"
-                              : "bg-red-100 text-red-700"
+                              : "bg-red-100 text-red-800"
                           }`}
                         >
                           {mov.tipo === "receita" ? "Receita" : "Despesa"}
@@ -727,6 +722,16 @@ export default function Financeiro(): ReactElement {
                 </tbody>
               </table>
             </div>
+            <ControlesPaginacao
+              pagina={paginacao.pagina}
+              totalPaginas={paginacao.totalPaginas}
+              total={paginacao.total}
+              tamanho={paginacao.tamanho}
+              onAnterior={paginacao.anterior}
+              onProxima={paginacao.proxima}
+              onMudarTamanho={paginacao.setTamanho}
+            />
+            </>
           )}
         </div>
       </div>
@@ -750,7 +755,7 @@ export default function Financeiro(): ReactElement {
                   limparFormulario();
                   setModalAberto(false);
                 }}
-                className="text-gray-400 hover:text-gray-700 transition p-1 rounded-lg hover:bg-gray-100"
+                className="text-gray-500 hover:text-gray-700 transition p-1 rounded-lg hover:bg-gray-100"
                 aria-label="Fechar"
               >
                 <X className="w-5 h-5" />
@@ -820,7 +825,7 @@ export default function Financeiro(): ReactElement {
                   value={descricao}
                   onChange={(e) => setDescricao(e.target.value)}
                   placeholder="Ex: Instalação elétrica residencial"
-                  className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A] focus:border-transparent transition"
+                  className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none transition"
                   required
                 />
               </div>
@@ -855,7 +860,7 @@ export default function Financeiro(): ReactElement {
                       );
                     }}
                     placeholder="0,00"
-                    className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A] focus:border-transparent transition"
+                    className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none transition"
                     required
                   />
                 </div>
@@ -871,7 +876,7 @@ export default function Financeiro(): ReactElement {
                     type="date"
                     value={dataMovimento}
                     onChange={(e) => setDataMovimento(e.target.value)}
-                    className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A]"
+                    className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none"
                   />
                 </div>
               </div>
@@ -889,7 +894,7 @@ export default function Financeiro(): ReactElement {
                     id="mov_categoria"
                     value={categoria}
                     onChange={(e) => setCategoria(e.target.value)}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A] bg-white"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-3 outline-none bg-white"
                   >
                     {categorias.map((c) => (
                       <option key={c} value={c}>
@@ -909,7 +914,7 @@ export default function Financeiro(): ReactElement {
                     id="mov_forma"
                     value={formaPagamento}
                     onChange={(e) => setFormaPagamento(e.target.value)}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A] bg-white"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-3 outline-none bg-white"
                   >
                     <option value="">Não informar</option>
                     {FORMAS_PAGAMENTO.map((f) => (
@@ -935,7 +940,7 @@ export default function Financeiro(): ReactElement {
                   onChange={(e) => setObservacoes(e.target.value)}
                   rows={3}
                   placeholder="Anotações opcionais..."
-                  className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#FFD60A] focus:border-transparent transition resize-none"
+                  className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none transition resize-none"
                 />
               </div>
 

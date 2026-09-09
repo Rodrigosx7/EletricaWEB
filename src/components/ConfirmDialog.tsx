@@ -70,7 +70,7 @@ export default function ConfirmDialog({
                 <button
                   onClick={aoCancelar}
                   disabled={carregando}
-                  className="text-gray-400 hover:text-gray-600 transition disabled:opacity-30"
+                  className="text-gray-500 hover:text-gray-600 transition disabled:opacity-30"
                   aria-label="Fechar"
                 >
                   <X className="w-5 h-5" />

@@ -262,14 +262,14 @@ export default function Perfil({
               Nome
             </label>
             <div className="relative">
-              <IconUser className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 pointer-events-none" />
+              <IconUser className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 w-5 h-5 pointer-events-none" />
               <input
                 id="perfil_nome"
                 type="text"
                 value={nome}
                 onChange={(e) => setNome(e.target.value)}
                 placeholder="Seu nome completo"
-                className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FFD60A]/50 focus:border-[#FFD60A] text-gray-900 transition"
+                className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg outline-none text-gray-900 transition"
                 required
               />
             </div>
@@ -283,7 +283,7 @@ export default function Perfil({
               E-mail
             </label>
             <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 pointer-events-none" />
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 w-5 h-5 pointer-events-none" />
               <input
                 id="perfil_email"
                 type="email"
