@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
-import { STATUS_ORCAMENTO, STATUS_ORCAMENTO_VALORES, type StatusOrcamento } from "../utils/constantes";
+import { STATUS_ORCAMENTO, STATUS_ORCAMENTO_VALORES, formatarNumero, type StatusOrcamento } from "../utils/constantes";
 import { supabase } from "../supabase";
 import { usePaginacao } from "../hooks/usePaginacao";
 import ControlesPaginacao from "./ui/ControlesPaginacao";
@@ -664,10 +664,7 @@ async function editarOrcamento(orcamento: Orcamento) {
       )
     );
     mostrarToast(
-      `Orçamento #${String(orcamentoParaExcluir.numero).padStart(
-        4,
-        "0"
-      )} excluído com sucesso.`,
+      `Orçamento #${formatarNumero(orcamentoParaExcluir.numero)} excluído com sucesso.`,
       "sucesso"
     );
     setOrcamentoParaExcluir(null);
@@ -820,7 +817,7 @@ const cliente = clienteCompleto?.nome || "Cliente";
     doc.setFont("helvetica", "bold");
 
     doc.text(
-      `ORÇAMENTO Nº ${String(orcamento.numero).padStart(4, "0")}`,
+      `ORÇAMENTO Nº ${formatarNumero(orcamento.numero)}`,
       20,
       72
     );
@@ -1255,9 +1252,7 @@ const cliente = clienteCompleto?.nome || "Cliente";
     // SALVAR PDF
     // =========================
 
-    const numeroPDF = String(
-      orcamento.numero
-    ).padStart(4, "0");
+    const numeroPDF = formatarNumero(orcamento.numero);
 
     doc.save(
       `orcamento-${numeroPDF}.pdf`
@@ -1408,7 +1403,7 @@ const cliente = clienteCompleto?.nome || "Cliente";
                     >
 
                       <td className="px-6 py-4 font-semibold text-gray-900">
-                        #{String(orcamento.numero).padStart(4, "0")}
+                        #{formatarNumero(orcamento.numero)}
                       </td>
 
                      <td className="px-6 py-4 text-gray-700">
@@ -1565,9 +1560,9 @@ const cliente = clienteCompleto?.nome || "Cliente";
               <div>
                 <h2 className="text-2xl font-bold text-gray-900">
   {orcamentoEditando
-    ? `Editar orçamento #${String(
+    ? `Editar orçamento #${formatarNumero(
         orcamentoEditando.numero
-      ).padStart(4, "0")}`
+      )}`
     : "Novo orçamento"}
 </h2>
 
@@ -2007,9 +2002,7 @@ const cliente = clienteCompleto?.nome || "Cliente";
 
                 <h2 className="text-2xl font-bold text-gray-900">
                   Orçamento #
-                  {String(
-                    orcamentoVisualizado.numero
-                  ).padStart(4, "0")}
+                  {formatarNumero(orcamentoVisualizado.numero)}
                 </h2>
 
                 <p className="text-gray-500 text-sm mt-1">
@@ -2302,7 +2295,7 @@ const cliente = clienteCompleto?.nome || "Cliente";
                   }}
                   className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition"
                 >
-                  🔧 Ir para OS #{String(osVinculada.numero).padStart(4, "0")}
+                  #{formatarNumero(osVinculada.numero)}
                   <span className="text-xs opacity-75">
                     ({osVinculada.status})
                   </span>
@@ -2336,7 +2329,7 @@ const cliente = clienteCompleto?.nome || "Cliente";
             <>
               Tem certeza que deseja excluir o orçamento{" "}
               <strong className="text-gray-900">
-                #{String(orcamentoParaExcluir.numero).padStart(4, "0")}
+                #{formatarNumero(orcamentoParaExcluir.numero)}
               </strong>{" "}
               do valor de{" "}
               <strong className="text-gray-900">

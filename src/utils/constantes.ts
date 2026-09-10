@@ -38,3 +38,19 @@ export const STATUS_ORCAMENTO_VALORES: StatusOrcamento[] = [
   STATUS_ORCAMENTO.RECUSADO,
   STATUS_ORCAMENTO.CONCLUIDO,
 ];
+
+/**
+ * Largura fixa do número sequencial de OS/Orçamento.
+ * 42 → "0042", 1234 → "1234". Quando o negócio passar de 9999 registros,
+ * basta aumentar este valor (ex.: 5) e todas as telas seguem o novo padrão.
+ */
+export const NUMERO_PAD_LENGTH = 4;
+
+/**
+ * Formata número sequencial com padding zero à esquerda.
+ * `formatarNumero(42)` → "0042"; `formatarNumero(null)` → "-".
+ */
+export function formatarNumero(numero: number | null | undefined): string {
+  if (numero === null || numero === undefined) return "-";
+  return String(numero).padStart(NUMERO_PAD_LENGTH, "0");
+}

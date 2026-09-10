@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../supabase";
 import { formatarMoeda, formatarData, primeiroDiaMesAnterior } from "../utils/formatters";
+import { formatarNumero } from "../utils/constantes";
 import { classeStatus } from "../utils/statusBadge";
 
 type DashboardProps = {
@@ -570,7 +571,7 @@ export default function Dashboard({ setPagina }: DashboardProps) {
                         className="hover:bg-slate-50/60 transition"
                       >
                         <td className="px-6 py-3 font-semibold text-slate-900">
-                          #{String(os.numero).padStart(4, "0")}
+                          #{formatarNumero(os.numero)}
                         </td>
                         <td className="px-6 py-3 text-sm text-slate-700">
                           {os.cliente_nome || "—"}

@@ -30,6 +30,23 @@
 
   /* Texto muted */
   --color-text-muted: #64748B;         /* slate-500 */
+
+  /* Cores semânticas — usadas em badges, alertas e feedback */
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-danger:  #EF4444;
+  --color-info:    #3B82F6;
+  --color-brand:   #A855F7;
+  --color-accent:  #06B6D4;
+}
+
+/* Tipografia global — Inter com fallback robusto (system-ui em macOS, Segoe em Windows, Roboto em Android) */
+body {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-feature-settings: 'cv11', 'ss01';
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* Foco global para acessibilidade (WCAG 2.4.7) */
@@ -42,4 +59,75 @@
 /* Remove outline padrão em mouse, mantém em teclado */
 *:focus:not(:focus-visible) {
   outline: none;
+}
+
+/* ============================================
+   Classes utilitárias de design system
+   Padroniza padrões repetidos em 8+ componentes
+   ============================================ */
+
+/* Card de superfície padrão (listas, formulários, seções) */
+.surface-card {
+  background-color: #ffffff;
+  border-radius: var(--radius-modal);
+  box-shadow: var(--shadow-card);
+  border: 1px solid var(--color-border-subtle);
+}
+
+/* Input base — usado em todos os formulários */
+.input-base {
+  width: 100%;
+  border: 1px solid #E5E7EB;       /* gray-200 */
+  border-radius: var(--radius-input);
+  padding: 0.75rem 1rem;           /* py-3 px-4 */
+  outline: none;
+  transition: border-color 150ms, box-shadow 150ms;
+}
+.input-base:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgb(255 214 10 / 0.2);
+}
+
+/* Botão primário (ação principal — amarelo com texto navy) */
+.btn-primary {
+  padding: 0.75rem 1rem;
+  background-color: var(--color-primary);
+  color: var(--color-secondary);
+  font-weight: 700;
+  border-radius: var(--radius-input);
+  transition: background-color 150ms;
+  border: none;
+  cursor: pointer;
+}
+.btn-primary:hover:not(:disabled) {
+  background-color: var(--color-primary-hover);
+}
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Botão secundário (cancelar, voltar) */
+.btn-secondary {
+  padding: 0.75rem 1rem;
+  background-color: transparent;
+  color: #374151;                  /* gray-700 */
+  font-weight: 600;
+  border: 1px solid #E5E7EB;       /* gray-200 */
+  border-radius: var(--radius-input);
+  transition: background-color 150ms;
+  cursor: pointer;
+}
+.btn-secondary:hover:not(:disabled) {
+  background-color: #F9FAFB;       /* gray-50 */
+}
+
+/* Reduced motion — respeita preferência do usuário (WCAG 2.3.3) */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

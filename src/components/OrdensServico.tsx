@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../supabase";
 import { formatarMoeda, formatarData } from "../utils/formatters";
-import { STATUS_OS, type StatusOS } from "../utils/constantes";
+import { STATUS_OS, formatarNumero, type StatusOS } from "../utils/constantes";
 import {
   Wrench,
   Eye,
@@ -1119,9 +1119,7 @@ export default function OrdensServico() {
 
                   <td className="px-6 py-4 font-semibold text-gray-800">
                     #
-                    {String(
-                      ordem.numero
-                    ).padStart(4, "0")}
+                    {formatarNumero(ordem.numero)}
                   </td>
 
                   <td className="px-6 py-4 text-gray-700">
@@ -1136,9 +1134,7 @@ export default function OrdensServico() {
 
                       <span className="text-sm bg-blue-50 text-blue-700 px-3 py-1 rounded-full">
                         Orçamento #
-                        {String(
-                          ordem.orcamento_id
-                        ).padStart(4, "0")}
+                        {formatarNumero(ordem.orcamento_id)}
                       </span>
 
                     ) : (
@@ -1843,9 +1839,7 @@ export default function OrdensServico() {
 
                   <h2 className="text-2xl font-bold text-gray-800">
                     O.S. #
-                    {String(
-                      ordemVisualizada.numero
-                    ).padStart(4, "0")}
+                    {formatarNumero(ordemVisualizada.numero)}
                   </h2>
 
                   <p className="text-sm text-gray-500 mt-1">
@@ -2256,7 +2250,7 @@ export default function OrdensServico() {
             <>
               Tem certeza que deseja excluir a O.S.{" "}
               <strong className="text-gray-900">
-                #{String(ordemParaExcluir.numero).padStart(4, "0")}
+                #{formatarNumero(ordemParaExcluir.numero)}
               </strong>{" "}
               do valor de{" "}
               <strong className="text-gray-900">
@@ -2284,7 +2278,7 @@ export default function OrdensServico() {
             <>
               Marcar a O.S.{" "}
               <strong className="text-gray-900">
-                #{String(ordemParaConcluir.numero).padStart(4, "0")}
+                #{formatarNumero(ordemParaConcluir.numero)}
               </strong>{" "}
               como concluída? A data de conclusão será preenchida
               automaticamente.
@@ -2307,7 +2301,7 @@ export default function OrdensServico() {
             <>
               Reabrir a O.S.{" "}
               <strong className="text-gray-900">
-                #{String(ordemParaReabrir.numero).padStart(4, "0")}
+                #{formatarNumero(ordemParaReabrir.numero)}
               </strong>
               ? O status voltará para "Em andamento" e a data de
               conclusão será removida.
@@ -2329,7 +2323,7 @@ export default function OrdensServico() {
               <div>
                 <h2 className="text-xl font-bold text-gray-900">
                   Histórico da O.S. #
-                  {String(ordemHistorico.numero).padStart(4, "0")}
+                  {formatarNumero(ordemHistorico.numero)}
                 </h2>
                 <p className="text-sm text-gray-500 mt-1">
                   Timeline de mudanças de status e movimentações de
