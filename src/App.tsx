@@ -46,10 +46,28 @@ export default function App() {
 function AppInterno() {
   const [usuario, setUsuario] = useState<User | null>(null);
   const [pagina, setPagina] = useState("dashboard");
+  const [novoOrcamento, setNovoOrcamento] = useState(false);
   const [perfilAberto, setPerfilAberto] = useState(false);
   const [logoutAberto, setLogoutAberto] = useState(false);
   const [saindo, setSaindo] = useState(false);
   const [menuAberto, setMenuAberto] = useState(false);
+  const [sidebarRecolhida, setSidebarRecolhida] = useState(() =>
+    window.localStorage.getItem("portal-sidebar-recolhida") === "true"
+  );
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      "portal-sidebar-recolhida",
+      String(sidebarRecolhida)
+    );
+  }, [sidebarRecolhida]);
+
+  function navegar(paginaDestino: string) {
+    setNovoOrcamento(false);
+    setPagina(paginaDestino);
+    setMenuAberto(false);
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }
 
   // Verificar usuário logado
   useEffect(() => {
@@ -170,18 +188,18 @@ function AppInterno() {
   // Sistema
   return (
     <EmpresaProvider usuario={usuario}>
-      <div className="min-h-screen bg-gray-100">
+      <div className="app-shell min-h-screen">
+      <a href="#conteudo" className="skip-link">Ir para o conteúdo</a>
       <Sidebar
         pagina={pagina}
-        setPagina={(p) => {
-          setPagina(p);
-          setMenuAberto(false);
-        }}
+        setPagina={navegar}
         aoAbrirPerfil={() => setPerfilAberto(true)}
         aoPedirLogout={() => setLogoutAberto(true)}
         usuario={usuario}
         aberta={menuAberto}
         aoFechar={() => setMenuAberto(false)}
+        recolhida={sidebarRecolhida}
+        aoAlternarRecolhida={() => setSidebarRecolhida((atual) => !atual)}
       />
 
       {perfilAberto && usuario && (
@@ -203,18 +221,25 @@ function AppInterno() {
         aoCancelar={() => setLogoutAberto(false)}
       />
 
-      <main className="lg:ml-64 min-h-screen">
+      <main id="conteudo" tabIndex={-1}
+        className={`min-h-screen bg-[var(--color-bg-page)] transition-[margin] duration-200 ${
+          sidebarRecolhida ? "lg:ml-[4.5rem]" : "lg:ml-60"
+        }`}
+      >
         <Topbar
           titulo={info.titulo}
           icone={info.icone}
           aoAbrirMenu={() => setMenuAberto(true)}
         />
 
-        <div className="px-4 sm:px-6 lg:px-8 py-6">
+        <div className="app-content">
 
         {/* Dashboard */}
         {pagina === "dashboard" && (
-          <Dashboard setPagina={setPagina} />
+          <Dashboard setPagina={navegar} aoNovoOrcamento={() => {
+            navegar("orcamentos");
+            setNovoOrcamento(true);
+          }} />
         )}
 
         {/* Clientes */}
@@ -222,7 +247,7 @@ function AppInterno() {
 
         {/* Orçamentos */}
         {pagina === "orcamentos" && (
-          <Orcamentos setPagina={setPagina} />
+          <Orcamentos setPagina={navegar} abrirAoMontar={novoOrcamento} />
         )}
 
         {/* Orçamento Rápido */}

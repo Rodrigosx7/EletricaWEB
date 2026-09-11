@@ -1,14 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type { User } from "@supabase/supabase-js";
-import {
-  Search,
-  Zap,
-  Plus,
-  X,
-  Tag,
-  DollarSign,
-  ListChecks,
-} from "lucide-react";
+import { Search, Plus, Pencil, Trash2 } from "lucide-react";
 import { supabase } from "../supabase";
 import {
   formatarMoeda,
@@ -16,6 +8,7 @@ import {
   converterNumero,
 } from "../utils/formatters";
 import ConfirmDialog from "./ConfirmDialog";
+import Modal from "./ui/Modal";
 import { useToast } from "./ui/toast";
 import { usePaginacao } from "../hooks/usePaginacao";
 import ControlesPaginacao from "./ui/ControlesPaginacao";
@@ -41,6 +34,10 @@ export default function Servicos() {
   const [preco, setPreco] = useState("");
 
   const [busca, setBusca] = useState("");
+  const [ordenacao, setOrdenacao] = useState("recentes");
+  const [categoriaFiltro, setCategoriaFiltro] = useState("");
+  const [carregandoLista, setCarregandoLista] = useState(true);
+  const [erroLista, setErroLista] = useState(false);
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [carregando, setCarregando] = useState(false);
 
@@ -58,6 +55,7 @@ export default function Servicos() {
         data: { user },
       } = await supabase.auth.getUser();
       setUsuario(user);
+      if (!user) setCarregandoLista(false);
     }
     iniciar();
   }, []);
@@ -68,6 +66,8 @@ export default function Servicos() {
   }, [usuario, paginacao.pagina, paginacao.tamanho]);
 
   async function carregarServicos(userId: string) {
+    setCarregandoLista(true);
+    setErroLista(false);
     const de = paginacao.offset;
     const ate = de + paginacao.tamanho - 1;
     const { data, error, count } = await supabase
@@ -77,7 +77,9 @@ export default function Servicos() {
       .order("id", { ascending: false })
       .range(de, ate);
 
+    setCarregandoLista(false);
     if (error) {
+      setErroLista(true);
       console.error("Erro ao carregar serviços:", error);
       mostrarToast("Erro ao carregar serviços.", "erro");
       return;
@@ -207,13 +209,14 @@ export default function Servicos() {
   }
 
   const servicosFiltrados = servicos.filter((servico) => {
+    if (categoriaFiltro && servico.categoria !== categoriaFiltro) return false;
     const termo = busca.toLowerCase().trim();
     if (!termo) return true;
     return (
       servico.nome.toLowerCase().includes(termo) ||
       (servico.categoria || "").toLowerCase().includes(termo)
     );
-  });
+  }).sort((a, b) => ordenacao === "nome" ? a.nome.localeCompare(b.nome, "pt-BR") : ordenacao === "preco" ? a.preco - b.preco : b.id - a.id);
 
   // Preço médio dos serviços cadastrados (para o card de estatísticas)
   const precoMedio =
@@ -222,429 +225,76 @@ export default function Servicos() {
         servicos.length
       : 0;
 
+  function fecharFormulario() {
+    limparFormulario();
+    setMostrarFormulario(false);
+  }
+
+  function acoesServico(servico: Servico) {
+    return <div className="row-actions">
+      <button type="button" className="icon-button" onClick={() => abrirEditarServico(servico)} aria-label={"Editar " + servico.nome} title="Editar serviço"><Pencil size={17} aria-hidden="true" /></button>
+      <button type="button" className="icon-button" onClick={() => setServicoParaExcluir(servico)} aria-label={"Excluir " + servico.nome} title="Excluir serviço"><Trash2 size={17} aria-hidden="true" /></button>
+    </div>;
+  }
+
+  const categorias = Array.from(new Set(servicos.flatMap((s) => s.categoria ? [s.categoria] : []))).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const temFiltro = Boolean(busca || categoriaFiltro);
+  function limparFiltros() { setBusca(""); setCategoriaFiltro(""); }
+
   return (
-    <div className="min-h-screen bg-slate-100 p-6 md:p-8">
-      <div className="max-w-7xl mx-auto">
-        {/* Cabeçalho */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900">
-              Serviços
-            </h1>
-            <p className="text-slate-500 mt-1">
-              Cadastre e gerencie os serviços que você oferece
-            </p>
-          </div>
-
-          <button
-            onClick={abrirNovoServico}
-            className="inline-flex items-center gap-2 bg-[#FFD60A] text-[#0D1B2A] font-bold px-5 py-3 rounded-lg hover:bg-yellow-400 transition shadow-lg shadow-yellow-500/20"
-          >
-            <Plus className="w-5 h-5" />
-            Novo serviço
-          </button>
-        </div>
-
-        {/* Cards de estatísticas */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-6">
-          <div className="bg-white rounded-xl shadow-sm p-6 flex items-start gap-4">
-            <div className="w-12 h-12 rounded-xl bg-yellow-50 flex items-center justify-center shrink-0">
-              <ListChecks className="w-6 h-6 text-[#FFD60A]" />
-            </div>
-            <div>
-              <p className="text-sm text-slate-500">
-                Total de serviços
-              </p>
-              <p className="text-3xl font-bold text-slate-900 mt-1">
-                {servicos.length}
-              </p>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-sm p-6 flex items-start gap-4">
-            <div className="w-12 h-12 rounded-xl bg-yellow-50 flex items-center justify-center shrink-0">
-              <Zap className="w-6 h-6 text-[#FFD60A]" />
-            </div>
-            <div>
-              <p className="text-sm text-slate-500">
-                Serviços encontrados
-              </p>
-              <p className="text-3xl font-bold text-[#0D1B2A] mt-1">
-                {servicosFiltrados.length}
-              </p>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-sm p-6 flex items-start gap-4">
-            <div className="w-12 h-12 rounded-xl bg-green-50 flex items-center justify-center shrink-0">
-              <DollarSign className="w-6 h-6 text-green-600" />
-            </div>
-            <div>
-              <p className="text-sm text-slate-500">
-                Preço médio
-              </p>
-              <p className="text-2xl font-bold text-slate-900 mt-1">
-                {formatarMoeda(precoMedio)}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Busca */}
-        <div className="bg-white rounded-xl shadow-sm p-5 mb-6">
-          <label
-            htmlFor="busca_servico"
-            className="block text-sm font-semibold text-slate-700 mb-2"
-          >
-            Buscar serviço
-          </label>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 w-5 h-5 pointer-events-none" />
-            <input
-              id="busca_servico"
-              type="text"
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-              placeholder="Digite o nome ou categoria..."
-              className="w-full border border-slate-200 rounded-lg pl-10 pr-4 py-3 outline-none transition"
-            />
-          </div>
-        </div>
-
-        {/* Lista */}
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-            <h2 className="text-xl font-bold text-slate-900">
-              Serviços cadastrados
-            </h2>
-            <span className="text-sm text-slate-500">
-              {servicosFiltrados.length}{" "}
-              {servicosFiltrados.length === 1
-                ? "serviço"
-                : "serviços"}
-            </span>
-          </div>
-
-          {servicosFiltrados.length === 0 ? (
-            <div className="p-10 text-center">
-              <div className="inline-flex w-16 h-16 rounded-full bg-yellow-50 items-center justify-center mb-4">
-                <Zap className="w-8 h-8 text-[#FFD60A]" />
-              </div>
-              <h3 className="font-semibold text-slate-900">
-                {busca
-                  ? "Nenhum serviço encontrado"
-                  : "Nenhum serviço cadastrado"}
-              </h3>
-              <p className="text-slate-500 text-sm mt-1 max-w-sm mx-auto">
-                {busca
-                  ? "Tente pesquisar por outro nome ou categoria."
-                  : "Cadastre seus serviços para utilizá-los futuramente nos orçamentos."}
-              </p>
-              {!busca && (
-                <button
-                  onClick={abrirNovoServico}
-                  className="mt-5 inline-flex items-center gap-2 bg-[#FFD60A] hover:bg-yellow-400 text-[#0D1B2A] font-bold px-5 py-2.5 rounded-lg transition shadow-lg shadow-yellow-500/20"
-                >
-                  <Plus className="w-4 h-4" />
-                  Cadastrar primeiro serviço
-                </button>
-              )}
-            </div>
-          ) : (
-            <>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th
-                      scope="col"
-                      className="text-left px-6 py-4 text-sm font-semibold text-slate-600"
-                    >
-                      Serviço
-                    </th>
-                    <th
-                      scope="col"
-                      className="text-left px-6 py-4 text-sm font-semibold text-slate-600"
-                    >
-                      Categoria
-                    </th>
-                    <th
-                      scope="col"
-                      className="text-left px-6 py-4 text-sm font-semibold text-slate-600"
-                    >
-                      Descrição
-                    </th>
-                    <th
-                      scope="col"
-                      className="text-left px-6 py-4 text-sm font-semibold text-slate-600"
-                    >
-                      Preço
-                    </th>
-                    <th
-                      scope="col"
-                      className="text-right px-6 py-4 text-sm font-semibold text-slate-600"
-                    >
-                      Ações
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {servicosFiltrados.map((servico) => (
-                    <tr
-                      key={servico.id}
-                      className="hover:bg-slate-50 transition"
-                    >
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#FFD60A] to-yellow-500 text-[#0D1B2A] font-bold flex items-center justify-center shrink-0">
-                            <Zap className="w-5 h-5" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="font-semibold text-slate-900 truncate">
-                              {servico.nome}
-                            </p>
-                            <p className="text-xs text-slate-500 truncate">
-                              Serviço #{servico.id}
-                            </p>
-                          </div>
-                        </div>
-                      </td>
-
-                      <td className="px-6 py-4">
-                        {servico.categoria ? (
-                          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-sm">
-                            <Tag className="w-3 h-3" />
-                            {servico.categoria}
-                          </span>
-                        ) : (
-                          <span className="text-sm text-slate-500 italic">
-                            Sem categoria
-                          </span>
-                        )}
-                      </td>
-
-                      <td className="px-6 py-4 text-sm text-slate-600 max-w-xs">
-                        <span className="line-clamp-2">
-                          {servico.descricao || (
-                            <span className="italic text-slate-500">
-                              Sem descrição
-                            </span>
-                          )}
-                        </span>
-                      </td>
-
-                      <td className="px-6 py-4">
-                        <span className="font-bold text-slate-900 text-base">
-                          {formatarMoeda(servico.preco)}
-                        </span>
-                      </td>
-
-                      <td className="px-6 py-4">
-                        <div className="flex justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              abrirEditarServico(servico)
-                            }
-                            className="px-3 py-2 rounded-lg text-sm font-medium text-[#0D1B2A] bg-slate-100 hover:bg-slate-200 transition"
-                          >
-                            Editar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setServicoParaExcluir(servico)
-                            }
-                            className="px-3 py-2 rounded-lg text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 transition"
-                          >
-                            Excluir
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <ControlesPaginacao
-              pagina={paginacao.pagina}
-              totalPaginas={paginacao.totalPaginas}
-              total={paginacao.total}
-              tamanho={paginacao.tamanho}
-              onAnterior={paginacao.anterior}
-              onProxima={paginacao.proxima}
-              onMudarTamanho={paginacao.setTamanho}
-            />
-          </>
-          )}
-        </div>
+    <div className="product-page">
+      <header className="page-header">
+        <div><h1>Serviços</h1><p>Seu catálogo de trabalho, com escopo e preço de referência.</p></div>
+        <div className="page-actions"><button type="button" onClick={abrirNovoServico} className="btn-primary"><Plus size={18} aria-hidden="true" />Novo serviço</button></div>
+      </header>
+      <div className="metric-strip">
+        <div className="metric"><label>No catálogo</label><strong>{paginacao.total}</strong><small>serviços cadastrados</small></div>
+        <div className="metric"><label>Preço médio</label><strong>{formatarMoeda(precoMedio)}</strong><small>dos serviços nesta página</small></div>
+        <div className="metric"><label>Categorias</label><strong>{categorias.length}</strong><small>nesta página</small></div>
       </div>
 
-      {/* Modal de cadastro/edição */}
-      {mostrarFormulario && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl my-8">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 sticky top-0 bg-white rounded-t-2xl z-10">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">
-                  {servicoEditando
-                    ? "Editar serviço"
-                    : "Novo serviço"}
-                </h2>
-                <p className="text-sm text-slate-500 mt-1">
-                  {servicoEditando
-                    ? "Atualize os dados do serviço."
-                    : "Cadastre um serviço que você oferece."}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  limparFormulario();
-                  setMostrarFormulario(false);
-                }}
-                className="text-slate-500 hover:text-slate-700 transition p-1 rounded-lg hover:bg-slate-100"
-                aria-label="Fechar"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={salvarServico} className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                {/* Nome */}
-                <div className="md:col-span-2">
-                  <label
-                    htmlFor="servico_nome"
-                    className="block text-sm font-semibold text-slate-700 mb-1"
-                  >
-                    Nome do serviço{" "}
-                    <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    id="servico_nome"
-                    type="text"
-                    value={nome}
-                    onChange={(e) => setNome(e.target.value)}
-                    placeholder="Ex: Instalação de tomada"
-                    className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition"
-                    required
-                  />
-                </div>
-
-                {/* Categoria */}
-                <div>
-                  <label
-                    htmlFor="servico_categoria"
-                    className="block text-sm font-semibold text-slate-700 mb-1"
-                  >
-                    Categoria
-                  </label>
-                  <input
-                    id="servico_categoria"
-                    type="text"
-                    value={categoria}
-                    onChange={(e) => setCategoria(e.target.value)}
-                    placeholder="Ex: Instalação"
-                    className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition"
-                  />
-                </div>
-
-                {/* Preço */}
-                <div>
-                  <label
-                    htmlFor="servico_preco"
-                    className="block text-sm font-semibold text-slate-700 mb-1"
-                  >
-                    Preço base
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
-                      R$
-                    </span>
-                    <input
-                      id="servico_preco"
-                      type="text"
-                      inputMode="numeric"
-                      value={preco}
-                      onChange={(e) =>
-                        setPreco(mascaraMoeda(e.target.value))
-                      }
-                      placeholder="0,00"
-                      className="w-full border border-slate-200 rounded-lg pl-12 pr-4 py-3 outline-none transition"
-                    />
-                  </div>
-                </div>
-
-                {/* Descrição */}
-                <div className="md:col-span-2">
-                  <label
-                    htmlFor="servico_descricao"
-                    className="block text-sm font-semibold text-slate-700 mb-1"
-                  >
-                    Descrição
-                  </label>
-                  <textarea
-                    id="servico_descricao"
-                    value={descricao}
-                    onChange={(e) => setDescricao(e.target.value)}
-                    placeholder="Descreva o que está incluído no serviço..."
-                    rows={4}
-                    className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition resize-none"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3 mt-7">
-                <button
-                  type="button"
-                  onClick={() => {
-                    limparFormulario();
-                    setMostrarFormulario(false);
-                  }}
-                  className="px-5 py-3 rounded-lg border border-slate-200 text-slate-700 font-medium hover:bg-slate-50 transition"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={carregando}
-                  className="px-5 py-3 rounded-lg bg-[#FFD60A] text-[#0D1B2A] font-bold hover:bg-yellow-400 disabled:opacity-60 transition shadow-lg shadow-yellow-500/20 inline-flex items-center gap-2"
-                >
-                  {carregando && (
-                    <div className="w-4 h-4 border-2 border-[#0D1B2A]/30 border-t-[#0D1B2A] rounded-full animate-spin" />
-                  )}
-                  {carregando
-                    ? "Salvando..."
-                    : servicoEditando
-                    ? "Salvar alterações"
-                    : "Cadastrar serviço"}
-                </button>
-              </div>
-            </form>
-          </div>
+      <section className="data-panel" aria-label="Catálogo de serviços">
+        <div className="data-toolbar">
+          <div className="relative min-w-0 flex-1"><label htmlFor="busca_servico" className="sr-only">Buscar serviço nesta página</label><Search size={18} aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" /><input id="busca_servico" type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Nome ou categoria" className="input-base !pl-10" /></div>
+          <div><label htmlFor="filtro_categoria_servico" className="sr-only">Filtrar categoria nesta página</label><select id="filtro_categoria_servico" value={categoriaFiltro} onChange={(e) => setCategoriaFiltro(e.target.value)} className="input-base"><option value="">Todas as categorias</option>{categorias.map((c) => <option key={c} value={c}>{c}</option>)}</select></div>
+          <div><label htmlFor="ordem_servico" className="sr-only">Ordenar serviços nesta página</label><select id="ordem_servico" value={ordenacao} onChange={(e) => setOrdenacao(e.target.value)} className="input-base"><option value="recentes">Mais recentes</option><option value="nome">Nome: A a Z</option><option value="preco">Menor preço</option></select></div>
         </div>
-      )}
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--color-border)] px-5 py-3"><p className="record-meta" aria-live="polite">{servicosFiltrados.length} resultados nesta página. Busca, filtros e ordenação se aplicam aos itens exibidos.</p>{temFiltro && <button type="button" className="btn-secondary" onClick={limparFiltros}>Limpar filtros</button>}</div>
+        {erroLista ? <div className="empty-state" role="alert"><h3>Não foi possível carregar os serviços</h3><p>Tente novamente para consultar o catálogo.</p><button type="button" className="btn-secondary" onClick={() => usuario && carregarServicos(usuario.id)}>Tentar novamente</button></div>
+        : carregandoLista ? <div className="empty-state" role="status">Carregando serviços…</div>
+        : servicosFiltrados.length === 0 ? <div className="empty-state"><h3>{temFiltro ? "Nenhum serviço com estes filtros" : "Organize os serviços que você oferece"}</h3><p>{temFiltro ? "Ajuste os filtros ou consulte outra página do catálogo." : "Defina nome, escopo e preço base para agilizar seus orçamentos."}</p><button type="button" className="btn-secondary" onClick={temFiltro ? limparFiltros : abrirNovoServico}>{temFiltro ? "Limpar filtros" : "Cadastrar primeiro serviço"}</button></div>
+        : <>
+          <div className="hidden lg:block"><table className="data-table">
+            <thead><tr><th scope="col">Serviço e escopo</th><th scope="col">Categoria</th><th scope="col" className="text-right">Preço base</th><th scope="col" className="text-right">Ações</th></tr></thead>
+            <tbody>{servicosFiltrados.map((servico) => <tr key={servico.id}>
+              <td><button type="button" className="record-primary text-left hover:underline" onClick={() => abrirEditarServico(servico)}>{servico.nome}</button><p className="record-meta max-w-lg line-clamp-2">{servico.descricao || "Escopo não informado"}</p></td>
+              <td>{servico.categoria || <span className="record-meta">Sem categoria</span>}</td>
+              <td className="text-right whitespace-nowrap tabular-nums"><strong>{formatarMoeda(servico.preco)}</strong></td>
+              <td>{acoesServico(servico)}</td>
+            </tr>)}</tbody>
+          </table></div>
+          <div className="mobile-records lg:hidden">{servicosFiltrados.map((servico) => <article key={servico.id} className="record-row">
+            <div className="flex items-start justify-between gap-3"><div className="min-w-0"><button type="button" className="record-primary text-left" onClick={() => abrirEditarServico(servico)}>{servico.nome}</button><p className="record-meta">{servico.categoria || "Sem categoria"}</p></div>{acoesServico(servico)}</div>
+            <p className="mt-3 text-sm text-slate-600">{servico.descricao || "Escopo não informado"}</p>
+            <div className="mt-4 flex justify-between gap-3"><span className="record-meta">Preço base</span><strong className="tabular-nums">{formatarMoeda(servico.preco)}</strong></div>
+          </article>)}</div>
+        </>}
+        <ControlesPaginacao pagina={paginacao.pagina} totalPaginas={paginacao.totalPaginas} total={paginacao.total} tamanho={paginacao.tamanho} onAnterior={paginacao.anterior} onProxima={paginacao.proxima} onMudarTamanho={(tamanho) => { paginacao.setTamanho(tamanho); paginacao.setPagina(0); }} />
+      </section>
 
-      {/* Confirmação de exclusão */}
-      <ConfirmDialog
-        aberto={servicoParaExcluir !== null}
-        titulo="Excluir serviço?"
-        descricao={
-          <>
-            Tem certeza que deseja excluir{" "}
-            <strong className="text-slate-900">
-              {servicoParaExcluir?.nome}
-            </strong>
-            ? Esta ação não pode ser desfeita.
-          </>
-        }
-        textoBotaoConfirmar="Excluir"
-        corBotaoConfirmar="vermelho"
-        carregando={excluindo}
-        aoConfirmar={confirmarExclusao}
-        aoCancelar={() => setServicoParaExcluir(null)}
-      />
+      {mostrarFormulario && <Modal title={servicoEditando ? "Editar serviço" : "Novo serviço"} description="Defina o serviço que será oferecido nos seus orçamentos." onClose={fecharFormulario} busy={carregando} footer={<><button type="button" className="btn-secondary" onClick={fecharFormulario} disabled={carregando}>Cancelar</button><button type="submit" form="form_servico" className="btn-primary" disabled={carregando}>{carregando ? "Salvando…" : servicoEditando ? "Salvar alterações" : "Cadastrar serviço"}</button></>}>
+        <form id="form_servico" onSubmit={salvarServico}>
+          <section className="form-section"><h3>Serviço e escopo</h3><p>Deixe claro o que está incluído no trabalho.</p>
+            <div className="space-y-4"><div><label htmlFor="servico_nome" className="field-label">Nome do serviço *</label><input id="servico_nome" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Instalação de tomada" className="input-base" required /></div>
+            <div><label htmlFor="servico_categoria" className="field-label">Categoria</label><input id="servico_categoria" value={categoria} onChange={(e) => setCategoria(e.target.value)} placeholder="Ex.: Instalação" className="input-base" /></div>
+            <div><label htmlFor="servico_descricao" className="field-label">Descrição do trabalho</label><textarea id="servico_descricao" value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Descreva as atividades e o que está incluído." rows={4} className="input-base resize-y" /></div></div>
+          </section>
+          <section className="form-section"><h3>Preço de referência</h3><p>Valor base para a composição dos orçamentos.</p>
+            <label htmlFor="servico_preco" className="field-label">Preço base (R$)</label><input id="servico_preco" type="text" inputMode="numeric" value={preco} onChange={(e) => setPreco(mascaraMoeda(e.target.value))} placeholder="0,00" className="input-base" />
+          </section>
+        </form>
+      </Modal>}
+      <ConfirmDialog aberto={servicoParaExcluir !== null} titulo="Excluir serviço?" descricao={<>Tem certeza que deseja excluir <strong>{servicoParaExcluir?.nome}</strong>? Esta ação não pode ser desfeita.</>} textoBotaoConfirmar="Excluir" corBotaoConfirmar="vermelho" carregando={excluindo} aoConfirmar={confirmarExclusao} aoCancelar={() => setServicoParaExcluir(null)} />
     </div>
   );
 }

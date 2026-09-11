@@ -1,21 +1,20 @@
 import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import {
-  UserPlus,
-  ClipboardList,
+  Users,
+  FilePlus,
   Wrench,
   Package,
-  DollarSign,
-  FileText,
   ArrowRight,
 } from "lucide-react";
 import { supabase } from "../supabase";
-import { formatarMoeda, formatarData, primeiroDiaMesAnterior } from "../utils/formatters";
+import { formatarMoeda, formatarData, primeiroDiaMes, primeiroDiaMesAnterior } from "../utils/formatters";
 import { formatarNumero } from "../utils/constantes";
-import { classeStatus } from "../utils/statusBadge";
+
 
 type DashboardProps = {
   setPagina: (pagina: string) => void;
+  aoNovoOrcamento: () => void;
 };
 
 type KPIs = {
@@ -36,6 +35,7 @@ type OSRecente = {
   numero: number;
   status: string;
   data_abertura: string;
+  data_previsao?: string | null;
   valor_total: number;
   cliente_nome: string | null;
 };
@@ -60,11 +60,14 @@ const KPIS_INICIAIS: KPIs = {
   totalOrcamentosPendentes: 0,
 };
 
-export default function Dashboard({ setPagina }: DashboardProps) {
+export default function Dashboard({ setPagina, aoNovoOrcamento }: DashboardProps) {
   const [usuario, setUsuario] = useState<User | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [kpis, setKpis] = useState<KPIs>(KPIS_INICIAIS);
   const [osRecentes, setOsRecentes] = useState<OSRecente[]>([]);
+
+  const [proximosServicos, setProximosServicos] = useState<OSRecente[]>([]);
+  const [erro, setErro] = useState(false);
 
   useEffect(() => {
     carregar();
@@ -86,9 +89,9 @@ export default function Dashboard({ setPagina }: DashboardProps) {
         return;
       }
 
-      const inicioMes = new Date();
-      inicioMes.setDate(1);
-      const inicioMesISO = inicioMes.toISOString().split("T")[0];
+      const agora = new Date();
+      const hojeISO = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-${String(agora.getDate()).padStart(2, "0")}`;
+      const inicioMesISO = primeiroDiaMes();
       const inicioMesAnteriorISO = primeiroDiaMesAnterior();
 
       const [
@@ -101,6 +104,7 @@ export default function Dashboard({ setPagina }: DashboardProps) {
         ordensMesAnteriorRes,
         osAbertasRes,
         osAndamentoRes,
+        proximosRes,
       ] = await Promise.all([
         supabase
           .from("clientes")
@@ -133,7 +137,8 @@ export default function Dashboard({ setPagina }: DashboardProps) {
           .select("valor_total, status, data_abertura")
           .eq("user_id", user.id)
           .eq("status", "Concluída")
-          .gte("data_abertura", inicioMesISO),
+          .gte("data_abertura", inicioMesISO)
+          .lte("data_abertura", hojeISO),
         // OS do mês anterior (para variação)
         supabase
           .from("ordens_servico")
@@ -154,10 +159,25 @@ export default function Dashboard({ setPagina }: DashboardProps) {
           .select("id", { count: "exact", head: true })
           .eq("user_id", user.id)
           .eq("status", "Em andamento"),
+        supabase
+          .from("ordens_servico")
+          .select("id, numero, status, data_abertura, data_previsao, valor_total, cliente_id")
+          .eq("user_id", user.id)
+          .in("status", ["Aberta", "Em andamento"])
+          .not("data_previsao", "is", null)
+          .order("data_previsao")
+          .limit(6),
       ]);
 
+      if ([clientesRes, produtosRes, servicosRes, orcamentosRes, ordensRes, ordensMesRes, ordensMesAnteriorRes, osAbertasRes, osAndamentoRes, proximosRes].some((res) => res.error)) {
+        setErro(true);
+        setCarregando(false);
+        return;
+      }
+      setErro(false);
       const produtos = produtosRes.data || [];
       const ordens = ordensRes.data || [];
+      const proximos = proximosRes.data || [];
 
       const estoqueBaixo = produtos.filter(
         (p) => p.estoque <= p.estoque_minimo
@@ -191,9 +211,9 @@ export default function Dashboard({ setPagina }: DashboardProps) {
       });
 
       // Buscar nomes dos clientes das OS recentes
-      if (ordens.length > 0) {
+      if (ordens.length > 0 || proximos.length > 0) {
         const clienteIds = Array.from(
-          new Set(ordens.map((o) => o.cliente_id))
+          new Set([...ordens, ...proximos].map((o) => o.cliente_id))
         );
         const { data: clientesData } = await supabase
           .from("clientes")
@@ -205,6 +225,7 @@ export default function Dashboard({ setPagina }: DashboardProps) {
           (clientesData || []).map((c) => [c.id, c.nome])
         );
 
+        setProximosServicos(proximos.map((o) => ({ ...o, valor_total: Number(o.valor_total) || 0, cliente_nome: mapaClientes.get(o.cliente_id) || null })));
         setOsRecentes(
           ordens.map((o) => ({
             id: o.id,
@@ -218,388 +239,140 @@ export default function Dashboard({ setPagina }: DashboardProps) {
         );
       } else {
         setOsRecentes([]);
+        setProximosServicos([]);
       }
 
       setCarregando(false);
     }
 
-    carregar();
   }, []);
 
-  const acoes = [
-    {
-      id: "clientes",
-      titulo: "Novo cliente",
-      descricao: "Cadastrar um novo cliente",
-      Icone: UserPlus,
-      cor: "from-sky-500 to-sky-600",
-    },
-    {
-      id: "orcamentos",
-      titulo: "Novo orçamento",
-      descricao: "Criar um orçamento",
-      Icone: ClipboardList,
-      cor: "from-violet-500 to-violet-600",
-    },
-    {
-      id: "ordens-servico",
-      titulo: "Nova O.S.",
-      descricao: "Abrir ordem de serviço",
-      Icone: Wrench,
-      cor: "from-amber-500 to-amber-600",
-    },
-    {
-      id: "produtos",
-      titulo: "Cadastrar produto",
-      descricao: "Adicionar material ao estoque",
-      Icone: Package,
-      cor: "from-emerald-500 to-emerald-600",
-    },
+  const agora = new Date();
+  const mes = agora.toLocaleDateString("pt-BR", { month: "long" });
+  const anterior = new Date(agora.getFullYear(), agora.getMonth() - 1, 1);
+  const mesAnterior = anterior.toLocaleDateString("pt-BR", { month: "long" });
+  const variacao = kpis.faturamentoMesAnterior > 0
+    ? ((kpis.faturamentoMes - kpis.faturamentoMesAnterior) / kpis.faturamentoMesAnterior) * 100
+    : null;
+  const pendencias = [
+    { titulo: "O.S. aguardando início", detalhe: "Organize os próximos atendimentos", quantidade: kpis.osAbertas, pagina: "ordens-servico" },
+    { titulo: "Serviços em andamento", detalhe: "Acompanhe a execução", quantidade: kpis.osAndamento, pagina: "ordens-servico" },
+    { titulo: "Orçamentos pendentes", detalhe: "Acompanhe a aprovação dos clientes", quantidade: kpis.totalOrcamentosPendentes, pagina: "orcamentos" },
+    ...(kpis.estoqueBaixo > 0 ? [{ titulo: "Materiais para repor", detalhe: "Produtos abaixo do estoque mínimo", quantidade: kpis.estoqueBaixo, pagina: "produtos" }] : []),
   ];
+  const hoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
+  const maiorFaturamento = Math.max(kpis.faturamentoMes, kpis.faturamentoMesAnterior, 1);
 
   if (carregando) {
-    return (
-      <div className="min-h-screen bg-slate-50 p-5 md:p-7">
-        <div className="max-w-7xl mx-auto">
-          <div className="mb-8">
-            <div className="h-9 w-64 bg-slate-200 rounded animate-pulse" />
-            <div className="h-4 w-48 bg-slate-200 rounded mt-2 animate-pulse" />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {[0, 1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className="bg-white rounded-xl shadow-card p-5 h-32 animate-pulse"
-              />
-            ))}
-          </div>
-        </div>
-      </div>
-    );
+    return <div className="max-w-7xl mx-auto space-y-6" role="status" aria-label="Carregando painel">
+      <div className="h-10 w-56 bg-slate-200 rounded-lg animate-pulse" />
+      <div className="grid md:grid-cols-2 gap-6">{[0, 1].map((i) => <div key={i} className="h-64 rounded-2xl bg-slate-200 animate-pulse" />)}</div>
+    </div>;
+  }
+
+  if (erro) {
+    return <div className="surface-card p-8 max-w-7xl mx-auto" role="alert">
+      <h1 className="text-2xl font-bold text-slate-900">Não foi possível carregar o painel</h1>
+      <p className="text-slate-600 mt-2">Confira sua conexão e tente novamente.</p>
+      <button className="btn-primary mt-4" onClick={() => window.location.reload()}>Tentar novamente</button>
+    </div>;
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-5 md:p-7">
-      <div className="max-w-7xl mx-auto">
-        {/* Cabeçalho */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">
-            {saudacao()}
-            {usuario?.user_metadata?.nome
-              ? `, ${usuario.user_metadata.nome.split(" ")[0]}`
-              : ""}
-          </h1>
-          <p className="text-slate-500 mt-1 text-base">
-            Visão geral do seu negócio hoje
-          </p>
+    <div className="product-page">
+      <header className="page-header">
+        <div>
+          <h1>{saudacao()}{usuario?.user_metadata?.nome ? `, ${usuario.user_metadata.nome.split(" ")[0]}` : ""}.</h1>
+          <p>Acompanhe os prazos, organize a execução e dê o próximo passo.</p>
         </div>
+        <div className="page-actions"><button type="button" onClick={aoNovoOrcamento} className="btn-primary"><FilePlus size={18} aria-hidden="true" />Novo orçamento</button></div>
+      </header>
 
-        {/* KPIs principais */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          {/* Faturamento do mês — destaque */}
-          <div className="bg-gradient-to-br from-[#0D1B2A] to-[#1a2f47] rounded-xl shadow-md shadow-yellow-500/5 p-5 text-white lg:col-span-1">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs uppercase tracking-wider text-slate-300 font-semibold">
-                Faturamento
-              </p>
-              <DollarSign className="w-7 h-7 text-yellow-400" aria-hidden="true" />
-            </div>
-            <h2 className="text-4xl font-bold tracking-tight">
-              {formatarMoeda(kpis.faturamentoMes)}
-            </h2>
-            {kpis.faturamentoMesAnterior > 0 ? (
-              (() => {
-                const variacao =
-                  ((kpis.faturamentoMes - kpis.faturamentoMesAnterior) /
-                    kpis.faturamentoMesAnterior) *
-                  100;
-                const cor =
-                  variacao > 0
-                    ? "text-emerald-300"
-                    : variacao < 0
-                    ? "text-red-300"
-                    : "text-slate-300";
-                const seta =
-                  variacao > 0 ? "↑" : variacao < 0 ? "↓" : "→";
-                return (
-                  <p className={`text-sm font-medium mt-2 ${cor}`}>
-                    {seta} {Math.abs(variacao).toFixed(0)}% vs. mês anterior
-                  </p>
-                );
-              })()
-            ) : (
-              <p className="text-sm text-slate-300 mt-2">
-                {kpis.osConcluidasMes === 0
-                  ? "Nenhuma O.S. concluída no mês"
-                  : "— primeira medição"}
-              </p>
-            )}
+      <div className="operation-layout">
+        <section aria-labelledby="agenda-titulo">
+          <div className="operation-heading">
+            <div><h2 id="agenda-titulo">Na programação</h2><p>Prazos de conclusão das O.S. abertas e em andamento</p></div>
+            <button type="button" className="icon-button" aria-label="Ver todas as ordens de serviço" onClick={() => setPagina("ordens-servico")}><ArrowRight size={18} /></button>
           </div>
-
-          {/* OS Abertas */}
-          <button
-            type="button"
-            onClick={() => setPagina("ordens-servico")}
-            className="bg-white rounded-xl shadow-card p-5 text-left hover:shadow-md hover:-translate-y-0.5 transition-all"
-          >
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs uppercase tracking-wider text-slate-500 font-semibold">
-                O.S. Abertas
-              </p>
-              <ClipboardList className="w-7 h-7 text-slate-500" aria-hidden="true" />
+          {proximosServicos.length === 0 ? (
+            <div className="py-10 sm:py-14">
+              <p className="text-xs text-[var(--color-muted)] mb-2">Previsões de conclusão</p>
+              <h3 className="text-xl font-semibold max-w-xs">Abra espaço para o próximo serviço.</h3>
+              <p className="text-sm text-[var(--color-muted)] mt-3 max-w-sm">Nenhuma O.S. ativa com prazo cadastrado. Defina a previsão de conclusão para organizar o trabalho aqui.</p>
+              <button type="button" className="btn-secondary mt-5" onClick={() => setPagina("ordens-servico")}>Organizar ordens de serviço</button>
             </div>
-            <h2 className="text-4xl font-bold text-slate-900 tracking-tight">
-              {kpis.osAbertas}
-            </h2>
-            <p className="text-sm text-slate-500 mt-2">
-              Aguardando início
-            </p>
-          </button>
-
-          {/* Em andamento */}
-          <button
-            type="button"
-            onClick={() => setPagina("ordens-servico")}
-            className="bg-white rounded-xl shadow-card p-5 text-left hover:shadow-md hover:-translate-y-0.5 transition-all"
-          >
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs uppercase tracking-wider text-slate-500 font-semibold">
-                Em andamento
-              </p>
-              <Wrench className="w-7 h-7 text-blue-500" aria-hidden="true" />
-            </div>
-            <h2 className="text-4xl font-bold text-blue-600 tracking-tight">
-              {kpis.osAndamento}
-            </h2>
-            <p className="text-sm text-slate-500 mt-2">
-              Serviços em execução
-            </p>
-          </button>
-
-          {/* Orçamentos pendentes */}
-          <button
-            type="button"
-            onClick={() => setPagina("orcamentos")}
-            className="bg-white rounded-xl shadow-card p-5 text-left hover:shadow-md hover:-translate-y-0.5 transition-all"
-          >
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs uppercase tracking-wider text-slate-500 font-semibold">
-                Orçamentos pendentes
-              </p>
-              <FileText className="w-7 h-7 text-yellow-500" aria-hidden="true" />
-            </div>
-            <h2 className="text-4xl font-bold text-yellow-600 tracking-tight">
-              {kpis.totalOrcamentosPendentes}
-            </h2>
-            <p className="text-sm text-slate-500 mt-2">
-              Aguardando aprovação
-            </p>
-          </button>
-        </div>
-
-        {/* KPIs secundários */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <button
-            type="button"
-            onClick={() => setPagina("clientes")}
-            className="bg-white rounded-xl shadow-card border border-slate-100 p-4 text-left hover:bg-slate-50 transition-colors"
-          >
-            <p className="text-xs text-slate-500 font-medium">
-              Clientes
-            </p>
-            <p className="text-2xl font-bold text-slate-900 mt-1 tracking-tight">
-              {kpis.totalClientes}
-            </p>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setPagina("produtos")}
-            className="bg-white rounded-xl shadow-card border border-slate-100 p-4 text-left hover:bg-slate-50 transition-colors"
-          >
-            <p className="text-xs text-slate-500 font-medium">
-              Produtos
-            </p>
-            <p className="text-2xl font-bold text-slate-900 mt-1 tracking-tight">
-              {kpis.totalProdutos}
-            </p>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setPagina("servicos")}
-            className="bg-white rounded-xl shadow-card border border-slate-100 p-4 text-left hover:bg-slate-50 transition-colors"
-          >
-            <p className="text-xs text-slate-500 font-medium">
-              Serviços
-            </p>
-            <p className="text-2xl font-bold text-slate-900 mt-1 tracking-tight">
-              {kpis.totalServicos}
-            </p>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setPagina("produtos")}
-            className={`rounded-xl shadow-card border p-4 text-left transition-colors ${
-              kpis.estoqueBaixo > 0
-                ? "bg-red-50 border-red-200 hover:bg-red-50/80"
-                : "bg-white border-slate-100 hover:bg-slate-50"
-            }`}
-          >
-            <p
-              className={`text-xs font-medium ${
-                kpis.estoqueBaixo > 0
-                  ? "text-red-600"
-                  : "text-slate-500"
-              }`}
-            >
-              Estoque baixo
-            </p>
-            <p
-              className={`text-2xl font-bold mt-1 tracking-tight ${
-                kpis.estoqueBaixo > 0
-                  ? "text-red-600"
-                  : "text-slate-900"
-              }`}
-            >
-              {kpis.estoqueBaixo}
-            </p>
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Ações rápidas */}
-          <div className="lg:col-span-1 bg-white rounded-xl shadow-card p-6">
-            <h2 className="text-lg font-bold text-slate-900 mb-1">
-              Ações rápidas
-            </h2>
-            <p className="text-sm text-slate-500 mb-5">
-              Atalho para criar novos cadastros
-            </p>
-
-            <div className="space-y-2">
-              {acoes.map((acao) => {
-                const Icone = acao.Icone;
-                return (
-                  <button
-                    key={acao.id}
-                    onClick={() => setPagina(acao.id)}
-                    className="w-full flex items-center gap-3 p-2.5 rounded-lg border border-slate-100 hover:border-slate-200 hover:bg-slate-50 transition text-left group"
-                  >
-                    <div
-                      className={`w-10 h-10 rounded-lg bg-gradient-to-br ${acao.cor} flex items-center justify-center text-white shadow-sm group-hover:scale-105 transition-transform`}
-                    >
-                      <Icone className="w-5 h-5" aria-hidden="true" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-slate-900 text-sm">
-                        {acao.titulo}
-                      </p>
-                      <p className="text-xs text-slate-500 truncate">
-                        {acao.descricao}
-                      </p>
-                    </div>
-                    <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-[#FFD60A] transition-colors shrink-0" />
-                  </button>
-                );
+          ) : (
+            <ol className="schedule-list">
+              {proximosServicos.map((os) => {
+                const date = new Date(`${os.data_previsao?.slice(0,10)}T12:00:00`);
+                const atrasado = date < hoje;
+                const previstoHoje = date.toDateString() === hoje.toDateString();
+                return <li className="schedule-entry" key={os.id}>
+                  <time dateTime={os.data_previsao || undefined}><strong>{date.getDate().toString().padStart(2,"0")}</strong>{date.toLocaleDateString("pt-BR", { month: "short" })}</time>
+                  <div className="min-w-0">
+                    <div className="flex justify-between flex-wrap gap-2"><h3>{os.cliente_nome || "Cliente não informado"}</h3><span className="status-label" data-tone={atrasado ? "danger" : previstoHoje ? "warning" : undefined}>{atrasado ? "Prazo vencido" : previstoHoje ? "Vence hoje" : os.status}</span></div>
+                    <p>O.S. #{formatarNumero(os.numero)} · {formatarMoeda(os.valor_total)}</p>
+                    <button type="button" onClick={() => setPagina("ordens-servico")} className="text-xs underline underline-offset-4 mt-2 min-h-11">Acompanhar execução</button>
+                  </div>
+                </li>;
               })}
-            </div>
-          </div>
+            </ol>
+          )}
+        </section>
 
-          {/* O.S. recentes */}
-          <div className="lg:col-span-2 bg-white rounded-xl shadow-card overflow-hidden">
-            <div className="flex items-center justify-between p-6 border-b border-slate-100">
-              <div>
-                <h2 className="text-lg font-bold text-slate-900">
-                  Ordens de Serviço recentes
-                </h2>
-                <p className="text-sm text-slate-500">
-                  As 5 últimas O.S. cadastradas
-                </p>
-              </div>
-              <button
-                onClick={() => setPagina("ordens-servico")}
-                className="text-sm font-semibold text-[#0D1B2A] hover:text-[#FFD60A] transition"
-              >
-                Ver todas →
-              </button>
-            </div>
-
-            {osRecentes.length === 0 ? (
-              <div className="p-12 text-center">
-                <ClipboardList className="w-12 h-12 mx-auto text-slate-300 mb-3" aria-hidden="true" />
-                <h3 className="font-semibold text-slate-900">
-                  Nenhuma O.S. cadastrada
-                </h3>
-                <p className="text-slate-500 text-sm mt-1">
-                  Crie a primeira ordem de serviço para começar.
-                </p>
-                <button
-                  onClick={() => setPagina("ordens-servico")}
-                  className="mt-4 bg-[#FFD60A] text-[#0D1B2A] font-semibold px-5 py-2.5 rounded-lg hover:opacity-90 transition"
-                >
-                  + Nova O.S.
-                </button>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      <th className="text-left px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                        O.S.
-                      </th>
-                      <th className="text-left px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                        Cliente
-                      </th>
-                      <th className="text-left px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                        Data
-                      </th>
-                      <th className="text-left px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                        Status
-                      </th>
-                      <th className="text-right px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                        Valor
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {osRecentes.map((os) => (
-                      <tr
-                        key={os.id}
-                        className="hover:bg-slate-50/60 transition"
-                      >
-                        <td className="px-6 py-3 font-semibold text-slate-900">
-                          #{formatarNumero(os.numero)}
-                        </td>
-                        <td className="px-6 py-3 text-sm text-slate-700">
-                          {os.cliente_nome || "—"}
-                        </td>
-                        <td className="px-6 py-3 text-sm text-slate-600">
-                          {os.data_abertura ? formatarData(os.data_abertura) : "—"}
-                        </td>
-                        <td className="px-6 py-3">
-                          <span
-                            className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${classeStatus(
-                              os.status
-                            )}`}
-                          >
-                            {os.status}
-                          </span>
-                        </td>
-                        <td className="px-6 py-3 text-sm font-medium text-slate-900 text-right">
-                          {formatarMoeda(os.valor_total)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
+        <aside className="attention-queue" aria-labelledby="atencao-titulo">
+          <h2 id="atencao-titulo">Pontos de atenção</h2>
+          <p>Uma visão do trabalho que está em aberto.</p>
+          {pendencias.map(({ titulo, detalhe, quantidade, pagina }) => (
+            <button type="button" key={pagina + titulo} onClick={() => setPagina(pagina)} className="attention-item">
+              <strong>{quantidade.toString().padStart(2,"0")}</strong>
+              <span>{titulo}<small>{detalhe}</small></span>
+              <ArrowRight size={16} className="shrink-0 text-slate-400" aria-hidden="true" />
+            </button>
+          ))}
+        </aside>
       </div>
+
+      <section className="revenue-summary" aria-labelledby="faturamento-titulo">
+        <div>
+          <h2 id="faturamento-titulo">Faturamento de {mes}</h2>
+          <div className="amount">{formatarMoeda(kpis.faturamentoMes)}</div>
+          <p>{kpis.osConcluidasMes} O.S. concluída{kpis.osConcluidasMes !== 1 ? "s" : ""} · de 1 a {agora.getDate()} de {mes}</p>
+          <button type="button" className="text-xs underline underline-offset-4 mt-2 min-h-11" onClick={() => setPagina("financeiro")}>Consultar movimentações financeiras</button>
+        </div>
+        <div>
+          <p>{variacao === null ? `Sem faturamento em ${mesAnterior} para comparar.` : `${variacao >= 0 ? "+" : "−"}${Math.abs(variacao).toFixed(0)}% em relação a ${mesAnterior} completo`}</p>
+          {[{label:mes,value:kpis.faturamentoMes},{label:mesAnterior,value:kpis.faturamentoMesAnterior}].map(item => <div className="comparison-row" key={item.label}>
+            <span className="capitalize">{item.label}</span><span className="track"><span className="fill block" style={{width:`${item.value / maiorFaturamento * 100}%`}} /></span><span>{formatarMoeda(item.value)}</span>
+          </div>)}
+          <p className="mt-3 max-w-md">Valores das O.S. concluídas, agrupados pela data de abertura. O mês atual ainda está em andamento.</p>
+        </div>
+      </section>
+
+      <section className="data-panel" aria-labelledby="recentes-titulo">
+        <div className="section-heading">
+          <div><h2 id="recentes-titulo">Últimas ordens de serviço</h2><p>As cinco O.S. mais recentes da operação</p></div>
+          <button type="button" className="btn-secondary" onClick={() => setPagina("ordens-servico")}>Ver todas <ArrowRight size={16} aria-hidden="true" /></button>
+        </div>
+        {osRecentes.length === 0 ? <div className="empty-state"><h3>A operação começa com a primeira O.S.</h3><p>Converta um orçamento aprovado ou crie uma ordem de serviço para acompanhar a execução.</p></div> : <>
+          <div className="hidden md:block overflow-x-auto"><table className="data-table">
+            <thead><tr>{["Ordem / cliente","Abertura","Situação","Valor"].map(label=><th scope="col" key={label} className={label==="Valor"?"text-right":""}>{label}</th>)}</tr></thead>
+            <tbody>{osRecentes.map(os=><tr key={os.id}>
+              <td><div className="record-primary">{os.cliente_nome || "Cliente não informado"}</div><div className="record-meta">O.S. #{formatarNumero(os.numero)}</div></td>
+              <td className="whitespace-nowrap">{formatarData(os.data_abertura)}</td>
+              <td><span className="status-label" data-tone={os.status === "Concluída" ? "success" : os.status === "Em andamento" ? "warning" : undefined}>{os.status}</span></td>
+              <td className="text-right whitespace-nowrap font-semibold tabular-nums">{formatarMoeda(os.valor_total)}</td>
+            </tr>)}</tbody>
+          </table></div>
+          <ul className="md:hidden">{osRecentes.map(os=><li key={os.id} className="record-row">
+            <div className="flex flex-wrap justify-between gap-2"><p className="record-primary">{os.cliente_nome || "Cliente não informado"}</p><span className="status-label">{os.status}</span></div>
+            <p className="record-meta">O.S. #{formatarNumero(os.numero)} · {formatarData(os.data_abertura)}</p><p className="text-sm font-semibold mt-2">{formatarMoeda(os.valor_total)}</p>
+          </li>)}</ul>
+        </>}
+      </section>
+      <nav aria-label="Acesso aos cadastros" className="catalog-links">
+        {[{label:"Clientes",total:kpis.totalClientes,page:"clientes",Icon:Users},{label:"Serviços",total:kpis.totalServicos,page:"servicos",Icon:Wrench},{label:"Produtos",total:kpis.totalProdutos,page:"produtos",Icon:Package}].map(({label,total,page,Icon})=><button key={page} type="button" onClick={()=>setPagina(page)}><Icon size={16} aria-hidden="true"/>{label}<strong>{total}</strong></button>)}
+      </nav>
     </div>
   );
 }

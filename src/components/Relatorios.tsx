@@ -1,19 +1,9 @@
 import { useEffect, useMemo, useState, type ReactElement } from "react";
-import {
-  BarChart3,
-  Calendar,
-  TrendingUp,
-  Users,
-  Wrench,
-  Package,
-  DollarSign,
-  FileText,
-  Award,
-} from "lucide-react";
+import { ArrowUpRight, BarChart3 } from "lucide-react";
 import { supabase } from "../supabase";
 import { STATUS_OS, STATUS_OS_VALORES, STATUS_ORCAMENTO } from "../utils/constantes";
-import { classeStatus } from "../utils/statusBadge";
-import { formatarMoeda } from "../utils/formatters";
+import "./analysis-pages.css";
+import { formatarMoeda, formatarData } from "../utils/formatters";
 
 type Periodo = "mes_atual" | "ultimos_3" | "ultimos_6" | "ultimos_12" | "personalizado";
 
@@ -69,6 +59,8 @@ const STATUS_OS_VALIDOS = STATUS_OS_VALORES;
 
 export default function Relatorios(): ReactElement {
   const [carregando, setCarregando] = useState(true);
+  const [erroCarregamento, setErroCarregamento] = useState(false);
+  const [tentativa, setTentativa] = useState(0);
   const [dados, setDados] = useState<Dados>({
     ordens: [],
     orcamentos: [],
@@ -86,6 +78,8 @@ export default function Relatorios(): ReactElement {
 
   useEffect(() => {
     async function carregar() {
+      setCarregando(true);
+      setErroCarregamento(false);
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -113,6 +107,12 @@ export default function Relatorios(): ReactElement {
           .eq("user_id", user.id),
       ]);
 
+      if (ordensRes.error || orcamentosRes.error || clientesRes.error) {
+        setErroCarregamento(true);
+        setCarregando(false);
+        return;
+      }
+
       const ordens = (ordensRes.data as OrdemServico[]) || [];
       const orcamentos = (orcamentosRes.data as Orcamento[]) || [];
 
@@ -120,13 +120,18 @@ export default function Relatorios(): ReactElement {
       const orcIds = orcamentos.map((o) => o.id);
       let itens: OrcamentoItem[] = [];
       if (orcIds.length > 0) {
-        const { data: itensData } = await supabase
+        const { data: itensData, error: itensError } = await supabase
           .from("orcamento_itens")
           .select(
             "orcamento_id, tipo, servico_id, produto_id, descricao, valor_unitario, subtotal"
           )
           .eq("user_id", user.id)
           .in("orcamento_id", orcIds);
+        if (itensError) {
+          setErroCarregamento(true);
+          setCarregando(false);
+          return;
+        }
         itens = (itensData as OrcamentoItem[]) || [];
       }
 
@@ -140,7 +145,7 @@ export default function Relatorios(): ReactElement {
     }
 
     carregar();
-  }, []);
+  }, [tentativa]);
 
   // Quando muda o período, ajusta datas
   useEffect(() => {
@@ -326,425 +331,140 @@ export default function Relatorios(): ReactElement {
   const maxBarra =
     Math.max(...faturamentoPorMes.map((m) => m.receita), 1);
 
+  const aprovados = orcamentosFiltrados.filter((o) => o.status === STATUS_ORCAMENTO.APROVADO).length;
+
   return (
-    <div className="min-h-screen bg-gray-100 p-6 md:p-8">
-      <div className="max-w-7xl mx-auto">
-        {/* Cabeçalho */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">
-              Relatórios
-            </h1>
-            <p className="text-gray-500 mt-1">
-              Visão analítica do seu negócio
-            </p>
-          </div>
+    <div className="product-page analysis-page">
+      <header className="page-header">
+        <div>
+          <p className="analysis-eyebrow">Análise / Desempenho</p>
+          <h1>Relatórios</h1>
+          <p>Entenda os resultados da operação e de onde vêm as oportunidades.</p>
         </div>
+        <span className="analysis-period-label"><BarChart3 size={16} aria-hidden="true" /> {ordensFiltradas.length + orcamentosFiltrados.length} registros no período</span>
+      </header>
 
-        {/* Filtros */}
-        <div className="bg-white rounded-xl shadow-sm p-5 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
-              <label
-                htmlFor="rel_periodo"
-                className="block text-sm font-semibold text-gray-700 mb-2"
-              >
-                Período
-              </label>
-              <select
-                id="rel_periodo"
-                value={periodo}
-                onChange={(e) => setPeriodo(e.target.value as Periodo)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 outline-none bg-white"
-              >
-                <option value="mes_atual">Mês atual</option>
-                <option value="ultimos_3">Últimos 3 meses</option>
-                <option value="ultimos_6">Últimos 6 meses</option>
-                <option value="ultimos_12">Últimos 12 meses</option>
-                <option value="personalizado">Personalizado</option>
-              </select>
-            </div>
-            <div>
-              <label
-                htmlFor="rel_inicio"
-                className="block text-sm font-semibold text-gray-700 mb-2"
-              >
-                De
-              </label>
-              <input
-                id="rel_inicio"
-                type="date"
-                value={dataInicio}
-                onChange={(e) => {
-                  setPeriodo("personalizado");
-                  setDataInicio(e.target.value);
-                }}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 outline-none"
-              />
-            </div>
-            <div>
-              <label
-                htmlFor="rel_fim"
-                className="block text-sm font-semibold text-gray-700 mb-2"
-              >
-                Até
-              </label>
-              <input
-                id="rel_fim"
-                type="date"
-                value={dataFim}
-                onChange={(e) => {
-                  setPeriodo("personalizado");
-                  setDataFim(e.target.value);
-                }}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 outline-none"
-              />
-            </div>
-            <div className="flex items-end text-sm text-gray-500">
-              <Calendar className="w-4 h-4 mr-2" />
-              {ordensFiltradas.length + orcamentosFiltrados.length} registros
-              no período
-            </div>
-          </div>
+      <section className="analysis-report-period" aria-label="Período da análise">
+        <div>
+          <label htmlFor="rel_periodo" className="field-label">Período da análise</label>
+          <select id="rel_periodo" value={periodo} onChange={(e) => setPeriodo(e.target.value as Periodo)} className="input-base">
+            <option value="mes_atual">Mês atual</option>
+            <option value="ultimos_3">Últimos 3 meses</option>
+            <option value="ultimos_6">Últimos 6 meses</option>
+            <option value="ultimos_12">Últimos 12 meses</option>
+            <option value="personalizado">Personalizado</option>
+          </select>
         </div>
+        <div className="analysis-date-range">
+          <div><label htmlFor="rel_inicio" className="field-label">De</label>
+            <input id="rel_inicio" type="date" value={dataInicio} onChange={(e) => { setPeriodo("personalizado"); setDataInicio(e.target.value); }} className="input-base" /></div>
+          <div><label htmlFor="rel_fim" className="field-label">Até</label>
+            <input id="rel_fim" type="date" value={dataFim} onChange={(e) => { setPeriodo("personalizado"); setDataFim(e.target.value); }} className="input-base" /></div>
+        </div>
+      </section>
 
-        {carregando ? (
-          <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-500">
-            Carregando dados...
+      {carregando ? <div className="data-panel empty-state" role="status"><p>Preparando a análise do período…</p></div> :
+        erroCarregamento ? <div className="data-panel empty-state" role="alert">
+          <h2>Não foi possível carregar a análise</h2>
+          <p>Tente novamente para consultar os resultados do período.</p>
+          <button type="button" className="btn-secondary" onClick={() => setTentativa((valorAtual) => valorAtual + 1)}>Tentar novamente</button>
+        </div> : <>
+          <div className="analysis-performance-grid">
+            <section className="data-panel analysis-revenue-panel" aria-labelledby="receita-periodo">
+              <div className="analysis-revenue-heading">
+                <div>
+                  <p className="analysis-eyebrow" id="receita-periodo">Receita de serviços concluídos</p>
+                  <strong className="analysis-revenue-total">{formatarMoeda(kpis.receitaTotal)}</strong>
+                  <p className="record-meta">{formatarData(dataInicio)} a {formatarData(dataFim)} · pela data de abertura da OS</p>
+                </div>
+                <ArrowUpRight size={26} aria-hidden="true" />
+              </div>
+              <div className="analysis-inline-metrics">
+                <div><span>Ticket médio</span><strong>{formatarMoeda(kpis.ticketMedio)}</strong><small>por serviço concluído</small></div>
+                <div><span>Serviços concluídos</span><strong>{osConcluidas.length}</strong><small>no período selecionado</small></div>
+                <div><span>Clientes atendidos</span><strong>{kpis.totalClientesAtendidos}</strong><small>com OS no período</small></div>
+              </div>
+              <div className="section-heading">
+                <div><h2>Evolução mensal</h2><p>Receita e volume de serviços concluídos.</p></div>
+              </div>
+              {faturamentoPorMes.length === 0 ? <div className="empty-state">
+                <h3>A evolução começa com um serviço concluído</h3>
+                <p>Os resultados aparecem aqui conforme as ordens de serviço são concluídas.</p>
+              </div> : <div className="analysis-monthly-list">
+                <div className="analysis-monthly-head" aria-hidden="true"><span>Mês</span><span>Receita</span><span>OS</span></div>
+                <ul>
+                  {faturamentoPorMes.map((mes) => {
+                    const quantidade = ordensFiltradas.filter((o) => o.status === STATUS_OS.CONCLUIDA && o.data_abertura.startsWith(mes.chave)).length;
+                    return <li key={mes.chave}>
+                      <span className="analysis-month-name">{mes.label}<small>{mes.chave.substring(0, 4)}</small></span>
+                      <div className="analysis-month-revenue">
+                        <strong>{formatarMoeda(mes.receita)}</strong>
+                        <div className="analysis-track" aria-hidden="true"><span className="analysis-bar-income" style={{ width: `${mes.receita / maxBarra * 100}%` }} /></div>
+                      </div>
+                      <span className="analysis-month-count"><span className="sr-only">Ordens concluídas: </span>{quantidade}</span>
+                    </li>;
+                  })}
+                </ul>
+              </div>}
+            </section>
+
+            <aside className="analysis-operation-column">
+              <section className="data-panel" aria-labelledby="ritmo-operacao">
+                <div className="section-heading"><div><h2 id="ritmo-operacao">Ritmo da operação</h2><p>{totalOS} ordens de serviço no período</p></div></div>
+                <div className="analysis-status-list">
+                  {STATUS_OS_VALIDOS.map((status) => {
+                    const quantidade = distribuicaoOS[status] || 0;
+                    const porcentagem = totalOS > 0 ? quantidade / totalOS * 100 : 0;
+                    return <div key={status}>
+                      <div className="analysis-status-label">
+                        <span className="status-label" data-tone={status === STATUS_OS.CONCLUIDA ? "success" : status === STATUS_OS.CANCELADA ? "danger" : "warning"}>{status}</span>
+                        <strong>{quantidade}<small>{porcentagem.toFixed(0)}%</small></strong>
+                      </div>
+                      <div className="analysis-track" aria-hidden="true"><span style={{ width: `${porcentagem}%` }} /></div>
+                    </div>;
+                  })}
+                </div>
+              </section>
+              <section className="analysis-commercial" aria-labelledby="conversao-orcamentos">
+                <p className="analysis-eyebrow">Resultado comercial</p>
+                <h2 id="conversao-orcamentos">Aprovação de orçamentos</h2>
+                <strong className="analysis-approval-rate">{kpis.taxaAprovacao.toFixed(0)}<span>%</span></strong>
+                <div className="analysis-track" aria-hidden="true"><span style={{ width: `${kpis.taxaAprovacao}%` }} /></div>
+                <p><strong>{aprovados}</strong> aprovados de <strong>{orcamentosFiltrados.length}</strong> orçamentos no período.</p>
+              </section>
+            </aside>
           </div>
-        ) : (
-          <>
-            {/* KPIs */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-5 mb-6">
-              <div className="bg-white rounded-xl shadow-sm p-6 flex items-start gap-4">
-                <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
-                  <DollarSign className="w-6 h-6 text-emerald-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Receita total</p>
-                  <p className="text-2xl font-bold text-emerald-600 mt-1">
-                    {formatarMoeda(kpis.receitaTotal)}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    OS concluídas no período
-                  </p>
-                </div>
-              </div>
 
-              <div className="bg-white rounded-xl shadow-sm p-6 flex items-start gap-4">
-                <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
-                  <TrendingUp className="w-6 h-6 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Ticket médio</p>
-                  <p className="text-2xl font-bold text-blue-600 mt-1">
-                    {formatarMoeda(kpis.ticketMedio)}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    Por OS concluída
-                  </p>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-xl shadow-sm p-6 flex items-start gap-4">
-                <div className="w-12 h-12 rounded-xl bg-yellow-50 flex items-center justify-center shrink-0">
-                  <FileText className="w-6 h-6 text-yellow-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Taxa de aprovação</p>
-                  <p className="text-2xl font-bold text-yellow-600 mt-1">
-                    {kpis.taxaAprovacao.toFixed(0)}%
-                  </p>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    Orçamentos aprovados
-                  </p>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-xl shadow-sm p-6 flex items-start gap-4">
-                <div className="w-12 h-12 rounded-xl bg-violet-50 flex items-center justify-center shrink-0">
-                  <Users className="w-6 h-6 text-violet-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Clientes ativos</p>
-                  <p className="text-2xl font-bold text-violet-600 mt-1">
-                    {kpis.totalClientesAtendidos}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    Com OS no período
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-              {/* Faturamento por mês */}
-              <div className="lg:col-span-2 bg-white rounded-xl shadow-sm p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-bold text-gray-900">
-                    Faturamento por mês
-                  </h2>
-                  <BarChart3 className="w-5 h-5 text-gray-500" />
-                </div>
-
-                {faturamentoPorMes.length === 0 ? (
-                  <p className="text-gray-500 text-sm py-8 text-center">
-                    Sem OS concluídas no período selecionado.
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    {faturamentoPorMes.map((m) => {
-                      const pct = (m.receita / maxBarra) * 100;
-                      return (
-                        <div key={m.chave}>
-                          <div className="flex justify-between text-sm mb-1">
-                            <span className="font-medium text-gray-700 capitalize">
-                              {m.label}
-                            </span>
-                            <span className="font-bold text-gray-900">
-                              {formatarMoeda(m.receita)}
-                            </span>
-                          </div>
-                          <div className="h-8 bg-gray-100 rounded-lg overflow-hidden">
-                            <div
-                              className="h-full bg-gradient-to-r from-emerald-400 to-emerald-600 rounded-lg transition-all duration-500"
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* Status das OS */}
-              <div className="bg-white rounded-xl shadow-sm p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-bold text-gray-900">
-                    Status das OS
-                  </h2>
-                  <Wrench className="w-5 h-5 text-gray-500" />
-                </div>
-
-                {totalOS === 0 ? (
-                  <p className="text-gray-500 text-sm py-8 text-center">
-                    Sem OS no período.
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    {STATUS_OS_VALIDOS.map((status) => {
-                      const count = distribuicaoOS[status] || 0;
-                      const pct = totalOS > 0 ? (count / totalOS) * 100 : 0;
-                      return (
-                        <div key={status}>
-                          <div className="flex justify-between text-sm mb-1">
-                            <span
-                              className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${classeStatus(status)}`}
-                            >
-                              {status}
-                            </span>
-                            <span className="font-bold text-gray-900">
-                              {count}
-                            </span>
-                          </div>
-                          <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full transition-all duration-500 ${
-                                status === STATUS_OS.CONCLUIDA
-                                  ? "bg-emerald-500"
-                                  : status === STATUS_OS.EM_ANDAMENTO || status === STATUS_OS.ABERTA
-                                  ? "bg-yellow-500"
-                                  : status === STATUS_OS.CANCELADA
-                                  ? "bg-red-500"
-                                  : "bg-gray-400"
-                              }`}
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-              {/* Top 5 clientes */}
-              <div className="bg-white rounded-xl shadow-sm p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-bold text-gray-900">
-                    Top 5 clientes
-                  </h2>
-                  <Award className="w-5 h-5 text-[#FFD60A]" />
-                </div>
-
-                {topClientes.length === 0 ? (
-                  <p className="text-gray-500 text-sm py-8 text-center">
-                    Sem clientes com receita no período.
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    {topClientes.map((c, idx) => (
-                      <div
-                        key={c.cliente_id}
-                        className="flex items-center gap-3"
-                      >
-                        <div
-                          className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shrink-0 ${
-                            idx === 0
-                              ? "bg-amber-100 text-amber-800"
-                              : "bg-slate-100 text-slate-700"
-                          }`}
-                        >
-                          {idx + 1}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-gray-900 truncate">
-                            {c.nome}
-                          </p>
-                          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mt-1">
-                            <div
-                              className="h-full bg-[#FFD60A] rounded-full"
-                              style={{
-                                width: `${
-                                  (c.valor / topClientes[0].valor) * 100
-                                }%`,
-                              }}
-                            />
-                          </div>
-                        </div>
-                        <p className="font-bold text-gray-900 shrink-0">
-                          {formatarMoeda(c.valor)}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Itens mais vendidos */}
-              <div className="bg-white rounded-xl shadow-sm p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-bold text-gray-900">
-                    Itens mais vendidos
-                  </h2>
-                  <Package className="w-5 h-5 text-gray-500" />
-                </div>
-
-                {topItens.length === 0 ? (
-                  <p className="text-gray-500 text-sm py-8 text-center">
-                    Sem itens vendidos no período.
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    {topItens.map((item) => (
-                      <div
-                        key={item.tipo + ":" + item.descricao}
-                        className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg"
-                      >
-                        <div
-                          className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
-                            item.tipo === "servico"
-                              ? "bg-blue-100 text-blue-600"
-                              : "bg-orange-100 text-orange-600"
-                          }`}
-                        >
-                          {item.tipo === "servico" ? (
-                            <Wrench className="w-5 h-5" />
-                          ) : (
-                            <Package className="w-5 h-5" />
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-gray-900 truncate">
-                            {item.descricao}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {item.tipo === "servico" ? "Serviço" : "Produto"}{" "}
-                            · {item.quantidade}{" "}
-                            {item.tipo === "servico" ? "execuções" : "vendas"}
-                          </p>
-                        </div>
-                        <p className="font-bold text-emerald-600 shrink-0">
-                          {formatarMoeda(item.receita)}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Resumo mensal em tabela */}
-            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-              <div className="p-6 border-b border-gray-100">
-                <h2 className="text-lg font-bold text-gray-900">
-                  Resumo mensal
-                </h2>
-              </div>
-              {faturamentoPorMes.length === 0 ? (
-                <p className="text-gray-500 text-sm py-8 text-center">
-                  Sem dados no período.
-                </p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th
-                          scope="col"
-                          className="text-left px-6 py-3 text-sm font-semibold text-gray-600"
-                        >
-                          Mês
-                        </th>
-                        <th
-                          scope="col"
-                          className="text-right px-6 py-3 text-sm font-semibold text-gray-600"
-                        >
-                          Receita
-                        </th>
-                        <th
-                          scope="col"
-                          className="text-right px-6 py-3 text-sm font-semibold text-gray-600"
-                        >
-                          OS concluídas
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {faturamentoPorMes.map((m) => {
-                        const osMes = ordensFiltradas.filter(
-                          (o) =>
-                            o.status === STATUS_OS.CONCLUIDA &&
-                            o.data_abertura.startsWith(m.chave)
-                        );
-                        return (
-                          <tr
-                            key={m.chave}
-                            className="hover:bg-gray-50 transition"
-                          >
-                            <td className="px-6 py-4 font-medium text-gray-900 capitalize">
-                              {m.label}
-                            </td>
-                            <td className="px-6 py-4 text-right font-bold text-emerald-600">
-                              {formatarMoeda(m.receita)}
-                            </td>
-                            <td className="px-6 py-4 text-right text-gray-700">
-                              {osMes.length}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </>
-        )}
-      </div>
+          <div className="analysis-ranking-grid">
+            <section className="data-panel" aria-labelledby="clientes-destaque">
+              <div className="section-heading"><div><h2 id="clientes-destaque">Clientes em destaque</h2><p>Os cinco maiores volumes em serviços e orçamentos.</p></div></div>
+              {topClientes.length === 0 ? <div className="empty-state"><p>Os clientes com serviços concluídos ou orçamentos aprovados aparecerão aqui.</p></div> :
+                <ol className="analysis-ranking">
+                  {topClientes.map((cliente, indice) => <li key={cliente.cliente_id}>
+                    <span className="analysis-rank-position">{String(indice + 1).padStart(2, "0")}</span>
+                    <div className="analysis-ranked-content">
+                      <div><span className="record-primary">{cliente.nome}</span><strong>{formatarMoeda(cliente.valor)}</strong></div>
+                      <div className="analysis-track" aria-hidden="true"><span style={{ width: `${topClientes[0].valor > 0 ? cliente.valor / topClientes[0].valor * 100 : 0}%` }} /></div>
+                    </div>
+                  </li>)}
+                </ol>}
+              <p className="analysis-data-note">Soma de OS concluídas e orçamentos aprovados. Documentos vinculados podem compor o mesmo total.</p>
+            </section>
+            <section className="data-panel" aria-labelledby="itens-destaque">
+              <div className="section-heading"><div><h2 id="itens-destaque">Serviços e produtos em destaque</h2><p>Itens com maior valor em orçamentos aprovados.</p></div></div>
+              {topItens.length === 0 ? <div className="empty-state"><p>Aprove orçamentos para acompanhar os itens de maior participação.</p></div> :
+                <ol className="analysis-ranking analysis-item-ranking">
+                  {topItens.map((item, indice) => <li key={item.tipo + ":" + item.descricao}>
+                    <span className="analysis-rank-position">{String(indice + 1).padStart(2, "0")}</span>
+                    <div className="analysis-ranked-content">
+                      <div><span className="record-primary">{item.descricao}</span><strong>{formatarMoeda(item.receita)}</strong></div>
+                      <p className="record-meta">{item.tipo === "servico" ? "Serviço" : "Produto"} · {item.quantidade} {item.tipo === "servico" ? "execuções" : "vendas"}</p>
+                    </div>
+                  </li>)}
+                </ol>}
+            </section>
+          </div>
+        </>}
     </div>
   );
 }

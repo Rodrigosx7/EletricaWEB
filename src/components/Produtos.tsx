@@ -1,17 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type { User } from "@supabase/supabase-js";
-import {
-  Search,
-  Package,
-  PackagePlus,
-  X,
-  TrendingDown,
-  DollarSign,
-  Boxes,
-  Tag,
-  ArrowDownToLine,
-  ArrowUpFromLine,
-} from "lucide-react";
+import { Search, PackagePlus, Pencil, Trash2, History, Boxes, ArrowDownToLine, ArrowUpFromLine } from "lucide-react";
 import { supabase } from "../supabase";
 import {
   formatarMoeda,
@@ -22,6 +11,7 @@ import {
   margemLucro,
 } from "../utils/formatters";
 import ConfirmDialog from "./ConfirmDialog";
+import Modal from "./ui/Modal";
 import { useToast } from "./ui/toast";
 import { usePaginacao } from "../hooks/usePaginacao";
 import ControlesPaginacao from "./ui/ControlesPaginacao";
@@ -57,6 +47,9 @@ export default function Produtos() {
   const [fornecedor, setFornecedor] = useState("");
 
   const [busca, setBusca] = useState("");
+  const [ordenacao, setOrdenacao] = useState("recentes");
+  const [carregandoLista, setCarregandoLista] = useState(true);
+  const [erroLista, setErroLista] = useState(false);
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [carregando, setCarregando] = useState(false);
 
@@ -93,6 +86,7 @@ export default function Produtos() {
     }>
   >([]);
   const [carregandoHistorico, setCarregandoHistorico] = useState(false);
+  const [erroHistorico, setErroHistorico] = useState(false);
 
   const [filtroEstoqueBaixo, setFiltroEstoqueBaixo] =
     useState(false);
@@ -105,6 +99,7 @@ export default function Produtos() {
         data: { user },
       } = await supabase.auth.getUser();
       setUsuario(user);
+      if (!user) setCarregandoLista(false);
     }
     iniciar();
 
@@ -122,6 +117,8 @@ export default function Produtos() {
   }, [usuario, paginacao.pagina, paginacao.tamanho]);
 
   async function carregarProdutos(userId: string) {
+    setCarregandoLista(true);
+    setErroLista(false);
     const de = paginacao.offset;
     const ate = de + paginacao.tamanho - 1;
     const { data, error, count } = await supabase
@@ -131,7 +128,9 @@ export default function Produtos() {
       .order("id", { ascending: false })
       .range(de, ate);
 
+    setCarregandoLista(false);
     if (error) {
+      setErroLista(true);
       console.error("Erro ao carregar produtos:", error);
       mostrarToast("Erro ao carregar produtos.", "erro");
       return;
@@ -360,6 +359,7 @@ export default function Produtos() {
   async function abrirHistorico(produto: Produto) {
     setProdutoHistorico(produto);
     setCarregandoHistorico(true);
+    setErroHistorico(false);
 
     const { data, error } = await supabase
       .from("estoque_movimentacoes")
@@ -374,6 +374,7 @@ export default function Produtos() {
     setCarregandoHistorico(false);
 
     if (error) {
+      setErroHistorico(true);
       console.error("Erro ao carregar histórico:", error);
       mostrarToast("Erro ao carregar histórico.", "erro");
       setHistorico([]);
@@ -415,910 +416,114 @@ export default function Produtos() {
         .toLowerCase()
         .includes(termo)
     );
-  });
+  }).sort((a, b) => ordenacao === "nome" ? a.nome.localeCompare(b.nome, "pt-BR") : ordenacao === "estoque" ? a.estoque - b.estoque : b.id - a.id);
 
 
   function estoqueBaixo(produto: Produto) {
     return produto.estoque <= produto.estoque_minimo;
   }
 
+  function fecharFormulario() {
+    limparFormulario();
+    setMostrarFormulario(false);
+  }
+
+  function acoesProduto(produto: Produto) {
+    return <div className="row-actions">
+      <button type="button" className="icon-button" onClick={() => abrirMovimentacao(produto)} aria-label={"Movimentar estoque de " + produto.nome} title="Movimentar estoque"><Boxes size={17} aria-hidden="true" /></button>
+      <button type="button" className="icon-button" onClick={() => abrirHistorico(produto)} aria-label={"Ver histórico de " + produto.nome} title="Histórico de movimentações"><History size={17} aria-hidden="true" /></button>
+      <button type="button" className="icon-button" onClick={() => abrirEditarProduto(produto)} aria-label={"Editar " + produto.nome} title="Editar produto"><Pencil size={17} aria-hidden="true" /></button>
+      <button type="button" className="icon-button" onClick={() => setProdutoParaExcluir(produto)} aria-label={"Excluir " + produto.nome} title="Excluir produto"><Trash2 size={17} aria-hidden="true" /></button>
+    </div>;
+  }
+
+  const temFiltro = Boolean(busca || filtroEstoqueBaixo);
+  function limparFiltros() { setBusca(""); setFiltroEstoqueBaixo(false); }
+
   return (
-    <div className="min-h-screen bg-slate-100 p-6 md:p-8">
-      <div className="max-w-7xl mx-auto">
-        {/* Cabeçalho */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900">
-              Produtos
-            </h1>
-            <p className="text-slate-500 mt-1">
-              Gerencie materiais, preços e estoque
-            </p>
-          </div>
-
-          <button
-            onClick={abrirNovoProduto}
-            className="inline-flex items-center gap-2 bg-[#FFD60A] text-[#0D1B2A] font-bold px-5 py-3 rounded-lg hover:bg-yellow-400 transition shadow-lg shadow-yellow-500/20"
-          >
-            <PackagePlus className="w-5 h-5" />
-            Novo produto
-          </button>
-        </div>
-
-        {/* Cards de estatísticas */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-6">
-          <div className="bg-white rounded-xl shadow-sm p-6 flex items-start gap-4">
-            <div className="w-12 h-12 rounded-xl bg-yellow-50 flex items-center justify-center shrink-0">
-              <Boxes className="w-6 h-6 text-[#FFD60A]" />
-            </div>
-            <div>
-              <p className="text-sm text-slate-500">
-                Total de produtos
-              </p>
-              <p className="text-3xl font-bold text-slate-900 mt-1">
-                {produtos.length}
-              </p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={() =>
-              setFiltroEstoqueBaixo(!filtroEstoqueBaixo)
-            }
-            className={`text-left bg-white rounded-xl shadow-sm p-6 flex items-start gap-4 transition border-2 ${
-              filtroEstoqueBaixo
-                ? "border-red-300 bg-red-50/50"
-                : "border-transparent hover:border-slate-200"
-            }`}
-          >
-            <div
-              className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
-                filtroEstoqueBaixo
-                  ? "bg-red-100"
-                  : "bg-red-50"
-              }`}
-            >
-              <TrendingDown
-                className={`w-6 h-6 ${
-                  filtroEstoqueBaixo
-                    ? "text-red-600"
-                    : "text-red-500"
-                }`}
-              />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm text-slate-500">
-                Estoque baixo
-              </p>
-              <p className="text-3xl font-bold text-red-600 mt-1">
-                {produtosEstoqueBaixo.length}
-              </p>
-              <p className="text-xs text-slate-500 mt-1">
-                {filtroEstoqueBaixo
-                  ? "Clique para remover o filtro"
-                  : "Clique para filtrar"}
-              </p>
-            </div>
-          </button>
-
-          <div className="bg-white rounded-xl shadow-sm p-6 flex items-start gap-4">
-            <div className="w-12 h-12 rounded-xl bg-green-50 flex items-center justify-center shrink-0">
-              <DollarSign className="w-6 h-6 text-green-600" />
-            </div>
-            <div>
-              <p className="text-sm text-slate-500">
-                Valor do estoque
-              </p>
-              <p className="text-2xl font-bold text-slate-900 mt-1">
-                {formatarMoeda(valorEstoque)}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Busca */}
-        <div className="bg-white rounded-xl shadow-sm p-5 mb-6">
-          <label
-            htmlFor="busca_produto"
-            className="block text-sm font-semibold text-slate-700 mb-2"
-          >
-            Buscar produto
-          </label>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 w-5 h-5 pointer-events-none" />
-            <input
-              id="busca_produto"
-              type="text"
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-              placeholder="Nome, categoria, código ou fornecedor..."
-              className="w-full border border-slate-200 rounded-lg pl-10 pr-4 py-3 outline-none transition"
-            />
-          </div>
-        </div>
-
-        {/* Lista */}
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-            <h2 className="text-xl font-bold text-slate-900">
-              Produtos cadastrados
-            </h2>
-            <div className="flex items-center gap-3">
-              {filtroEstoqueBaixo && (
-                <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 bg-red-50 px-2.5 py-1 rounded-full">
-                  <TrendingDown className="w-3.5 h-3.5" />
-                  Filtrando: estoque baixo
-                </span>
-              )}
-              <span className="text-sm text-slate-500">
-                {produtosFiltrados.length}{" "}
-                {produtosFiltrados.length === 1
-                  ? "produto"
-                  : "produtos"}
-              </span>
-            </div>
-          </div>
-
-          {produtosFiltrados.length === 0 ? (
-            <div className="p-10 text-center">
-              <div className="inline-flex w-16 h-16 rounded-full bg-yellow-50 items-center justify-center mb-4">
-                <Package className="w-8 h-8 text-[#FFD60A]" />
-              </div>
-              <h3 className="font-semibold text-slate-900">
-                {busca || filtroEstoqueBaixo
-                  ? "Nenhum produto encontrado"
-                  : "Nenhum produto cadastrado"}
-              </h3>
-              <p className="text-slate-500 text-sm mt-1 max-w-sm mx-auto">
-                {busca
-                  ? "Tente pesquisar por outro termo."
-                  : filtroEstoqueBaixo
-                  ? "Nenhum produto com estoque abaixo do mínimo."
-                  : "Cadastre seus materiais para começar a controlar o estoque."}
-              </p>
-              {!busca && !filtroEstoqueBaixo && (
-                <button
-                  onClick={abrirNovoProduto}
-                  className="mt-5 inline-flex items-center gap-2 bg-[#FFD60A] hover:bg-yellow-400 text-[#0D1B2A] font-bold px-5 py-2.5 rounded-lg transition shadow-lg shadow-yellow-500/20"
-                >
-                  <PackagePlus className="w-4 h-4" />
-                  Cadastrar primeiro produto
-                </button>
-              )}
-            </div>
-          ) : (
-            <>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th
-                      scope="col"
-                      className="text-left px-6 py-4 text-sm font-semibold text-slate-600"
-                    >
-                      Produto
-                    </th>
-                    <th
-                      scope="col"
-                      className="text-left px-6 py-4 text-sm font-semibold text-slate-600"
-                    >
-                      Categoria
-                    </th>
-                    <th
-                      scope="col"
-                      className="text-left px-6 py-4 text-sm font-semibold text-slate-600"
-                    >
-                      Preço
-                    </th>
-                    <th
-                      scope="col"
-                      className="text-left px-6 py-4 text-sm font-semibold text-slate-600"
-                    >
-                      Estoque
-                    </th>
-                    <th
-                      scope="col"
-                      className="text-right px-6 py-4 text-sm font-semibold text-slate-600"
-                    >
-                      Ações
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {produtosFiltrados.map((produto) => {
-                    const baixo = estoqueBaixo(produto);
-                    const margem = margemLucro(produto.preco_venda, produto.preco_custo);
-                    return (
-                      <tr
-                        key={produto.id}
-                        className={`hover:bg-slate-50 transition ${
-                          baixo ? "bg-red-50/30" : ""
-                        }`}
-                      >
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#FFD60A] to-yellow-500 text-[#0D1B2A] font-bold flex items-center justify-center shrink-0">
-                              <Package className="w-5 h-5" />
-                            </div>
-                            <div className="min-w-0">
-                              <p className="font-semibold text-slate-900 truncate">
-                                {produto.nome}
-                              </p>
-                              <p className="text-xs text-slate-500 truncate">
-                                {produto.codigo
-                                  ? `Código: ${produto.codigo}`
-                                  : `Produto #${produto.id}`}
-                              </p>
-                            </div>
-                          </div>
-                        </td>
-
-                        <td className="px-6 py-4">
-                          {produto.categoria ? (
-                            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-sm">
-                              <Tag className="w-3 h-3" />
-                              {produto.categoria}
-                            </span>
-                          ) : (
-                            <span className="text-sm text-slate-500 italic">
-                              Sem categoria
-                            </span>
-                          )}
-                        </td>
-
-                        <td className="px-6 py-4">
-                          <p className="font-bold text-slate-900">
-                            {formatarMoeda(produto.preco_venda)}
-                          </p>
-                          <p className="text-xs text-slate-500">
-                            Custo:{" "}
-                            {formatarMoeda(produto.preco_custo)}
-                            {margem >= 0 ? (
-                              <span
-                                className={`ml-1 font-semibold ${
-                                  margem > 30
-                                    ? "text-green-600"
-                                    : margem > 15
-                                    ? "text-yellow-600"
-                                    : "text-orange-600"
-                                }`}
-                              >
-                                ({margem.toFixed(0)}%)
-                              </span>
-                            ) : (
-                              <span className="ml-1 font-semibold text-red-600">
-                                ({margem.toFixed(0)}%)
-                              </span>
-                            )}
-                          </p>
-                        </td>
-
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-2">
-                            {baixo && (
-                              <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full border border-red-100">
-                                <TrendingDown className="w-3 h-3" />
-                                Baixo
-                              </span>
-                            )}
-                            <div>
-                              <p
-                                className={`font-bold ${
-                                  baixo
-                                    ? "text-red-600"
-                                    : "text-slate-900"
-                                }`}
-                              >
-                                {produto.estoque} {produto.unidade}
-                              </p>
-                              <p className="text-xs text-slate-500">
-                                Mín: {produto.estoque_minimo}{" "}
-                                {produto.unidade}
-                              </p>
-                            </div>
-                          </div>
-                        </td>
-
-                        <td className="px-6 py-4">
-                          <div className="flex justify-end gap-2 flex-wrap">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                abrirMovimentacao(produto)
-                              }
-                              title="Movimentar estoque"
-                              aria-label="Movimentar estoque"
-                              className="px-3 py-2 rounded-lg text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 transition inline-flex items-center gap-1"
-                            >
-                              <Boxes className="w-3.5 h-3.5" />
-                              Movimentar
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                abrirHistorico(produto)
-                              }
-                              title="Ver histórico"
-                              aria-label="Ver histórico de movimentações"
-                              className="px-3 py-2 rounded-lg text-sm font-medium text-purple-600 bg-purple-50 hover:bg-purple-100 transition"
-                            >
-                              Histórico
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                abrirEditarProduto(produto)
-                              }
-                              className="px-3 py-2 rounded-lg text-sm font-medium text-[#0D1B2A] bg-slate-100 hover:bg-slate-200 transition"
-                            >
-                              Editar
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setProdutoParaExcluir(produto)
-                              }
-                              className="px-3 py-2 rounded-lg text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 transition"
-                            >
-                              Excluir
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <ControlesPaginacao
-              pagina={paginacao.pagina}
-              totalPaginas={paginacao.totalPaginas}
-              total={paginacao.total}
-              tamanho={paginacao.tamanho}
-              onAnterior={paginacao.anterior}
-              onProxima={paginacao.proxima}
-              onMudarTamanho={paginacao.setTamanho}
-            />
-          </>
-          )}
-        </div>
+    <div className="product-page">
+      <header className="page-header">
+        <div><h1>Produtos</h1><p>Materiais, preços e disponibilidade para cada serviço.</p></div>
+        <div className="page-actions"><button type="button" onClick={abrirNovoProduto} className="btn-primary"><PackagePlus size={18} aria-hidden="true" />Novo produto</button></div>
+      </header>
+      <div className="metric-strip">
+        <div className="metric"><label>No catálogo</label><strong>{paginacao.total}</strong><small>produtos cadastrados</small></div>
+        <div className="metric"><label>Estoque baixo</label><strong>{produtosEstoqueBaixo.length}</strong><small>itens nesta página</small></div>
+        <div className="metric"><label>Valor em estoque</label><strong>{formatarMoeda(valorEstoque)}</strong><small>custo dos itens nesta página</small></div>
       </div>
 
-      {/* Modal de cadastro/edição */}
-      {mostrarFormulario && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl my-8">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 sticky top-0 bg-white rounded-t-2xl z-10">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">
-                  {produtoEditando
-                    ? "Editar produto"
-                    : "Novo produto"}
-                </h2>
-                <p className="text-sm text-slate-500 mt-1">
-                  Cadastre os dados do material e controle seu
-                  estoque.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  limparFormulario();
-                  setMostrarFormulario(false);
-                }}
-                className="text-slate-500 hover:text-slate-700 transition p-1 rounded-lg hover:bg-slate-100"
-                aria-label="Fechar"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={salvarProduto} className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                {/* Nome */}
-                <div className="md:col-span-2">
-                  <label
-                    htmlFor="produto_nome"
-                    className="block text-sm font-semibold text-slate-700 mb-1"
-                  >
-                    Nome do produto{" "}
-                    <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    id="produto_nome"
-                    type="text"
-                    value={nome}
-                    onChange={(e) => setNome(e.target.value)}
-                    placeholder="Ex: Cabo flexível 2,5mm²"
-                    className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition"
-                    required
-                  />
-                </div>
-
-                {/* Categoria */}
-                <div>
-                  <label
-                    htmlFor="produto_categoria"
-                    className="block text-sm font-semibold text-slate-700 mb-1"
-                  >
-                    Categoria
-                  </label>
-                  <input
-                    id="produto_categoria"
-                    type="text"
-                    value={categoria}
-                    onChange={(e) => setCategoria(e.target.value)}
-                    placeholder="Ex: Cabos"
-                    className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition"
-                  />
-                </div>
-
-                {/* Unidade */}
-                <div>
-                  <label
-                    htmlFor="produto_unidade"
-                    className="block text-sm font-semibold text-slate-700 mb-1"
-                  >
-                    Unidade{" "}
-                    <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    id="produto_unidade"
-                    value={unidade}
-                    onChange={(e) => setUnidade(e.target.value)}
-                    className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none bg-white transition"
-                  >
-                    <option value="un">Unidade (un)</option>
-                    <option value="m">Metro (m)</option>
-                    <option value="cm">Centímetro (cm)</option>
-                    <option value="kg">Quilograma (kg)</option>
-                    <option value="g">Grama (g)</option>
-                    <option value="l">Litro (L)</option>
-                    <option value="caixa">Caixa</option>
-                    <option value="rolo">Rolo</option>
-                    <option value="peca">Peça</option>
-                  </select>
-                </div>
-
-                {/* Custo */}
-                <div>
-                  <label
-                    htmlFor="produto_custo"
-                    className="block text-sm font-semibold text-slate-700 mb-1"
-                  >
-                    Preço de custo
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
-                      R$
-                    </span>
-                    <input
-                      id="produto_custo"
-                      type="text"
-                      inputMode="numeric"
-                      value={precoCusto}
-                      onChange={(e) =>
-                        setPrecoCusto(mascaraMoeda(e.target.value))
-                      }
-                      placeholder="0,00"
-                      className="w-full border border-slate-200 rounded-lg pl-12 pr-4 py-3 outline-none transition"
-                    />
-                  </div>
-                </div>
-
-                {/* Venda */}
-                <div>
-                  <label
-                    htmlFor="produto_venda"
-                    className="block text-sm font-semibold text-slate-700 mb-1"
-                  >
-                    Preço de venda
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
-                      R$
-                    </span>
-                    <input
-                      id="produto_venda"
-                      type="text"
-                      inputMode="numeric"
-                      value={precoVenda}
-                      onChange={(e) =>
-                        setPrecoVenda(mascaraMoeda(e.target.value))
-                      }
-                      placeholder="0,00"
-                      className="w-full border border-slate-200 rounded-lg pl-12 pr-4 py-3 outline-none transition"
-                    />
-                  </div>
-                </div>
-
-                {/* Estoque */}
-                <div>
-                  <label
-                    htmlFor="produto_estoque"
-                    className="block text-sm font-semibold text-slate-700 mb-1"
-                  >
-                    Estoque atual
-                  </label>
-                  <input
-                    id="produto_estoque"
-                    type="text"
-                    inputMode="decimal"
-                    value={estoque}
-                    onChange={(e) =>
-                      setEstoque(mascaraNumero(e.target.value))
-                    }
-                    placeholder="Ex: 150"
-                    className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition"
-                  />
-                </div>
-
-                {/* Estoque mínimo */}
-                <div>
-                  <label
-                    htmlFor="produto_estoque_minimo"
-                    className="block text-sm font-semibold text-slate-700 mb-1"
-                  >
-                    Estoque mínimo
-                  </label>
-                  <input
-                    id="produto_estoque_minimo"
-                    type="text"
-                    inputMode="decimal"
-                    value={estoqueMinimo}
-                    onChange={(e) =>
-                      setEstoqueMinimo(mascaraNumero(e.target.value))
-                    }
-                    placeholder="Ex: 30"
-                    className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition"
-                  />
-                </div>
-
-                {/* Código */}
-                <div>
-                  <label
-                    htmlFor="produto_codigo"
-                    className="block text-sm font-semibold text-slate-700 mb-1"
-                  >
-                    Código / SKU
-                  </label>
-                  <input
-                    id="produto_codigo"
-                    type="text"
-                    value={codigo}
-                    onChange={(e) => setCodigo(e.target.value)}
-                    placeholder="Ex: CAB25"
-                    className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition"
-                  />
-                </div>
-
-                {/* Fornecedor */}
-                <div>
-                  <label
-                    htmlFor="produto_fornecedor"
-                    className="block text-sm font-semibold text-slate-700 mb-1"
-                  >
-                    Fornecedor
-                  </label>
-                  <input
-                    id="produto_fornecedor"
-                    type="text"
-                    value={fornecedor}
-                    onChange={(e) => setFornecedor(e.target.value)}
-                    placeholder="Nome do fornecedor"
-                    className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3 mt-7">
-                <button
-                  type="button"
-                  onClick={() => {
-                    limparFormulario();
-                    setMostrarFormulario(false);
-                  }}
-                  className="px-5 py-3 rounded-lg border border-slate-200 text-slate-700 font-medium hover:bg-slate-50 transition"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={carregando}
-                  className="px-5 py-3 rounded-lg bg-[#FFD60A] text-[#0D1B2A] font-bold hover:bg-yellow-400 disabled:opacity-60 transition shadow-lg shadow-yellow-500/20 inline-flex items-center gap-2"
-                >
-                  {carregando && (
-                    <div className="w-4 h-4 border-2 border-[#0D1B2A]/30 border-t-[#0D1B2A] rounded-full animate-spin" />
-                  )}
-                  {carregando
-                    ? "Salvando..."
-                    : produtoEditando
-                    ? "Salvar alterações"
-                    : "Cadastrar produto"}
-                </button>
-              </div>
-            </form>
-          </div>
+      <section className="data-panel" aria-label="Catálogo de materiais">
+        <div className="data-toolbar">
+          <div className="relative min-w-0 flex-1"><label htmlFor="busca_produto" className="sr-only">Buscar produto nesta página</label><Search size={18} aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" /><input id="busca_produto" type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Nome, categoria, código ou fornecedor" className="input-base !pl-10" /></div>
+          <div className="filter-tabs" aria-label="Filtrar disponibilidade nesta página"><button type="button" aria-pressed={!filtroEstoqueBaixo} onClick={() => setFiltroEstoqueBaixo(false)}>Todos</button><button type="button" aria-pressed={filtroEstoqueBaixo} onClick={() => setFiltroEstoqueBaixo(true)}>Estoque baixo <span>{produtosEstoqueBaixo.length}</span></button></div>
+          <div><label htmlFor="ordem_produto" className="sr-only">Ordenar produtos nesta página</label><select id="ordem_produto" value={ordenacao} onChange={(e) => setOrdenacao(e.target.value)} className="input-base"><option value="recentes">Mais recentes</option><option value="nome">Nome: A a Z</option><option value="estoque">Menor estoque</option></select></div>
         </div>
-      )}
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--color-border)] px-5 py-3"><p className="record-meta" aria-live="polite">{produtosFiltrados.length} resultados nesta página. Busca, filtros e ordenação se aplicam aos itens exibidos.</p>{temFiltro && <button type="button" className="btn-secondary" onClick={limparFiltros}>Limpar filtros</button>}</div>
+        {erroLista ? <div className="empty-state" role="alert"><h3>Não foi possível carregar os produtos</h3><p>Tente novamente para consultar materiais e estoque.</p><button type="button" className="btn-secondary" onClick={() => usuario && carregarProdutos(usuario.id)}>Tentar novamente</button></div>
+        : carregandoLista ? <div className="empty-state" role="status">Carregando produtos…</div>
+        : produtosFiltrados.length === 0 ? <div className="empty-state"><h3>{temFiltro ? "Nenhum produto com estes filtros" : "Tenha seus materiais sob controle"}</h3><p>{temFiltro ? "Ajuste a busca ou consulte outra página do catálogo." : "Cadastre materiais, preços e estoque para preparar seus próximos serviços."}</p><button type="button" className="btn-secondary" onClick={temFiltro ? limparFiltros : abrirNovoProduto}>{temFiltro ? "Limpar filtros" : "Cadastrar primeiro produto"}</button></div>
+        : <>
+          <div className="hidden xl:block"><table className="data-table">
+            <thead><tr><th scope="col">Material</th><th scope="col">Estoque disponível</th><th scope="col" className="text-right">Preço de venda</th><th scope="col" className="text-right">Ações</th></tr></thead>
+            <tbody>{produtosFiltrados.map((produto) => <tr key={produto.id}>
+              <td><button type="button" className="record-primary text-left hover:underline" onClick={() => abrirEditarProduto(produto)}>{produto.nome}</button><p className="record-meta">{produto.codigo || "Produto #" + produto.id}{produto.categoria ? " · " + produto.categoria : ""}</p>{produto.fornecedor && <p className="record-meta">{produto.fornecedor}</p>}</td>
+              <td><div className="flex flex-wrap items-center gap-2"><strong className="tabular-nums">{produto.estoque} {produto.unidade}</strong>{estoqueBaixo(produto) && <span className="status-label" data-tone="warning">Estoque baixo</span>}</div><p className="record-meta">Mínimo: {produto.estoque_minimo} {produto.unidade}</p></td>
+              <td className="text-right whitespace-nowrap tabular-nums"><strong>{formatarMoeda(produto.preco_venda)}</strong><p className="record-meta">Custo {formatarMoeda(produto.preco_custo)}</p><p className="record-meta">Margem {margemLucro(produto.preco_venda, produto.preco_custo).toFixed(0)}%</p></td>
+              <td>{acoesProduto(produto)}</td>
+            </tr>)}</tbody>
+          </table></div>
+          <div className="mobile-records xl:hidden">{produtosFiltrados.map((produto) => <article key={produto.id} className="record-row">
+            <div className="flex items-start justify-between gap-3"><div className="min-w-0"><button type="button" className="record-primary text-left" onClick={() => abrirEditarProduto(produto)}>{produto.nome}</button><p className="record-meta">{produto.codigo || "Produto #" + produto.id}</p><p className="record-meta">{produto.categoria || "Sem categoria"}{produto.fornecedor ? " · " + produto.fornecedor : ""}</p></div>{estoqueBaixo(produto) && <span className="status-label shrink-0" data-tone="warning">Estoque baixo</span>}</div>
+            <div className="my-4 grid grid-cols-2 gap-4"><div><p className="record-meta">Estoque disponível</p><strong className="tabular-nums">{produto.estoque} {produto.unidade}</strong><p className="record-meta">Mínimo {produto.estoque_minimo} {produto.unidade}</p></div><div className="text-right"><p className="record-meta">Preço de venda</p><strong className="tabular-nums">{formatarMoeda(produto.preco_venda)}</strong><p className="record-meta">Custo {formatarMoeda(produto.preco_custo)}</p><p className="record-meta">Margem {margemLucro(produto.preco_venda, produto.preco_custo).toFixed(0)}%</p></div></div>
+            <div className="flex items-center justify-between gap-2 border-t border-[var(--color-border)] pt-2"><span className="record-meta">Gerenciar material</span>{acoesProduto(produto)}</div>
+          </article>)}</div>
+        </>}
+        <ControlesPaginacao pagina={paginacao.pagina} totalPaginas={paginacao.totalPaginas} total={paginacao.total} tamanho={paginacao.tamanho} onAnterior={paginacao.anterior} onProxima={paginacao.proxima} onMudarTamanho={(tamanho) => { paginacao.setTamanho(tamanho); paginacao.setPagina(0); }} />
+      </section>
 
-      {/* Confirmação de exclusão */}
-      <ConfirmDialog
-        aberto={produtoParaExcluir !== null}
-        titulo="Excluir produto?"
-        descricao={
-          <>
-            Tem certeza que deseja excluir{" "}
-            <strong className="text-slate-900">
-              {produtoParaExcluir?.nome}
-            </strong>
-            ? Esta ação não pode ser desfeita.
-          </>
-        }
-        textoBotaoConfirmar="Excluir"
-        corBotaoConfirmar="vermelho"
-        carregando={excluindo}
-        aoConfirmar={confirmarExclusao}
-        aoCancelar={() => setProdutoParaExcluir(null)}
-      />
+      {mostrarFormulario && <Modal title={produtoEditando ? "Editar produto" : "Novo produto"} description="Cadastre o material e organize seus preços e estoque." onClose={fecharFormulario} busy={carregando} wide footer={<><button type="button" className="btn-secondary" onClick={fecharFormulario} disabled={carregando}>Cancelar</button><button type="submit" form="form_produto" className="btn-primary" disabled={carregando}>{carregando ? "Salvando…" : produtoEditando ? "Salvar alterações" : "Cadastrar produto"}</button></>}>
+        <form id="form_produto" onSubmit={salvarProduto}>
+          <section className="form-section"><h3>Identificação do material</h3><p>Dados para encontrar o produto no catálogo e nos orçamentos.</p>
+            <div className="space-y-4"><div><label htmlFor="produto_nome" className="field-label">Nome do produto *</label><input id="produto_nome" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Cabo flexível 2,5 mm²" className="input-base" required /></div>
+            <div className="form-grid"><div><label htmlFor="produto_categoria" className="field-label">Categoria</label><input id="produto_categoria" value={categoria} onChange={(e) => setCategoria(e.target.value)} placeholder="Ex.: Cabos" className="input-base" /></div><div><label htmlFor="produto_codigo" className="field-label">Código / SKU</label><input id="produto_codigo" value={codigo} onChange={(e) => setCodigo(e.target.value)} placeholder="Ex.: CAB25" className="input-base" /></div></div>
+            <div className="form-grid"><div><label htmlFor="produto_unidade" className="field-label">Unidade *</label><select id="produto_unidade" value={unidade} onChange={(e) => setUnidade(e.target.value)} className="input-base"><option value="un">Unidade (un)</option><option value="m">Metro (m)</option><option value="cm">Centímetro (cm)</option><option value="kg">Quilograma (kg)</option><option value="g">Grama (g)</option><option value="l">Litro (L)</option><option value="caixa">Caixa</option><option value="rolo">Rolo</option><option value="peca">Peça</option></select></div><div><label htmlFor="produto_fornecedor" className="field-label">Fornecedor</label><input id="produto_fornecedor" value={fornecedor} onChange={(e) => setFornecedor(e.target.value)} placeholder="Nome do fornecedor" className="input-base" /></div></div></div>
+          </section>
+          <section className="form-section"><h3>Composição de preço</h3><p>Valores de custo e venda por unidade do material.</p>
+            <div className="form-grid"><div><label htmlFor="produto_custo" className="field-label">Preço de custo (R$)</label><input id="produto_custo" type="text" inputMode="numeric" value={precoCusto} onChange={(e) => setPrecoCusto(mascaraMoeda(e.target.value))} placeholder="0,00" className="input-base" /></div><div><label htmlFor="produto_venda" className="field-label">Preço de venda (R$)</label><input id="produto_venda" type="text" inputMode="numeric" value={precoVenda} onChange={(e) => setPrecoVenda(mascaraMoeda(e.target.value))} placeholder="0,00" className="input-base" /></div></div>
+          </section>
+          <section className="form-section"><h3>Controle de estoque</h3><p>O estoque mínimo define quando o material precisa de atenção.</p>
+            <div className="form-grid"><div><label htmlFor="produto_estoque" className="field-label">Estoque atual</label><input id="produto_estoque" type="text" inputMode="decimal" value={estoque} onChange={(e) => setEstoque(mascaraNumero(e.target.value))} placeholder="Ex.: 150" className="input-base" /></div><div><label htmlFor="produto_estoque_minimo" className="field-label">Estoque mínimo</label><input id="produto_estoque_minimo" type="text" inputMode="decimal" value={estoqueMinimo} onChange={(e) => setEstoqueMinimo(mascaraNumero(e.target.value))} placeholder="Ex.: 30" className="input-base" /></div></div>
+          </section>
+        </form>
+      </Modal>}
 
-      {/* Modal de Movimentação de Estoque */}
-      {produtoMovimentando && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">
-                  Movimentar estoque
-                </h2>
-                <p className="text-sm text-slate-500 mt-1">
-                  {produtoMovimentando.nome} — Estoque atual:{" "}
-                  <strong className="text-slate-900">
-                    {produtoMovimentando.estoque}{" "}
-                    {produtoMovimentando.unidade}
-                  </strong>
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={fecharMovimentacao}
-                className="text-slate-500 hover:text-slate-700 transition p-1 rounded-lg hover:bg-slate-100"
-                aria-label="Fechar"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      <ConfirmDialog aberto={produtoParaExcluir !== null} titulo="Excluir produto?" descricao={<>Tem certeza que deseja excluir <strong>{produtoParaExcluir?.nome}</strong>? Esta ação não pode ser desfeita.</>} textoBotaoConfirmar="Excluir" corBotaoConfirmar="vermelho" carregando={excluindo} aoConfirmar={confirmarExclusao} aoCancelar={() => setProdutoParaExcluir(null)} />
 
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
-                  Tipo de movimentação
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setTipoMov("entrada")}
-                    className={`p-3 rounded-lg border-2 text-sm font-medium transition ${
-                      tipoMov === "entrada"
-                        ? "border-emerald-500 bg-emerald-50 text-emerald-700"
-                        : "border-slate-200 text-slate-600 hover:border-slate-300"
-                    }`}
-                  >
-                    <ArrowDownToLine className="w-4 h-4 mx-auto mb-1" />
-                    Entrada
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTipoMov("saida")}
-                    className={`p-3 rounded-lg border-2 text-sm font-medium transition ${
-                      tipoMov === "saida"
-                        ? "border-red-500 bg-red-50 text-red-700"
-                        : "border-slate-200 text-slate-600 hover:border-slate-300"
-                    }`}
-                  >
-                    <ArrowUpFromLine className="w-4 h-4 mx-auto mb-1" />
-                    Saída
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTipoMov("ajuste")}
-                    className={`p-3 rounded-lg border-2 text-sm font-medium transition ${
-                      tipoMov === "ajuste"
-                        ? "border-yellow-500 bg-yellow-50 text-yellow-700"
-                        : "border-slate-200 text-slate-600 hover:border-slate-300"
-                    }`}
-                  >
-                    <Boxes className="w-4 h-4 mx-auto mb-1" />
-                    Ajuste
-                  </button>
-                </div>
-              </div>
+      {produtoMovimentando && <Modal title="Movimentar estoque" description={produtoMovimentando.nome} onClose={fecharMovimentacao} busy={salvandoMov} footer={<><button type="button" className="btn-secondary" onClick={fecharMovimentacao} disabled={salvandoMov}>Cancelar</button><button type="submit" form="form_movimento" className="btn-primary" disabled={salvandoMov}>{salvandoMov ? "Salvando…" : "Confirmar movimentação"}</button></>}>
+        <div className="metric-strip"><div className="metric"><label>Estoque atual</label><strong>{produtoMovimentando.estoque} {produtoMovimentando.unidade}</strong><small>{produtoMovimentando.nome}</small></div></div>
+        <form id="form_movimento" onSubmit={(e) => { e.preventDefault(); void salvarMovimentacao(); }}>
+          <section className="form-section"><h3>Movimentação</h3><p>Escolha como esta movimentação afeta o estoque atual.</p>
+            <fieldset><legend className="field-label">Tipo de movimentação</legend><div className="filter-tabs grid grid-cols-3">
+              <button type="button" onClick={() => setTipoMov("entrada")} aria-pressed={tipoMov === "entrada"}><ArrowDownToLine size={16} aria-hidden="true" />Entrada</button>
+              <button type="button" onClick={() => setTipoMov("saida")} aria-pressed={tipoMov === "saida"}><ArrowUpFromLine size={16} aria-hidden="true" />Saída</button>
+              <button type="button" onClick={() => setTipoMov("ajuste")} aria-pressed={tipoMov === "ajuste"}><Boxes size={16} aria-hidden="true" />Ajuste</button>
+            </div></fieldset>
+            <div className="mt-5"><label htmlFor="mov_qtd" className="field-label">{tipoMov === "ajuste" ? "Estoque final desejado" : "Quantidade"} ({produtoMovimentando.unidade})</label><input id="mov_qtd" type="text" inputMode="decimal" value={qtdMov} onChange={(e) => setQtdMov(e.target.value)} placeholder="Ex.: 10" className="input-base" aria-describedby="mov_qtd_ajuda" /><p id="mov_qtd_ajuda" className="record-meta mt-2">{tipoMov === "entrada" ? "Será somado ao estoque atual." : tipoMov === "saida" ? "Será subtraído do estoque atual." : "O estoque será definido exatamente neste valor."}</p></div>
+          </section>
+          <section className="form-section"><h3>Registro</h3><p>A observação fica disponível no histórico do material.</p><label htmlFor="mov_obs" className="field-label">Observação</label><textarea id="mov_obs" value={obsMov} onChange={(e) => setObsMov(e.target.value)} rows={3} placeholder="Ex.: Compra do fornecedor ou ajuste de inventário" className="input-base resize-y" /></section>
+        </form>
+      </Modal>}
 
-              <div>
-                <label
-                  htmlFor="mov_qtd"
-                  className="block text-sm font-semibold text-slate-700 mb-2"
-                >
-                  {tipoMov === "ajuste"
-                    ? "Estoque final desejado"
-                    : "Quantidade"}
-                </label>
-                <input
-                  id="mov_qtd"
-                  type="text"
-                  inputMode="decimal"
-                  value={qtdMov}
-                  onChange={(e) => setQtdMov(e.target.value)}
-                  placeholder={tipoMov === "ajuste" ? "0" : "Ex: 10"}
-                  className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition"
-                />
-                {tipoMov === "entrada" && (
-                  <p className="text-xs text-slate-500 mt-1">
-                    Será somado ao estoque atual.
-                  </p>
-                )}
-                {tipoMov === "saida" && (
-                  <p className="text-xs text-slate-500 mt-1">
-                    Será subtraído do estoque atual.
-                  </p>
-                )}
-                {tipoMov === "ajuste" && (
-                  <p className="text-xs text-slate-500 mt-1">
-                    O estoque será definido exatamente neste valor.
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label
-                  htmlFor="mov_obs"
-                  className="block text-sm font-semibold text-slate-700 mb-2"
-                >
-                  Observação
-                </label>
-                <textarea
-                  id="mov_obs"
-                  value={obsMov}
-                  onChange={(e) => setObsMov(e.target.value)}
-                  rows={2}
-                  placeholder="Ex: Compra do fornecedor X, ajuste de inventário..."
-                  className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition resize-none"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={fecharMovimentacao}
-                  className="px-5 py-3 rounded-lg border border-slate-200 text-slate-700 font-medium hover:bg-slate-50 transition"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={salvarMovimentacao}
-                  disabled={salvandoMov}
-                  className="px-5 py-3 rounded-lg bg-[#FFD60A] text-[#0D1B2A] font-bold hover:bg-yellow-400 disabled:opacity-60 transition shadow-lg shadow-yellow-500/20 inline-flex items-center gap-2"
-                >
-                  {salvandoMov && (
-                    <div className="w-4 h-4 border-2 border-[#0D1B2A]/30 border-t-[#0D1B2A] rounded-full animate-spin" />
-                  )}
-                  {salvandoMov ? "Salvando..." : "Confirmar"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal de Histórico de Movimentações */}
-      {produtoHistorico && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">
-                  Histórico de movimentações
-                </h2>
-                <p className="text-sm text-slate-500 mt-1">
-                  {produtoHistorico.nome} — Últimas 50 movimentações
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={fecharHistorico}
-                className="text-slate-500 hover:text-slate-700 transition p-1 rounded-lg hover:bg-slate-100"
-                aria-label="Fechar"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-6 overflow-y-auto">
-              {carregandoHistorico ? (
-                <div className="text-center text-slate-500 py-8">
-                  Carregando...
-                </div>
-              ) : historico.length === 0 ? (
-                <div className="text-center text-slate-500 py-8">
-                  Nenhuma movimentação registrada para este produto.
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {historico.map((mov) => (
-                    <div
-                      key={mov.id}
-                      className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg"
-                    >
-                      <div
-                        className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                          mov.tipo === "entrada"
-                            ? "bg-emerald-100 text-emerald-700"
-                            : mov.tipo === "saida"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-amber-100 text-amber-800"
-                        }`}
-                      >
-                        {mov.tipo === "entrada" ? (
-                          <ArrowDownToLine className="w-4 h-4" />
-                        ) : mov.tipo === "saida" ? (
-                          <ArrowUpFromLine className="w-4 h-4" />
-                        ) : (
-                          <Boxes className="w-4 h-4" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <p className="font-medium text-slate-900">
-                            {mov.tipo === "entrada"
-                              ? "Entrada"
-                              : mov.tipo === "saida"
-                              ? "Saída"
-                              : "Ajuste"}{" "}
-                            de{" "}
-                            <strong>
-                              {mov.quantidade}{" "}
-                              {produtoHistorico.unidade}
-                            </strong>
-                          </p>
-                          <span className="text-xs text-slate-500">
-                            {new Date(mov.created_at).toLocaleString(
-                              "pt-BR"
-                            )}
-                          </span>
-                        </div>
-                        <p className="text-sm text-slate-600 mt-0.5">
-                          {mov.estoque_anterior} →{" "}
-                          {mov.estoque_posterior}{" "}
-                          {produtoHistorico.unidade}
-                          {mov.observacao && (
-                            <span className="block text-xs text-slate-500 mt-1">
-                              {mov.observacao}
-                              {mov.ordem_servico_id &&
-                                ` (OS #${mov.ordem_servico_id})`}
-                            </span>
-                          )}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="px-6 py-4 border-t border-slate-100 flex justify-end">
-              <button
-                type="button"
-                onClick={fecharHistorico}
-                className="px-5 py-2 rounded-lg border border-slate-200 text-slate-700 font-medium hover:bg-slate-50 transition"
-              >
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {produtoHistorico && <Modal title="Histórico de movimentações" description={produtoHistorico.nome + " — últimas 50 movimentações"} onClose={fecharHistorico} wide footer={<button type="button" className="btn-secondary" onClick={fecharHistorico}>Fechar histórico</button>}>
+        {carregandoHistorico ? <div className="empty-state" role="status">Carregando movimentações…</div>
+        : erroHistorico ? <div className="empty-state" role="alert"><h3>Não foi possível carregar o histórico</h3><p>Tente novamente para consultar as movimentações.</p><button type="button" className="btn-secondary" onClick={() => abrirHistorico(produtoHistorico)}>Tentar novamente</button></div>
+        : historico.length === 0 ? <div className="empty-state"><h3>Sem movimentações registradas</h3><p>As entradas, saídas e ajustes deste produto aparecerão aqui.</p></div>
+        : <ol className="divide-y divide-[var(--color-border)]">{historico.map((mov) => <li key={mov.id} className="py-5">
+          <div className="flex flex-wrap items-start justify-between gap-3"><div><span className="status-label" data-tone={mov.tipo === "entrada" ? "success" : mov.tipo === "saida" ? "warning" : undefined}>{mov.tipo === "entrada" ? "Entrada" : mov.tipo === "saida" ? "Saída" : "Ajuste"}</span><strong className="ml-3 tabular-nums">{mov.quantidade} {produtoHistorico.unidade}</strong></div><time className="record-meta" dateTime={mov.created_at}>{new Date(mov.created_at).toLocaleString("pt-BR")}</time></div>
+          <p className="mt-3 text-sm">Estoque: <strong className="tabular-nums">{mov.estoque_anterior} → {mov.estoque_posterior} {produtoHistorico.unidade}</strong></p>
+          {mov.observacao && <p className="record-meta mt-1">{mov.observacao}</p>}{mov.ordem_servico_id && <p className="record-meta mt-1">Ordem de serviço #{mov.ordem_servico_id}</p>}
+        </li>)}</ol>}
+      </Modal>}
     </div>
   );
 }

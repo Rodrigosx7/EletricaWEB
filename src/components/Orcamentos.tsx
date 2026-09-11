@@ -4,19 +4,20 @@ import { STATUS_ORCAMENTO, STATUS_ORCAMENTO_VALORES, formatarNumero, type Status
 import { supabase } from "../supabase";
 import { usePaginacao } from "../hooks/usePaginacao";
 import ControlesPaginacao from "./ui/ControlesPaginacao";
-import { formatarMoeda } from "../utils/formatters";
+import { formatarMoeda, formatarData } from "../utils/formatters";
 import {
   FilePlus,
-  X,
   FileText,
-  Eye,
   Pencil,
   Trash2,
   Loader2,
+  Search,
+  MoreHorizontal,
 } from "lucide-react";
 import ConfirmDialog from "./ConfirmDialog";
 import { useToast } from "./ui/toast";
 import { useEmpresa } from "../contexts/EmpresaContext";
+import Modal from "./ui/Modal";
 type Cliente = {
   id: number;
   nome: string;
@@ -101,9 +102,10 @@ const FALLBACK_LOGO_URL = "/logo.png";
 
 type OrcamentosProps = {
   setPagina: (pagina: string) => void;
+  abrirAoMontar?: boolean;
 };
 
-function Orcamentos({ setPagina }: OrcamentosProps) {
+function Orcamentos({ setPagina, abrirAoMontar = false }: OrcamentosProps) {
   const [usuario, setUsuario] = useState<User | null>(null);
   const { empresa } = useEmpresa();
   const logoCacheRef = useRef<LogoCache>(null);
@@ -113,8 +115,14 @@ function Orcamentos({ setPagina }: OrcamentosProps) {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [servicos, setServicos] = useState<Servico[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [busca, setBusca] = useState("");
+  const [filtroStatus, setFiltroStatus] = useState("todos");
+  const [ordenacao, setOrdenacao] = useState("numero");
 
-  const [modalAberto, setModalAberto] = useState(false);
+  const [modalAberto, setModalAberto] = useState(abrirAoMontar);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const [carregandoDados, setCarregandoDados] = useState(true);
+  const [erroDados, setErroDados] = useState(false);
   const [orcamentoEditando, setOrcamentoEditando] =
   useState<Orcamento | null>(null);
 
@@ -141,6 +149,18 @@ function Orcamentos({ setPagina }: OrcamentosProps) {
   const [itens, setItens] = useState<ItemOrcamento[]>([]);
 
   const [salvando, setSalvando] = useState(false);
+
+  useEffect(() => {
+    if (!modalAberto) return;
+    const focoAnterior = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const overflowAnterior = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    modalRef.current?.querySelector<HTMLSelectElement>("#orc_cliente")?.focus({ preventScroll: true });
+    return () => {
+      document.body.style.overflow = overflowAnterior;
+      if (focoAnterior?.isConnected) focoAnterior.focus({ preventScroll: true });
+    };
+  }, [modalAberto]);
 
   // Visualização
   const [orcamentoVisualizado, setOrcamentoVisualizado] =
@@ -177,6 +197,8 @@ function Orcamentos({ setPagina }: OrcamentosProps) {
 
   async function carregarDados() {
     if (!usuario) return;
+    setCarregandoDados(true);
+    setErroDados(false);
 
     const [clientesResult, servicosResult, produtosResult, orcamentosResult] =
       await Promise.all([
@@ -216,21 +238,12 @@ function Orcamentos({ setPagina }: OrcamentosProps) {
   .range(paginacao.offset, paginacao.offset + paginacao.tamanho - 1),
       ]);
 
-    if (clientesResult.error) {
-      console.error(clientesResult.error);
+    if ([clientesResult, servicosResult, produtosResult, orcamentosResult].some((res) => res.error)) {
+      setErroDados(true);
+      setCarregandoDados(false);
+      return;
     }
-
-    if (servicosResult.error) {
-      console.error(servicosResult.error);
-    }
-
-    if (produtosResult.error) {
-      console.error(produtosResult.error);
-    }
-
-    if (orcamentosResult.error) {
-      console.error(orcamentosResult.error);
-    }
+    setCarregandoDados(false);
 
     setClientes(clientesResult.data || []);
     setServicos(servicosResult.data || []);
@@ -1275,714 +1288,111 @@ const cliente = clienteCompleto?.nome || "Cliente";
   const itensDisponiveis =
     tipoItem === "servico" ? servicos : produtos;
 
+  const orcamentosFiltrados = orcamentos.filter((orcamento) => {
+    const termo = busca.trim().toLocaleLowerCase("pt-BR");
+    const cliente = clientes.find((item) => item.id === orcamento.cliente_id);
+    const texto = [formatarNumero(orcamento.numero), cliente?.nome || "", cliente?.endereco || ""].join(" ").toLocaleLowerCase("pt-BR");
+    return (!termo || texto.includes(termo)) && (filtroStatus === "todos" || orcamento.status === filtroStatus);
+  }).sort((a, b) => ordenacao === "validade" ? (a.validade || "9999").localeCompare(b.validade || "9999") : ordenacao === "valor" ? Number(b.valor_total) - Number(a.valor_total) : b.numero - a.numero);
+  const pendentes = orcamentos.filter((orcamento) => orcamento.status === STATUS_ORCAMENTO.PENDENTE);
+  const aprovados = orcamentos.filter((orcamento) => orcamento.status === STATUS_ORCAMENTO.APROVADO);
+  const valorPendente = pendentes.reduce((total, orcamento) => total + Number(orcamento.valor_total), 0);
+  const tomStatus = (valor: string) => valor === STATUS_ORCAMENTO.APROVADO || valor === STATUS_ORCAMENTO.CONCLUIDO ? "success" : valor === STATUS_ORCAMENTO.RECUSADO ? "danger" : "warning";
+  function acoesOrcamento(orcamento: Orcamento) {
+    return <div className="row-actions">
+      <button type="button" onClick={() => visualizarOrcamento(orcamento)} className="btn-secondary" aria-label={`Abrir orçamento ${formatarNumero(orcamento.numero)}`}>Abrir</button>
+      <details className="relative" onKeyDown={(event) => { if (event.key === "Escape") { event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); } }} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }}>
+        <summary className="icon-button list-none cursor-pointer [&::-webkit-details-marker]:hidden" aria-label={`Mais ações do orçamento ${formatarNumero(orcamento.numero)}`}><MoreHorizontal className="w-5 h-5" aria-hidden="true" /></summary>
+        <div className="absolute right-0 top-full z-30 mt-1 w-48 border border-[var(--color-border)] bg-white p-1 shadow-lg rounded-lg" onClick={(event) => { if ((event.target as HTMLElement).closest("button")) event.currentTarget.parentElement?.removeAttribute("open"); }}>
+          <button type="button" onClick={() => editarOrcamento(orcamento)} className="w-full text-left flex items-center gap-3 px-3 py-2 text-sm hover:bg-slate-50"><Pencil className="w-4 h-4" aria-hidden="true" />Editar orçamento</button>
+          <button type="button" onClick={() => gerarPDF(orcamento)} disabled={gerandoPDF === orcamento.id} className="w-full text-left flex items-center gap-3 px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50">{gerandoPDF === orcamento.id ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <FileText className="w-4 h-4" aria-hidden="true" />}{gerandoPDF === orcamento.id ? "Gerando PDF..." : "Baixar PDF"}</button>
+          <button type="button" onClick={() => setOrcamentoParaExcluir(orcamento)} className="w-full text-left flex items-center gap-3 px-3 py-2 text-sm text-red-700 border-t border-slate-100 hover:bg-red-50"><Trash2 className="w-4 h-4" aria-hidden="true" />Excluir orçamento</button>
+        </div>
+      </details>
+    </div>;
+  }
+
   return (
-    <div className="min-h-screen bg-gray-100 p-6">
-      <div className="max-w-7xl mx-auto">
+    <div className="product-page">
+      <header className="page-header">
+        <div><h1>Orçamentos</h1><p>Transforme propostas em serviços. Acompanhe cada resposta.</p></div>
+        <div className="page-actions"><button type="button" onClick={abrirNovoOrcamento} className="btn-primary"><FilePlus className="w-4 h-4" aria-hidden="true" />Novo orçamento</button></div>
+      </header>
 
-        {/* Cabeçalho */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">
-              Orçamentos
-            </h1>
-
-            <p className="text-gray-500 mt-1">
-              Crie e gerencie seus orçamentos
-            </p>
-          </div>
-
-          <button
-            onClick={abrirNovoOrcamento}
-            className="inline-flex items-center gap-2 bg-[#FFD60A] text-[#0D1B2A] font-bold px-5 py-3 rounded-lg hover:bg-yellow-400 transition shadow-lg shadow-yellow-500/20"
-          >
-            <FilePlus className="w-5 h-5" />
-            Novo orçamento
-          </button>
-        </div>
-
-        {/* Resumo */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-
-          <div className="bg-white rounded-xl shadow-sm p-6">
-            <p className="text-sm text-gray-500">
-              Total de orçamentos
-            </p>
-
-            <h2 className="text-3xl font-bold text-gray-900 mt-2">
-              {orcamentos.length}
-            </h2>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-sm p-6">
-            <p className="text-sm text-gray-500">
-              Pendentes
-            </p>
-
-            <h2 className="text-3xl font-bold text-yellow-600 mt-2">
-              {
-                orcamentos.filter(
-                  (orcamento) => orcamento.status === STATUS_ORCAMENTO.PENDENTE
-                ).length
-              }
-            </h2>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-sm p-6">
-            <p className="text-sm text-gray-500">
-              Aprovados
-            </p>
-
-            <h2 className="text-3xl font-bold text-green-600 mt-2">
-              {
-                orcamentos.filter(
-                  (orcamento) => orcamento.status === STATUS_ORCAMENTO.APROVADO
-                ).length
-              }
-            </h2>
-          </div>
-
-        </div>
-
-        {/* Lista */}
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-
-          {orcamentos.length === 0 ? (
-            <div className="p-12 text-center">
-
-              <h3 className="text-lg font-semibold text-gray-800">
-                Nenhum orçamento cadastrado
-              </h3>
-
-              <p className="text-gray-500 mt-2">
-                Clique em "Novo orçamento" para começar.
-              </p>
-
-            </div>
-          ) : (
-            <>
-            <div className="overflow-x-auto">
-
-              <table className="w-full">
-
-                <thead className="bg-gray-50 border-b">
-                  <tr>
-
-                    <th scope="col" className="text-left px-6 py-4 text-sm font-semibold text-gray-600">
-                      Nº
-                    </th>
-
-                    <th scope="col" className="text-left px-6 py-4 text-sm font-semibold text-gray-600">
-                      Cliente
-                    </th>
-
-                    <th scope="col" className="text-left px-6 py-4 text-sm font-semibold text-gray-600">
-                      Data
-                    </th>
-
-                    <th scope="col" className="text-left px-6 py-4 text-sm font-semibold text-gray-600">
-                      Status
-                    </th>
-
-                    <th scope="col" className="text-right px-6 py-4 text-sm font-semibold text-gray-600">
-                      Total
-                    </th>
-
-                    <th scope="col" className="text-right px-6 py-4 text-sm font-semibold text-gray-600">
-                      Ações
-                    </th>
-
-                  </tr>
-                </thead>
-
-                <tbody>
-
-                  {orcamentos.map((orcamento) => (
-                    <tr
-                      key={orcamento.id}
-                      className="border-b last:border-0 hover:bg-gray-50"
-                    >
-
-                      <td className="px-6 py-4 font-semibold text-gray-900">
-                        #{formatarNumero(orcamento.numero)}
-                      </td>
-
-                     <td className="px-6 py-4 text-gray-700">
-  {clientes.find(
-    (cliente) => cliente.id === orcamento.cliente_id
-  )?.nome || "Cliente"}
-</td>
-
-                      <td className="px-6 py-4 text-gray-600">
-                        {new Date(
-                          orcamento.data_orcamento + "T00:00:00"
-                        ).toLocaleDateString("pt-BR")}
-                      </td>
-
-                      <td className="px-6 py-4">
-  <span
-    className={`px-3 py-1 rounded-full text-xs font-semibold ${
-      orcamento.status === STATUS_ORCAMENTO.PENDENTE
-        ? "bg-amber-100 text-amber-800"
-        : orcamento.status === STATUS_ORCAMENTO.APROVADO
-        ? "bg-emerald-100 text-emerald-800"
-        : orcamento.status === STATUS_ORCAMENTO.RECUSADO
-        ? "bg-red-100 text-red-800"
-        : orcamento.status === STATUS_ORCAMENTO.CONCLUIDO
-        ? "bg-blue-100 text-blue-800"
-        : "bg-slate-100 text-slate-700"
-    }`}
-  >
-    {orcamento.status}
-  </span>
-</td>
-
-                      <td className="px-6 py-4 text-right font-semibold text-gray-900">
-                        {formatarMoeda(
-                          Number(orcamento.valor_total)
-                        )}
-                      </td>
-
-                      <td className="px-6 py-4 text-right">
-
-                        <div className="flex justify-end gap-3">
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              visualizarOrcamento(orcamento)
-                            }
-                            title="Visualizar"
-                            aria-label="Visualizar orçamento"
-                            className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium transition"
-                          >
-                            <Eye className="w-4 h-4" />
-                            <span className="hidden lg:inline">
-                              Ver
-                            </span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => gerarPDF(orcamento)}
-                            disabled={gerandoPDF === orcamento.id}
-                            title="Baixar PDF"
-                            aria-label="Baixar PDF"
-                            className="inline-flex items-center gap-1 text-gray-700 hover:text-gray-900 font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            {gerandoPDF === orcamento.id ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <FileText className="w-4 h-4" />
-                            )}
-                            <span className="hidden lg:inline">
-                              {gerandoPDF === orcamento.id ? "Gerando..." : "PDF"}
-                            </span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => editarOrcamento(orcamento)}
-                            title="Editar"
-                            aria-label="Editar orçamento"
-                            className="inline-flex items-center gap-1 text-orange-600 hover:text-orange-800 font-medium transition"
-                          >
-                            <Pencil className="w-4 h-4" />
-                            <span className="hidden lg:inline">
-                              Editar
-                            </span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setOrcamentoParaExcluir(orcamento)
-                            }
-                            title="Excluir"
-                            aria-label="Excluir orçamento"
-                            className="inline-flex items-center gap-1 text-red-600 hover:text-red-800 font-medium transition"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                            <span className="hidden lg:inline">
-                              Excluir
-                            </span>
-                          </button>
-
-                        </div>
-
-                      </td>
-
-                    </tr>
-                  ))}
-
-                </tbody>
-
-              </table>
-
-            </div>
-            <ControlesPaginacao
-              pagina={paginacao.pagina}
-              totalPaginas={paginacao.totalPaginas}
-              total={paginacao.total}
-              tamanho={paginacao.tamanho}
-              onAnterior={paginacao.anterior}
-              onProxima={paginacao.proxima}
-              onMudarTamanho={paginacao.setTamanho}
-            />
-          </>
-          )}
-
-        </div>
-
+      <div className="metric-strip" aria-label="Resumo dos orçamentos nesta página">
+        <div className="metric"><span>Em negociação nesta página</span><strong>{carregandoDados ? "—" : formatarMoeda(valorPendente)}</strong><small>{pendentes.length} orçamentos aguardando resposta</small></div>
+        <div className="metric"><span>Aprovados</span><strong>{carregandoDados ? "—" : aprovados.length}</strong><small>Orçamentos nesta página</small></div>
+        <div className="metric"><span>Seu histórico</span><strong>{carregandoDados ? "—" : paginacao.total}</strong><small>Orçamentos cadastrados</small></div>
       </div>
 
-      {/* ===================================================== */}
-      {/* MODAL NOVO ORÇAMENTO                                  */}
-      {/* ===================================================== */}
-
-      {modalAberto && (
-        <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
-          onClick={() => {
-            if (!salvando) {
-              setModalAberto(false);
-            }
-          }}
-        >
-
-          <div
-            className="bg-white rounded-2xl shadow-xl w-full max-w-5xl max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-
-            {/* Cabeçalho */}
-            <div className="p-6 border-b flex items-center justify-between">
-
-              <div>
-                <h2 className="text-2xl font-bold text-gray-900">
-  {orcamentoEditando
-    ? `Editar orçamento #${formatarNumero(
-        orcamentoEditando.numero
-      )}`
-    : "Novo orçamento"}
-</h2>
-
-<p className="text-gray-500 text-sm mt-1">
-  {orcamentoEditando
-    ? "Altere os dados do orçamento"
-    : "Preencha os dados do orçamento"}
-</p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setModalAberto(false)}
-                disabled={salvando}
-                className="text-gray-500 hover:text-gray-700 transition p-1 rounded-lg hover:bg-gray-100 disabled:opacity-30"
-                aria-label="Fechar"
-              >
-                <X className="w-5 h-5" />
-              </button>
-
-            </div>
-
-            {/* Conteúdo */}
-            <div className="p-6 space-y-6">
-
-              {/* Dados principais */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-                <div>
-                  <label
-                    htmlFor="orc_cliente"
-                    className="block text-sm font-medium text-gray-700 mb-1"
-                  >
-                    Cliente <span className="text-red-500">*</span>
-                  </label>
-
-                  <select
-                    id="orc_cliente"
-                    value={clienteId}
-                    onChange={(e) =>
-                      setClienteId(e.target.value)
-                    }
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5"
-                  >
-
-                    <option value="">
-                      Selecione um cliente
-                    </option>
-
-                    {clientes.map((cliente) => (
-                      <option
-                        key={cliente.id}
-                        value={cliente.id}
-                      >
-                        {cliente.nome}
-                      </option>
-                    ))}
-
-                  </select>
-                </div>
-
-                <div>
-  <label
-    htmlFor="orc_status"
-    className="block text-sm font-medium text-gray-700 mb-1"
-  >
-    Status
-  </label>
-
-  <select
-    id="orc_status"
-    value={status}
-    onChange={(e) => setStatus(e.target.value as StatusOrcamento)}
-    className="w-full border border-gray-300 rounded-lg px-3 py-2"
-  >
-    {STATUS_ORCAMENTO_VALORES.map((s: StatusOrcamento) => (
-      <option key={s} value={s}>{s}</option>
-    ))}
-  </select>
-</div>
-
-                <div>
-                  <label
-                    htmlFor="orc_data"
-                    className="block text-sm font-medium text-gray-700 mb-1"
-                  >
-                    Data do orçamento
-                  </label>
-
-                  <input
-                    id="orc_data"
-                    type="date"
-                    value={dataOrcamento}
-                    onChange={(e) =>
-                      setDataOrcamento(e.target.value)
-                    }
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="orc_validade"
-                    className="block text-sm font-medium text-gray-700 mb-1"
-                  >
-                    Validade
-                  </label>
-
-                  <input
-                    id="orc_validade"
-                    type="date"
-                    value={validade}
-                    onChange={(e) =>
-                      setValidade(e.target.value)
-                    }
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5"
-                  />
-                </div>
-
-              </div>
-
-              {/* Adicionar item */}
-              <div className="border border-gray-200 rounded-xl p-5">
-
-                <h3 className="font-bold text-gray-900 mb-4">
-                  Adicionar item
-                </h3>
-
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-
-                  <select
-                    value={tipoItem}
-                    onChange={(e) => {
-                      setTipoItem(
-                        e.target.value as
-                          | "servico"
-                          | "produto"
-                      );
-
-                      setItemSelecionado("");
-                    }}
-                    className="border border-gray-300 rounded-lg px-3 py-2.5"
-                  >
-
-                    <option value="servico">
-                      Serviço
-                    </option>
-
-                    <option value="produto">
-                      Produto
-                    </option>
-
-                  </select>
-
-                  <select
-                    value={itemSelecionado}
-                    onChange={(e) =>
-                      setItemSelecionado(e.target.value)
-                    }
-                    className="border border-gray-300 rounded-lg px-3 py-2.5 md:col-span-2"
-                  >
-
-                    <option value="">
-                      Selecione
-                    </option>
-
-                    {itensDisponiveis.map((item) => (
-                      <option
-                        key={item.id}
-                        value={item.id}
-                      >
-                        {item.nome}
-                      </option>
-                    ))}
-
-                  </select>
-
-                  <input
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    value={quantidade}
-                    onChange={(e) =>
-                      setQuantidade(e.target.value)
-                    }
-                    placeholder="Quantidade"
-                    className="border border-gray-300 rounded-lg px-3 py-2.5"
-                  />
-
-                </div>
-
-                <button
-                  onClick={adicionarItem}
-                  className="mt-4 bg-gray-900 hover:bg-gray-800 text-white px-4 py-2.5 rounded-lg font-medium"
-                >
-                  + Adicionar item
-                </button>
-
-              </div>
-
-              {/* Itens */}
-              <div>
-
-                <h3 className="font-bold text-gray-900 mb-3">
-                  Itens do orçamento
-                </h3>
-
-                {itens.length === 0 ? (
-                  <div className="border border-dashed border-gray-300 rounded-xl p-8 text-center text-gray-500">
-                    Nenhum item adicionado.
-                  </div>
-                ) : (
-                  <div className="border border-gray-200 rounded-xl overflow-hidden">
-
-                    <div className="overflow-x-auto">
-
-                      <table className="w-full">
-
-                        <thead className="bg-gray-50">
-
-                          <tr>
-
-                            <th className="text-left px-4 py-3 text-sm text-gray-600">
-                              Tipo
-                            </th>
-
-                            <th className="text-left px-4 py-3 text-sm text-gray-600">
-                              Descrição
-                            </th>
-
-                            <th className="text-right px-4 py-3 text-sm text-gray-600">
-                              Qtd.
-                            </th>
-
-                            <th className="text-right px-4 py-3 text-sm text-gray-600">
-                              Unitário
-                            </th>
-
-                            <th className="text-right px-4 py-3 text-sm text-gray-600">
-                              Subtotal
-                            </th>
-
-                            <th className="text-right px-4 py-3 text-sm text-gray-600">
-                              Ação
-                            </th>
-
-                          </tr>
-
-                        </thead>
-
-                        <tbody>
-
-                          {itens.map((item) => (
-                            <tr
-                              key={item.id}
-                              className="border-t"
-                            >
-
-                              <td className="px-4 py-3 text-sm">
-                                {item.tipo === "servico"
-                                  ? "Serviço"
-                                  : "Produto"}
-                              </td>
-
-                              <td className="px-4 py-3 font-medium">
-                                {item.descricao}
-                              </td>
-
-                              <td className="px-4 py-3 text-right">
-                                {item.quantidade}
-                              </td>
-
-                              <td className="px-4 py-3 text-right">
-                                {formatarMoeda(
-                                  item.valor_unitario
-                                )}
-                              </td>
-
-                              <td className="px-4 py-3 text-right font-semibold">
-                                {formatarMoeda(
-                                  item.subtotal
-                                )}
-                              </td>
-
-                              <td className="px-4 py-3 text-right">
-
-                                <button
-                                  onClick={() =>
-                                    removerItem(item.id)
-                                  }
-                                  className="text-red-600 hover:text-red-800"
-                                >
-                                  Remover
-                                </button>
-
-                              </td>
-
-                            </tr>
-                          ))}
-
-                        </tbody>
-
-                      </table>
-
-                    </div>
-
-                  </div>
-                )}
-
-              </div>
-
-              {/* Observações e valores */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-                <div>
-
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Observações
-                  </label>
-
-                  <textarea
-                    value={observacoes}
-                    onChange={(e) =>
-                      setObservacoes(e.target.value)
-                    }
-                    rows={5}
-                    placeholder="Observações do orçamento..."
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 resize-none"
-                  />
-
-                </div>
-
-                <div className="bg-gray-50 rounded-xl p-5">
-
-                  <div className="flex justify-between mb-3">
-
-                    <span className="text-gray-600">
-                      Subtotal
-                    </span>
-
-                    <span className="font-semibold">
-                      {formatarMoeda(subtotal)}
-                    </span>
-
-                  </div>
-
-                  <div className="flex items-center justify-between mb-3 gap-4">
-
-                    <span className="text-gray-600">
-                      Desconto
-                    </span>
-
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={desconto}
-                      onChange={(e) =>
-                        setDesconto(e.target.value)
-                      }
-                      placeholder="R$ 0,00"
-                      className="w-32 border border-gray-300 rounded-lg px-3 py-2 text-right"
-                    />
-
-                  </div>
-
-                  <div className="border-t pt-4 flex justify-between">
-
-                    <span className="text-xl font-bold text-gray-900">
-                      Total
-                    </span>
-
-                    <span className="text-xl font-bold text-blue-600">
-                      {formatarMoeda(valorTotal)}
-                    </span>
-
-                  </div>
-
-                </div>
-
-              </div>
-
-            </div>
-
-            {/* Rodapé */}
-            <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
-
-              <button
-                onClick={() => {
-  setModalAberto(false);
-  setOrcamentoEditando(null);
-}}
-                disabled={salvando}
-                className="px-5 py-2.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-100 font-medium"
-              >
-                Cancelar
-              </button>
-
-              <button
-                onClick={salvarOrcamento}
-                disabled={salvando}
-                className="px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:opacity-50"
-              >
-                {salvando
-  ? "Salvando..."
-  : orcamentoEditando
-  ? "Salvar alterações"
-  : "Salvar orçamento"}
-              </button>
-
-            </div>
-
-          </div>
-
+      <section className="data-panel" aria-label="Lista de orçamentos">
+        <div className="data-toolbar">
+          <div className="flex-1 min-w-0"><label htmlFor="orc_busca" className="field-label">Buscar nesta página</label><div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" aria-hidden="true" /><input id="orc_busca" value={busca} onChange={(event) => setBusca(event.target.value)} className="input-base w-full pl-10" placeholder="Nº, cliente ou endereço" /></div></div>
+          <div><label htmlFor="orc_ordenacao" className="field-label">Ordenar nesta página</label><select id="orc_ordenacao" value={ordenacao} onChange={(event) => setOrdenacao(event.target.value)} className="input-base w-full"><option value="numero">Mais recentes</option><option value="validade">Próxima validade</option><option value="valor">Maior valor</option></select></div>
         </div>
-      )}
+        <div className="filter-tabs" aria-label="Filtrar status nesta página"><button type="button" aria-pressed={filtroStatus === "todos"} onClick={() => setFiltroStatus("todos")}>Todos</button>{STATUS_ORCAMENTO_VALORES.map((valor) => <button type="button" key={valor} aria-pressed={filtroStatus === valor} onClick={() => setFiltroStatus(valor)}>{valor}</button>)}</div>
+        {carregandoDados ? <div className="empty-state" role="status"><Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /><p>Carregando orçamentos...</p></div>
+          : erroDados ? <div className="empty-state" role="alert"><h2>Não foi possível carregar os orçamentos</h2><p>Confira sua conexão e tente novamente.</p><button type="button" onClick={carregarDados} className="btn-secondary">Tentar novamente</button></div>
+          : orcamentosFiltrados.length === 0 ? <div className="empty-state"><h2>{orcamentos.length ? "Nenhum orçamento neste filtro" : "Seu próximo serviço começa aqui"}</h2><p>{orcamentos.length ? "Ajuste a busca ou o status para ver outras propostas desta página." : "Escolha o cliente e adicione os serviços e materiais. Seu orçamento fica pronto para baixar em PDF."}</p><button type="button" onClick={orcamentos.length ? () => { setBusca(""); setFiltroStatus("todos"); } : abrirNovoOrcamento} className="btn-secondary">{orcamentos.length ? "Limpar filtros" : "Criar primeiro orçamento"}</button></div>
+          : <>
+            <div className="hidden xl:block"><table className="data-table w-full"><thead><tr><th scope="col">Proposta / cliente</th><th scope="col">Datas</th><th scope="col">Status</th><th scope="col" className="text-right">Total</th><th scope="col"><span className="sr-only">Ações</span></th></tr></thead><tbody>
+              {orcamentosFiltrados.map((orcamento) => { const cliente = clientes.find((item) => item.id === orcamento.cliente_id); return <tr key={orcamento.id}>
+                <td><div className="record-meta">Orçamento #{formatarNumero(orcamento.numero)}</div><div className="record-primary">{cliente?.nome || "Cliente"}</div><div className="record-meta max-w-sm truncate" title={cliente?.endereco || undefined}>{cliente?.endereco || "Endereço não informado"}</div></td>
+                <td><div className="text-sm font-medium">{formatarData(orcamento.data_orcamento)}</div><div className="record-meta">{orcamento.validade ? `Válido até ${formatarData(orcamento.validade)}` : "Validade não definida"}</div></td>
+                <td><span className="status-label" data-tone={tomStatus(orcamento.status)}>{orcamento.status}</span></td>
+                <td className="text-right font-semibold whitespace-nowrap tabular-nums">{formatarMoeda(Number(orcamento.valor_total))}</td><td>{acoesOrcamento(orcamento)}</td>
+              </tr>; })}
+            </tbody></table></div>
+            <div className="xl:hidden">{orcamentosFiltrados.map((orcamento) => { const cliente = clientes.find((item) => item.id === orcamento.cliente_id); return <article key={orcamento.id} className="record-row">
+              <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="record-meta">Orçamento #{formatarNumero(orcamento.numero)}</div><h2 className="record-primary">{cliente?.nome || "Cliente"}</h2></div><span className="status-label shrink-0" data-tone={tomStatus(orcamento.status)}>{orcamento.status}</span></div><p className="record-meta mt-1">{cliente?.endereco || "Endereço não informado"}</p>
+              <div className="flex flex-wrap justify-between gap-2 mt-3"><div className="record-meta"><p>Emissão {formatarData(orcamento.data_orcamento)}</p><p>{orcamento.validade ? `Válido até ${formatarData(orcamento.validade)}` : "Validade não definida"}</p></div><strong className="tabular-nums">{formatarMoeda(Number(orcamento.valor_total))}</strong></div><div className="mt-3">{acoesOrcamento(orcamento)}</div>
+            </article>; })}</div>
+          </>}
+        {!carregandoDados && !erroDados && orcamentos.length > 0 && <p className="px-4 pt-4 text-xs text-slate-500">{orcamentosFiltrados.length} de {orcamentos.length} orçamentos nesta página. Busca, status e ordenação se aplicam a esta página.</p>}
+        <ControlesPaginacao pagina={paginacao.pagina} totalPaginas={paginacao.totalPaginas} total={paginacao.total} tamanho={paginacao.tamanho} onAnterior={paginacao.anterior} onProxima={paginacao.proxima} onMudarTamanho={paginacao.setTamanho} />
+      </section>
 
-      {/* ===================================================== */}
-      {/* MODAL VISUALIZAR ORÇAMENTO                            */}
-      {/* ===================================================== */}
+      {modalAberto && <Modal
+        title={orcamentoEditando ? `Editar orçamento #${formatarNumero(orcamentoEditando.numero)}` : "Novo orçamento"}
+        description="Cliente, escopo e valores em uma única proposta."
+        onClose={() => { if (!salvando) { setModalAberto(false); setOrcamentoEditando(null); } }}
+        busy={salvando}
+        wide
+        footer={<><div className="mr-auto" aria-live="polite" aria-atomic="true"><p className="record-meta">Total do orçamento</p><strong className="text-xl sm:text-2xl tabular-nums">{formatarMoeda(valorTotal)}</strong></div><button type="button" onClick={() => { setModalAberto(false); setOrcamentoEditando(null); }} disabled={salvando} className="btn-secondary">Cancelar</button><button type="button" onClick={salvarOrcamento} disabled={salvando || carregandoDados || erroDados} className="btn-primary">{salvando ? "Salvando..." : orcamentoEditando ? "Salvar alterações" : "Salvar orçamento"}</button></>}
+      >
+        {carregandoDados && <p role="status" className="record-meta">Carregando clientes e itens disponíveis...</p>}
+        {erroDados && <div role="alert" className="inline-alert">Não foi possível carregar os dados do formulário. <button type="button" onClick={carregarDados} className="underline font-semibold">Tentar novamente</button></div>}
+        <section className="form-section">
+          <h3>Cliente e proposta</h3><p>Defina quem vai receber o orçamento e até quando ele é válido.</p>
+          <div className="form-grid">
+            <div><label htmlFor="orc_cliente" className="field-label">Cliente *</label><select id="orc_cliente" aria-required="true" value={clienteId} onChange={(event) => setClienteId(event.target.value)} className="input-base w-full"><option value="">Selecione um cliente</option>{clientes.map((cliente) => <option key={cliente.id} value={cliente.id}>{cliente.nome}</option>)}</select></div>
+            <div><label htmlFor="orc_status" className="field-label">Status</label><select id="orc_status" value={status} onChange={(event) => setStatus(event.target.value as StatusOrcamento)} className="input-base w-full">{STATUS_ORCAMENTO_VALORES.map((valor) => <option key={valor} value={valor}>{valor}</option>)}</select></div>
+            <div><label htmlFor="orc_data" className="field-label">Data do orçamento</label><input id="orc_data" type="date" value={dataOrcamento} onChange={(event) => setDataOrcamento(event.target.value)} className="input-base w-full" /></div>
+            <div><label htmlFor="orc_validade" className="field-label">Validade</label><input id="orc_validade" type="date" value={validade} onChange={(event) => setValidade(event.target.value)} className="input-base w-full" /></div>
+          </div>
+        </section>
+        <section className="form-section">
+          <h3>Serviços e materiais</h3><p>Monte o escopo com os itens do seu catálogo.</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div><label htmlFor="orc_tipo_item" className="field-label">Tipo</label><select id="orc_tipo_item" value={tipoItem} onChange={(event) => { setTipoItem(event.target.value as "servico" | "produto"); setItemSelecionado(""); }} className="input-base w-full"><option value="servico">Serviço</option><option value="produto">Produto</option></select></div>
+            <div className="col-span-2 sm:col-span-2 order-first sm:order-none"><label htmlFor="orc_item" className="field-label">Item do catálogo</label><select id="orc_item" value={itemSelecionado} onChange={(event) => setItemSelecionado(event.target.value)} className="input-base w-full"><option value="">{tipoItem === "servico" ? "Selecione um serviço" : "Selecione um produto"}</option>{itensDisponiveis.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></div>
+            <div><label htmlFor="orc_quantidade" className="field-label">Quantidade</label><input id="orc_quantidade" type="number" min="0.01" step="0.01" value={quantidade} onChange={(event) => setQuantidade(event.target.value)} className="input-base w-full" /></div>
+          </div>
+          <div className="flex justify-end mt-3"><button type="button" onClick={adicionarItem} className="btn-secondary">Adicionar item</button></div>
+          <div className="mt-5 border-t border-[var(--color-border)]">
+            {itens.length === 0 ? <p className="py-6 text-sm text-slate-500 text-center">Adicione o primeiro serviço ou material para compor a proposta.</p> : <div className="divide-y divide-[var(--color-border)]">
+              {itens.map((item) => <div key={item.id} className="flex flex-wrap sm:flex-nowrap items-start gap-3 py-4"><div className="min-w-0 flex-1"><p className="record-primary">{item.descricao}</p><p className="record-meta">{item.tipo === "servico" ? "Serviço" : "Material"} · {item.quantidade} × {formatarMoeda(item.valor_unitario)}</p></div><strong className="text-sm tabular-nums shrink-0 pt-1">{formatarMoeda(item.subtotal)}</strong><button type="button" onClick={() => removerItem(item.id)} className="icon-button text-red-700 shrink-0" aria-label={`Remover ${item.descricao}`} title="Remover item"><Trash2 className="w-4 h-4" aria-hidden="true" /></button></div>)}
+            </div>}
+          </div>
+        </section>
+        <section className="form-section">
+          <h3>Condições comerciais</h3><p>Revise o desconto e as informações que acompanham a proposta.</p>
+          <div className="grid sm:grid-cols-[1fr_240px] gap-6">
+            <div><label htmlFor="orc_observacoes" className="field-label">Observações</label><textarea id="orc_observacoes" value={observacoes} onChange={(event) => setObservacoes(event.target.value)} rows={4} placeholder="Condições de pagamento, prazo e observações..." className="input-base w-full resize-y" /></div>
+            <div className="border-t sm:border-t-0 sm:border-l border-[var(--color-border)] pt-4 sm:pt-0 sm:pl-6"><dl className="flex justify-between gap-3 text-sm mb-4"><dt className="text-slate-600">Subtotal</dt><dd className="font-semibold tabular-nums">{formatarMoeda(subtotal)}</dd></dl><label htmlFor="orc_desconto" className="field-label">Desconto (R$)</label><input id="orc_desconto" type="number" min="0" step="0.01" value={desconto} onChange={(event) => setDesconto(event.target.value)} placeholder="0,00" className="input-base w-full text-right" /></div>
+          </div>
+        </section>
+      </Modal>}
 
       {orcamentoVisualizado && (
         <div

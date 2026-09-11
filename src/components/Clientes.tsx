@@ -1,18 +1,11 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type { User } from "@supabase/supabase-js";
-import {
-  Search,
-  UserPlus,
-  X,
-  Phone,
-  Mail,
-  MapPin,
-  User as IconeUser,
-} from "lucide-react";
+import { Search, UserPlus, Pencil, Trash2, Phone, Mail, MapPin } from "lucide-react";
 import { supabase } from "../supabase";
 import ConfirmDialog from "./ConfirmDialog";
 import { useToast } from "./ui/toast";
-import { mascaraTelefone, iniciais } from "../utils/formatters";
+import Modal from "./ui/Modal";
+import { mascaraTelefone } from "../utils/formatters";
 
 type Cliente = {
   id: number;
@@ -39,6 +32,9 @@ export default function Clientes() {
   const [endereco, setEndereco] = useState("");
 
   const [busca, setBusca] = useState("");
+  const [ordenacao, setOrdenacao] = useState("recentes");
+  const [carregandoLista, setCarregandoLista] = useState(true);
+  const [erroLista, setErroLista] = useState(false);
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [carregando, setCarregando] = useState(false);
 
@@ -58,9 +54,7 @@ export default function Clientes() {
 
       setUsuario(user);
 
-      if (user) {
-        carregarClientes(user.id);
-      }
+      if (!user) setCarregandoLista(false);
     }
 
     iniciar();
@@ -72,13 +66,17 @@ export default function Clientes() {
   }, [usuario]);
 
   async function carregarClientes(userId: string) {
+    setCarregandoLista(true);
+    setErroLista(false);
     const { data, error } = await supabase
       .from("clientes")
       .select("*", { count: "exact" })
       .eq("user_id", userId)
       .order("id", { ascending: false });
 
+    setCarregandoLista(false);
     if (error) {
+      setErroLista(true);
       console.error("Erro ao carregar clientes:", error);
       mostrarToast("Erro ao carregar clientes.", "erro");
       return;
@@ -207,389 +205,92 @@ export default function Clientes() {
       (cliente.telefone || "").toLowerCase().includes(termo) ||
       (cliente.email || "").toLowerCase().includes(termo)
     );
-  });
+  }).sort((a, b) => ordenacao === "nome" ? a.nome.localeCompare(b.nome, "pt-BR") : b.id - a.id);
+
+  function fecharFormulario() {
+    limparFormulario();
+    setMostrarFormulario(false);
+  }
+
+  function acoesCliente(cliente: Cliente) {
+    return <div className="row-actions">
+      <button type="button" className="icon-button" onClick={() => abrirEditarCliente(cliente)} aria-label={"Editar " + cliente.nome} title="Editar cliente"><Pencil size={17} aria-hidden="true" /></button>
+      <button type="button" className="icon-button" onClick={() => setClienteParaExcluir(cliente)} aria-label={"Excluir " + cliente.nome} title="Excluir cliente"><Trash2 size={17} aria-hidden="true" /></button>
+    </div>;
+  }
 
   return (
-    <div className="min-h-screen bg-slate-100 p-6 md:p-8">
-      <div className="max-w-7xl mx-auto">
-        {/* Cabeçalho */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900">
-              Clientes
-            </h1>
-            <p className="text-slate-500 mt-1">
-              Gerencie os clientes do seu negócio
-            </p>
-          </div>
+    <div className="product-page">
+      <header className="page-header">
+        <div><h1>Clientes</h1><p>Contatos e locais de atendimento, sempre à mão.</p></div>
+        <div className="page-actions"><button type="button" onClick={abrirNovoCliente} className="btn-primary"><UserPlus size={18} aria-hidden="true" />Novo cliente</button></div>
+      </header>
 
-          <button
-            onClick={abrirNovoCliente}
-            className="inline-flex items-center gap-2 bg-[#FFD60A] text-[#0D1B2A] font-bold px-5 py-3 rounded-lg hover:bg-yellow-400 transition shadow-lg shadow-yellow-500/20"
-          >
-            <UserPlus className="w-5 h-5" />
-            Novo cliente
-          </button>
-        </div>
-
-        {/* Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
-          <div className="bg-white rounded-xl shadow-sm p-6">
-            <p className="text-sm text-slate-500">Total de clientes</p>
-            <p className="text-3xl font-bold text-slate-900 mt-2">
-              {clientes.length}
-            </p>
-          </div>
-          <div className="bg-white rounded-xl shadow-sm p-6">
-            <p className="text-sm text-slate-500">
-              Clientes encontrados
-            </p>
-            <p className="text-3xl font-bold text-[#0D1B2A] mt-2">
-              {clientesFiltrados.length}
-            </p>
-          </div>
-        </div>
-
-        {/* Busca */}
-        <div className="bg-white rounded-xl shadow-sm p-5 mb-6">
-          <label
-            htmlFor="busca_cliente"
-            className="block text-sm font-semibold text-slate-700 mb-2"
-          >
-            Buscar cliente
-          </label>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 w-5 h-5 pointer-events-none" />
-            <input
-              id="busca_cliente"
-              type="text"
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-              placeholder="Digite nome, telefone ou e-mail..."
-              className="w-full border border-slate-200 rounded-lg pl-10 pr-4 py-3 outline-none transition"
-            />
-          </div>
-        </div>
-
-        {/* Lista */}
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-            <h2 className="text-xl font-bold text-slate-900">
-              Clientes cadastrados
-            </h2>
-            <span className="text-sm text-slate-500">
-              {clientesFiltrados.length}{" "}
-              {clientesFiltrados.length === 1
-                ? "cliente"
-                : "clientes"}
-            </span>
-          </div>
-
-          {clientesFiltrados.length === 0 ? (
-            <div className="p-10 text-center">
-              <div className="inline-flex w-16 h-16 rounded-full bg-yellow-50 items-center justify-center mb-4">
-                <IconeUser className="w-8 h-8 text-[#FFD60A]" />
-              </div>
-              <h3 className="font-semibold text-slate-900">
-                {busca
-                  ? "Nenhum cliente encontrado"
-                  : "Nenhum cliente cadastrado"}
-              </h3>
-              <p className="text-slate-500 text-sm mt-1 max-w-sm mx-auto">
-                {busca
-                  ? "Tente pesquisar por outro nome, telefone ou e-mail."
-                  : "Cadastre seu primeiro cliente para começar."}
-              </p>
-              {!busca && (
-                <button
-                  onClick={abrirNovoCliente}
-                  className="mt-5 inline-flex items-center gap-2 bg-[#FFD60A] hover:bg-yellow-400 text-[#0D1B2A] font-bold px-5 py-2.5 rounded-lg transition shadow-lg shadow-yellow-500/20"
-                >
-                  <UserPlus className="w-4 h-4" />
-                  Cadastrar primeiro cliente
-                </button>
-              )}
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th
-                      scope="col"
-                      className="text-left px-6 py-4 text-sm font-semibold text-slate-600"
-                    >
-                      Cliente
-                    </th>
-                    <th
-                      scope="col"
-                      className="text-left px-6 py-4 text-sm font-semibold text-slate-600"
-                    >
-                      Telefone
-                    </th>
-                    <th
-                      scope="col"
-                      className="text-left px-6 py-4 text-sm font-semibold text-slate-600"
-                    >
-                      E-mail
-                    </th>
-                    <th
-                      scope="col"
-                      className="text-left px-6 py-4 text-sm font-semibold text-slate-600"
-                    >
-                      Endereço
-                    </th>
-                    <th
-                      scope="col"
-                      className="text-right px-6 py-4 text-sm font-semibold text-slate-600"
-                    >
-                      Ações
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {clientesFiltrados.map((cliente) => (
-                    <tr
-                      key={cliente.id}
-                      className="hover:bg-slate-50 transition"
-                    >
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#FFD60A] to-yellow-500 text-[#0D1B2A] font-bold flex items-center justify-center shrink-0">
-                            {iniciais(cliente.nome)}
-                          </div>
-                          <p className="font-semibold text-slate-900">
-                            {cliente.nome}
-                          </p>
-                        </div>
-                      </td>
-
-                      <td className="px-6 py-4 text-sm text-slate-600">
-                        {cliente.telefone ? (
-                          <span className="inline-flex items-center gap-1.5">
-                            <Phone className="w-3.5 h-3.5 text-slate-500" />
-                            {cliente.telefone}
-                          </span>
-                        ) : (
-                          <span className="text-slate-500 italic">
-                            Não informado
-                          </span>
-                        )}
-                      </td>
-
-                      <td className="px-6 py-4 text-sm text-slate-600">
-                        {cliente.email ? (
-                          <span className="inline-flex items-center gap-1.5">
-                            <Mail className="w-3.5 h-3.5 text-slate-500" />
-                            <span className="truncate max-w-[200px]">
-                              {cliente.email}
-                            </span>
-                          </span>
-                        ) : (
-                          <span className="text-slate-500 italic">
-                            Não informado
-                          </span>
-                        )}
-                      </td>
-
-                      <td className="px-6 py-4 text-sm text-slate-600 max-w-xs">
-                        {cliente.endereco ? (
-                          <span className="inline-flex items-center gap-1.5">
-                            <MapPin className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                            <span className="line-clamp-1">
-                              {cliente.endereco}
-                            </span>
-                          </span>
-                        ) : (
-                          <span className="text-slate-500 italic">
-                            Não informado
-                          </span>
-                        )}
-                      </td>
-
-                      <td className="px-6 py-4">
-                        <div className="flex justify-end gap-2">
-                          <button
-                            onClick={() => abrirEditarCliente(cliente)}
-                            className="px-3 py-2 rounded-lg text-sm font-medium text-[#0D1B2A] bg-slate-100 hover:bg-slate-200 transition"
-                          >
-                            Editar
-                          </button>
-                          <button
-                            onClick={() =>
-                              setClienteParaExcluir(cliente)
-                            }
-                            className="px-3 py-2 rounded-lg text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 transition"
-                          >
-                            Excluir
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+      <div className="metric-strip">
+        <div className="metric"><label>Base de clientes</label><strong>{clientes.length}</strong><small>cadastros</small></div>
+        <div className="metric"><label>Com telefone</label><strong>{clientes.filter((c) => c.telefone).length}</strong><small>contatos disponíveis</small></div>
+        <div className="metric"><label>Com endereço</label><strong>{clientes.filter((c) => c.endereco).length}</strong><small>locais informados</small></div>
       </div>
 
-      {/* Modal de cadastro/edição */}
-      {mostrarFormulario && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">
-                  {clienteEditando
-                    ? "Editar cliente"
-                    : "Novo cliente"}
-                </h2>
-                <p className="text-sm text-slate-500 mt-1">
-                  {clienteEditando
-                    ? "Atualize os dados do cliente."
-                    : "Cadastre um novo cliente."}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  limparFormulario();
-                  setMostrarFormulario(false);
-                }}
-                className="text-slate-500 hover:text-slate-700 transition p-1 rounded-lg hover:bg-slate-100"
-                aria-label="Fechar"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={salvarCliente} className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div className="md:col-span-2">
-                  <label
-                    htmlFor="cliente_nome"
-                    className="block text-sm font-semibold text-slate-700 mb-1"
-                  >
-                    Nome <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    id="cliente_nome"
-                    type="text"
-                    value={nome}
-                    onChange={(e) => setNome(e.target.value)}
-                    placeholder="Nome completo"
-                    className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="cliente_telefone"
-                    className="block text-sm font-semibold text-slate-700 mb-1"
-                  >
-                    Telefone
-                  </label>
-                  <input
-                    id="cliente_telefone"
-                    type="tel"
-                    inputMode="numeric"
-                    value={telefone}
-                    onChange={(e) =>
-                      setTelefone(mascaraTelefone(e.target.value))
-                    }
-                    placeholder="(11) 98765-4321"
-                    maxLength={16}
-                    className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="cliente_email"
-                    className="block text-sm font-semibold text-slate-700 mb-1"
-                  >
-                    E-mail
-                  </label>
-                  <input
-                    id="cliente_email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="cliente@email.com"
-                    className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition"
-                  />
-                </div>
-
-                <div className="md:col-span-2">
-                  <label
-                    htmlFor="cliente_endereco"
-                    className="block text-sm font-semibold text-slate-700 mb-1"
-                  >
-                    Endereço
-                  </label>
-                  <input
-                    id="cliente_endereco"
-                    type="text"
-                    value={endereco}
-                    onChange={(e) => setEndereco(e.target.value)}
-                    placeholder="Rua, número, bairro..."
-                    className="w-full border border-slate-200 rounded-lg px-4 py-3 outline-none transition"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3 mt-7">
-                <button
-                  type="button"
-                  onClick={() => {
-                    limparFormulario();
-                    setMostrarFormulario(false);
-                  }}
-                  className="px-5 py-3 rounded-lg border border-slate-200 text-slate-700 font-medium hover:bg-slate-50 transition"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={carregando}
-                  className="px-5 py-3 rounded-lg bg-[#FFD60A] text-[#0D1B2A] font-bold hover:bg-yellow-400 disabled:opacity-60 transition shadow-lg shadow-yellow-500/20 inline-flex items-center gap-2"
-                >
-                  {carregando && (
-                    <div className="w-4 h-4 border-2 border-[#0D1B2A]/30 border-t-[#0D1B2A] rounded-full animate-spin" />
-                  )}
-                  {carregando
-                    ? "Salvando..."
-                    : clienteEditando
-                    ? "Salvar alterações"
-                    : "Cadastrar cliente"}
-                </button>
-              </div>
-            </form>
+      <section className="data-panel" aria-label="Diretório de clientes">
+        <div className="data-toolbar">
+          <div className="relative min-w-0 flex-1">
+            <label htmlFor="busca_cliente" className="sr-only">Buscar cliente</label>
+            <Search size={18} aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+            <input id="busca_cliente" type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Nome, telefone ou e-mail" className="input-base !pl-10" />
           </div>
+          <div>
+            <label htmlFor="ordem_cliente" className="sr-only">Ordenar clientes</label>
+            <select id="ordem_cliente" value={ordenacao} onChange={(e) => setOrdenacao(e.target.value)} className="input-base">
+              <option value="recentes">Mais recentes</option><option value="nome">Nome: A a Z</option>
+            </select>
+          </div>
+          <span className="record-meta" aria-live="polite">{clientesFiltrados.length} {clientesFiltrados.length === 1 ? "cliente" : "clientes"}</span>
         </div>
-      )}
+        {erroLista ? <div className="empty-state" role="alert"><h3>Não foi possível carregar os clientes</h3><p>Tente novamente para consultar seus contatos.</p><button type="button" className="btn-secondary" onClick={() => usuario && carregarClientes(usuario.id)}>Tentar novamente</button></div>
+        : carregandoLista ? <div className="empty-state" role="status">Carregando clientes…</div>
+        : clientesFiltrados.length === 0 ? <div className="empty-state"><h3>{busca ? "Nenhum cliente nesta busca" : "Seu próximo atendimento começa aqui"}</h3><p>{busca ? "Busque por outro nome, telefone ou e-mail." : "Cadastre o contato e o endereço do cliente para usar nos orçamentos e serviços."}</p><button type="button" className="btn-secondary" onClick={busca ? () => setBusca("") : abrirNovoCliente}>{busca ? "Limpar busca" : "Cadastrar primeiro cliente"}</button></div>
+        : <>
+          <div className="hidden lg:block">
+            <table className="data-table">
+              <thead><tr><th scope="col">Cliente</th><th scope="col">Contato</th><th scope="col">Local de atendimento</th><th scope="col" className="text-right">Ações</th></tr></thead>
+              <tbody>{clientesFiltrados.map((cliente) => <tr key={cliente.id}>
+                <td><button type="button" className="record-primary text-left hover:underline" onClick={() => abrirEditarCliente(cliente)}>{cliente.nome}</button><p className="record-meta">Cadastro #{cliente.id}</p></td>
+                <td><p>{cliente.telefone || "Telefone não informado"}</p><p className="record-meta break-all">{cliente.email || "E-mail não informado"}</p></td>
+                <td><p className="max-w-xs">{cliente.endereco || <span className="record-meta">Endereço não informado</span>}</p></td>
+                <td>{acoesCliente(cliente)}</td>
+              </tr>)}</tbody>
+            </table>
+          </div>
+          <div className="mobile-records lg:hidden">{clientesFiltrados.map((cliente) => <article key={cliente.id} className="record-row">
+            <div className="flex items-start justify-between gap-3"><div className="min-w-0"><button type="button" className="record-primary text-left" onClick={() => abrirEditarCliente(cliente)}>{cliente.nome}</button><p className="record-meta">Cadastro #{cliente.id}</p></div>{acoesCliente(cliente)}</div>
+            <div className="mt-3 space-y-2 text-sm">
+              <p className="flex items-center gap-2"><Phone size={15} aria-hidden="true" className="shrink-0 text-slate-500" />{cliente.telefone || "Telefone não informado"}</p>
+              {cliente.email && <p className="flex items-start gap-2 break-all"><Mail size={15} aria-hidden="true" className="mt-0.5 shrink-0 text-slate-500" />{cliente.email}</p>}
+              <p className="flex items-start gap-2"><MapPin size={15} aria-hidden="true" className="mt-0.5 shrink-0 text-slate-500" />{cliente.endereco || "Endereço não informado"}</p>
+            </div>
+          </article>)}</div>
+        </>}
+      </section>
 
-      {/* Confirmação de exclusão */}
-      <ConfirmDialog
-        aberto={clienteParaExcluir !== null}
-        titulo="Excluir cliente?"
-        descricao={
-          <>
-            Tem certeza que deseja excluir{" "}
-            <strong className="text-slate-900">
-              {clienteParaExcluir?.nome}
-            </strong>
-            ? Esta ação não pode ser desfeita.
-          </>
-        }
-        textoBotaoConfirmar="Excluir"
-        corBotaoConfirmar="vermelho"
-        carregando={excluindo}
-        aoConfirmar={confirmarExclusao}
-        aoCancelar={() => setClienteParaExcluir(null)}
-      />
+      {mostrarFormulario && <Modal title={clienteEditando ? "Editar cliente" : "Novo cliente"} description="Organize os dados de contato e o local de atendimento." onClose={fecharFormulario} busy={carregando} footer={<><button type="button" className="btn-secondary" onClick={fecharFormulario} disabled={carregando}>Cancelar</button><button type="submit" form="form_cliente" className="btn-primary" disabled={carregando}>{carregando ? "Salvando…" : clienteEditando ? "Salvar alterações" : "Cadastrar cliente"}</button></>}>
+        <form id="form_cliente" onSubmit={salvarCliente}>
+          <section className="form-section"><h3>Identificação</h3><p>O nome identifica este cliente em toda a operação.</p>
+            <label htmlFor="cliente_nome" className="field-label">Nome completo *</label><input id="cliente_nome" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome do cliente ou empresa" className="input-base" required autoComplete="name" />
+          </section>
+          <section className="form-section"><h3>Contato</h3><p>Informe os canais para combinar visitas e enviar propostas.</p>
+            <div className="form-grid">
+              <div><label htmlFor="cliente_telefone" className="field-label">Telefone</label><input id="cliente_telefone" type="tel" inputMode="tel" value={telefone} onChange={(e) => setTelefone(mascaraTelefone(e.target.value))} placeholder="(11) 98765-4321" maxLength={16} className="input-base" autoComplete="tel" /></div>
+              <div><label htmlFor="cliente_email" className="field-label">E-mail</label><input id="cliente_email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="cliente@email.com" className="input-base" autoComplete="email" /></div>
+            </div>
+          </section>
+          <section className="form-section"><h3>Local de atendimento</h3><p>Inclua rua, número, bairro e complemento.</p>
+            <label htmlFor="cliente_endereco" className="field-label">Endereço</label><input id="cliente_endereco" value={endereco} onChange={(e) => setEndereco(e.target.value)} placeholder="Rua, número, bairro e cidade" className="input-base" autoComplete="street-address" />
+          </section>
+        </form>
+      </Modal>}
+
+      <ConfirmDialog aberto={clienteParaExcluir !== null} titulo="Excluir cliente?" descricao={<>Tem certeza que deseja excluir <strong>{clienteParaExcluir?.nome}</strong>? Esta ação não pode ser desfeita.</>} textoBotaoConfirmar="Excluir" corBotaoConfirmar="vermelho" carregando={excluindo} aoConfirmar={confirmarExclusao} aoCancelar={() => setClienteParaExcluir(null)} />
     </div>
   );
 }

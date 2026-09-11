@@ -1,5 +1,6 @@
 import type { ReactElement } from "react";
-import { Menu, type LucideIcon } from "lucide-react";
+import { Menu, ChevronRight, type LucideIcon } from "lucide-react";
+import { useEmpresa } from "../contexts/EmpresaContext";
 
 type TopbarProps = {
   titulo: string;
@@ -12,34 +13,30 @@ type TopbarProps = {
 export default function Topbar({
   titulo,
   subtitulo,
-  icone: Icone,
   aoAbrirMenu,
   acaoDireita,
 }: TopbarProps): ReactElement {
+  const { empresa } = useEmpresa();
   return (
-    <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-lg border-b border-gray-200">
-      <div className="flex items-center justify-between gap-4 px-4 sm:px-6 lg:px-8 h-16">
+    <header aria-label={`Navegação: ${titulo}`} className="workspace-topbar">
+      <div className="workspace-context">
         <div className="flex items-center gap-3 min-w-0">
           {/* Botão hamburger — só mobile */}
           <button
             type="button"
             onClick={aoAbrirMenu}
-            className="lg:hidden text-gray-700 hover:text-gray-900 transition p-2 rounded-lg hover:bg-gray-100 -ml-2"
+            className="icon-button lg:hidden -ml-2"
             aria-label="Abrir menu"
           >
             <Menu className="w-6 h-6" />
           </button>
 
-          {Icone && (
-            <div className="w-10 h-10 rounded-xl bg-yellow-50 flex items-center justify-center shrink-0 hidden sm:flex">
-              <Icone className="w-5 h-5 text-[#FFD60A]" />
-            </div>
-          )}
-
-          <div className="min-w-0">
-            <h1 className="text-base sm:text-lg font-bold text-gray-900 truncate">
-              {titulo}
-            </h1>
+          <div className="min-w-0 flex items-center gap-3">
+            <p className="truncate max-w-48 hidden sm:block">
+              {empresa?.nome || "Portal Elétrico"}
+            </p>
+            <ChevronRight size={14} className="hidden sm:block shrink-0" aria-hidden="true" />
+            <strong className="truncate">{titulo}</strong>
             {subtitulo && (
               <p className="text-xs text-gray-500 truncate hidden sm:block">
                 {subtitulo}
@@ -48,8 +45,8 @@ export default function Topbar({
           </div>
         </div>
 
-        {acaoDireita && <div className="shrink-0">{acaoDireita}</div>}
       </div>
+      {acaoDireita || <time dateTime={new Date().toISOString().slice(0, 10)}>{new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}</time>}
     </header>
   );
 }

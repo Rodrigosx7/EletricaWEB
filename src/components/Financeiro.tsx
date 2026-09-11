@@ -1,18 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactElement } from "react";
 import type { User } from "@supabase/supabase-js";
-import {
-  Search,
-  Plus,
-  X,
-  Wallet,
-  TrendingUp,
-  TrendingDown,
-  DollarSign,
-  Trash2,
-  Pencil,
-  Calendar,
-  FileDown,
-} from "lucide-react";
+import { Search, Plus, ArrowUpRight, ArrowDownRight, Trash2, Pencil, FileDown, Wallet } from "lucide-react";
 import { supabase } from "../supabase";
 import {
   formatarMoeda,
@@ -21,6 +9,8 @@ import {
   primeiroDiaMes,
 } from "../utils/formatters";
 import ConfirmDialog from "./ConfirmDialog";
+import Modal from "./ui/Modal";
+import "./analysis-pages.css";
 import { useToast } from "./ui/toast";
 import { usePaginacao } from "../hooks/usePaginacao";
 import ControlesPaginacao from "./ui/ControlesPaginacao";
@@ -68,25 +58,11 @@ const FORMAS_PAGAMENTO = [
   "Cheque",
 ];
 
-function corCategoria(cat: string): string {
-  const mapa: Record<string, string> = {
-    "Serviço prestado": "bg-emerald-100 text-emerald-800",
-    "Orçamento aprovado": "bg-emerald-100 text-emerald-800",
-    "Venda de produto": "bg-emerald-100 text-emerald-800",
-    Material: "bg-amber-100 text-amber-800",
-    "Combustível": "bg-orange-100 text-orange-800",
-    "Alimentação": "bg-pink-100 text-pink-800",
-    Ferramenta: "bg-indigo-100 text-indigo-800",
-    Transporte: "bg-blue-100 text-blue-800",
-    Outros: "bg-slate-100 text-slate-700",
-  };
-  return mapa[cat] || "bg-slate-100 text-slate-700";
-}
-
 export default function Financeiro(): ReactElement {
   const [usuario, setUsuario] = useState<User | null>(null);
   const [movimentos, setMovimentos] = useState<Movimento[]>([]);
   const [carregando, setCarregando] = useState(true);
+  const [erroCarregamento, setErroCarregamento] = useState(false);
   const paginacao = usePaginacao(20);
 
   const [busca, setBusca] = useState("");
@@ -142,6 +118,7 @@ export default function Financeiro(): ReactElement {
   }, [usuario, paginacao.pagina, paginacao.tamanho]);
 
   async function carregarMovimentos(userId: string) {
+    setErroCarregamento(false);
     const de = paginacao.offset;
     const ate = de + paginacao.tamanho - 1;
     const { data, error, count } = await supabase
@@ -155,6 +132,7 @@ export default function Financeiro(): ReactElement {
     setCarregando(false);
 
     if (error) {
+      setErroCarregamento(true);
       console.error("Erro ao carregar movimentações:", error);
       mostrarToast("Erro ao carregar movimentações.", "erro");
       return;
@@ -371,635 +349,254 @@ export default function Financeiro(): ReactElement {
 
   const categorias =
     tipo === "receita" ? CATEGORIAS_RECEITA : CATEGORIAS_DESPESA;
+  const maiorFluxo = Math.max(stats.totalReceitas, stats.totalDespesas, 1);
+
+  function fecharModal() {
+    limparFormulario();
+    setModalAberto(false);
+  }
+
+  function acoesMovimento(mov: Movimento) {
+    return (
+      <div className="row-actions">
+        <button type="button" onClick={() => abrirEditarMovimentacao(mov)}
+          className="icon-button" title="Editar movimentação"
+          aria-label={`Editar ${mov.descricao}`}>
+          <Pencil size={16} aria-hidden="true" />
+        </button>
+        <button type="button" onClick={() => setMovParaExcluir(mov)}
+          className="icon-button analysis-delete" title="Excluir movimentação"
+          aria-label={`Excluir ${mov.descricao}`}>
+          <Trash2 size={16} aria-hidden="true" />
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gray-100 p-6 md:p-8">
-      <div className="max-w-7xl mx-auto">
-        {/* Cabeçalho */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
+    <div className="product-page analysis-page">
+      <header className="page-header">
+        <div>
+          <p className="analysis-eyebrow">Análise / Fluxo de caixa</p>
+          <h1>Financeiro</h1>
+          <p>Acompanhe o que entra, o que sai e o resultado do seu trabalho.</p>
+        </div>
+        <div className="page-actions">
+          <button type="button" onClick={exportarCSV} className="btn-secondary">
+            <FileDown size={17} aria-hidden="true" /> Exportar CSV
+          </button>
+          <button type="button" onClick={abrirNovaMovimentacao} className="btn-primary">
+            <Plus size={18} aria-hidden="true" /> Nova movimentação
+          </button>
+        </div>
+      </header>
+
+      <section className="analysis-cash-overview" aria-label="Resumo das movimentações selecionadas" aria-busy={carregando}>
+        <div className="analysis-balance">
+          <span className="analysis-eyebrow">Saldo da seleção</span>
+          <strong className={stats.lucro < 0 ? "analysis-negative" : ""}>
+            {carregando ? "—" : formatarMoeda(stats.lucro)}
+          </strong>
+          <p>Receitas menos despesas · {stats.totalMovimentos} movimentações</p>
+          <small>Totais e filtros consideram os registros da página atual.</small>
+        </div>
+        <div className="analysis-flow-comparison">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">
-              Financeiro
-            </h1>
-            <p className="text-gray-500 mt-1">
-              Controle suas receitas e despesas
-            </p>
+            <div className="analysis-flow-label">
+              <span><ArrowUpRight size={17} aria-hidden="true" /> Receitas</span>
+              <strong>{carregando ? "—" : formatarMoeda(stats.totalReceitas)}</strong>
+            </div>
+            <div className="analysis-track" aria-hidden="true">
+              <span className="analysis-bar-income" style={{ width: `${stats.totalReceitas / maiorFluxo * 100}%` }} />
+            </div>
           </div>
+          <div>
+            <div className="analysis-flow-label">
+              <span><ArrowDownRight size={17} aria-hidden="true" /> Despesas</span>
+              <strong>{carregando ? "—" : formatarMoeda(stats.totalDespesas)}</strong>
+            </div>
+            <div className="analysis-track" aria-hidden="true">
+              <span className="analysis-bar-expense" style={{ width: `${stats.totalDespesas / maiorFluxo * 100}%` }} />
+            </div>
+          </div>
+        </div>
+      </section>
 
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={exportarCSV}
-              className="inline-flex items-center gap-2 bg-white text-gray-700 font-semibold px-4 py-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition"
-            >
-              <FileDown className="w-5 h-5" />
-              Exportar CSV
+      <section className="data-panel" aria-labelledby="financeiro-movimentos">
+        <div className="section-heading">
+          <div>
+            <h2 id="financeiro-movimentos">Livro de movimentações</h2>
+            <p>Receitas e despesas registradas, em ordem de data.</p>
+          </div>
+          <span className="record-meta">{movimentosFiltrados.length} exibidas</span>
+        </div>
+        <div className="data-toolbar analysis-ledger-toolbar">
+          <div className="analysis-search">
+            <label htmlFor="fin_busca" className="sr-only">Buscar movimentações</label>
+            <Search size={17} aria-hidden="true" />
+            <input id="fin_busca" type="search" value={busca} onChange={(e) => setBusca(e.target.value)}
+              placeholder="Descrição, categoria ou pagamento" className="input-base" />
+          </div>
+          <div className="analysis-date-range">
+            <div><label htmlFor="fin_inicio" className="field-label">De</label>
+              <input id="fin_inicio" type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} className="input-base" /></div>
+            <div><label htmlFor="fin_fim" className="field-label">Até</label>
+              <input id="fin_fim" type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} className="input-base" /></div>
+          </div>
+        </div>
+        <div className="analysis-ledger-tabs">
+          <div className="filter-tabs" aria-label="Tipo de movimentação">
+            {(["todos", "receita", "despesa"] as const).map((filtro) => (
+              <button key={filtro} type="button" aria-pressed={filtroTipo === filtro}
+                onClick={() => setFiltroTipo(filtro)}>
+                {filtro === "todos" ? "Todas" : filtro === "receita" ? "Receitas" : "Despesas"}
+              </button>
+            ))}
+          </div>
+          <span className="record-meta">Página {paginacao.pagina + 1} de {paginacao.totalPaginas}</span>
+        </div>
+
+        {erroCarregamento ? (
+          <div className="empty-state" role="alert">
+            <h3>Não foi possível carregar as movimentações</h3>
+            <p>Atualize os dados para continuar acompanhando o caixa.</p>
+            <button className="btn-secondary" type="button" onClick={() => usuario && carregarMovimentos(usuario.id)}>Tentar novamente</button>
+          </div>
+        ) : carregando ? (
+          <div className="empty-state" role="status"><p>Carregando movimentações…</p></div>
+        ) : movimentosFiltrados.length === 0 ? (
+          <div className="empty-state">
+            <Wallet size={28} aria-hidden="true" />
+            <h3>Nenhuma movimentação nesta seleção</h3>
+            <p>Ajuste o período ou os filtros, ou registre uma entrada ou saída.</p>
+            <button type="button" onClick={abrirNovaMovimentacao} className="btn-secondary">
+              <Plus size={17} aria-hidden="true" /> Nova movimentação
             </button>
-            <button
-              type="button"
-              onClick={abrirNovaMovimentacao}
-              className="inline-flex items-center gap-2 bg-[#FFD60A] text-[#0D1B2A] font-bold px-5 py-3 rounded-lg hover:bg-yellow-400 transition shadow-lg shadow-yellow-500/20"
-            >
-              <Plus className="w-5 h-5" />
-              Nova movimentação
-            </button>
           </div>
-        </div>
-
-        {/* Cards de KPI */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-5 mb-6">
-          <div className="bg-white rounded-xl shadow-sm p-6 flex items-start gap-4">
-            <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
-              <TrendingUp className="w-6 h-6 text-emerald-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Receitas</p>
-              <p className="text-2xl font-bold text-emerald-600 mt-1">
-                {formatarMoeda(stats.totalReceitas)}
-              </p>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-sm p-6 flex items-start gap-4">
-            <div className="w-12 h-12 rounded-xl bg-red-50 flex items-center justify-center shrink-0">
-              <TrendingDown className="w-6 h-6 text-red-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Despesas</p>
-              <p className="text-2xl font-bold text-red-600 mt-1">
-                {formatarMoeda(stats.totalDespesas)}
-              </p>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-sm p-6 flex items-start gap-4">
-            <div
-              className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
-                stats.lucro >= 0 ? "bg-blue-50" : "bg-red-50"
-              }`}
-            >
-              <DollarSign
-                className={`w-6 h-6 ${
-                  stats.lucro >= 0 ? "text-blue-600" : "text-red-600"
-                }`}
-              />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Lucro líquido</p>
-              <p
-                className={`text-2xl font-bold mt-1 ${
-                  stats.lucro >= 0 ? "text-blue-600" : "text-red-600"
-                }`}
-              >
-                {formatarMoeda(stats.lucro)}
-              </p>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-sm p-6 flex items-start gap-4">
-            <div className="w-12 h-12 rounded-xl bg-yellow-50 flex items-center justify-center shrink-0">
-              <Wallet className="w-6 h-6 text-[#FFD60A]" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Movimentações</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">
-                {stats.totalMovimentos}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Filtros */}
-        <div className="bg-white rounded-xl shadow-sm p-5 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
-              <label
-                htmlFor="fin_busca"
-                className="block text-sm font-semibold text-gray-700 mb-2"
-              >
-                Buscar
-              </label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 w-5 h-5 pointer-events-none" />
-                <input
-                  id="fin_busca"
-                  type="text"
-                  value={busca}
-                  onChange={(e) => setBusca(e.target.value)}
-                  placeholder="Descrição, categoria..."
-                  className="w-full border border-gray-200 rounded-lg pl-10 pr-4 py-2.5 outline-none transition"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label
-                htmlFor="fin_tipo"
-                className="block text-sm font-semibold text-gray-700 mb-2"
-              >
-                Tipo
-              </label>
-              <select
-                id="fin_tipo"
-                value={filtroTipo}
-                onChange={(e) =>
-                  setFiltroTipo(
-                    e.target.value as "todos" | TipoMovimento
-                  )
-                }
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 outline-none bg-white"
-              >
-                <option value="todos">Todos</option>
-                <option value="receita">Receitas</option>
-                <option value="despesa">Despesas</option>
-              </select>
-            </div>
-
-            <div>
-              <label
-                htmlFor="fin_inicio"
-                className="block text-sm font-semibold text-gray-700 mb-2"
-              >
-                De
-              </label>
-              <input
-                id="fin_inicio"
-                type="date"
-                value={dataInicio}
-                onChange={(e) => setDataInicio(e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 outline-none"
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="fin_fim"
-                className="block text-sm font-semibold text-gray-700 mb-2"
-              >
-                Até
-              </label>
-              <input
-                id="fin_fim"
-                type="date"
-                value={dataFim}
-                onChange={(e) => setDataFim(e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 outline-none"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Lista */}
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-            <h2 className="text-xl font-bold text-gray-900">
-              Movimentações
-            </h2>
-            <span className="text-sm text-gray-500">
-              {movimentosFiltrados.length}{" "}
-              {movimentosFiltrados.length === 1 ? "item" : "itens"}
-            </span>
-          </div>
-
-          {carregando ? (
-            <div className="p-10 text-center text-gray-500">
-              Carregando...
-            </div>
-          ) : movimentosFiltrados.length === 0 ? (
-            <div className="p-10 text-center">
-              <div className="inline-flex w-16 h-16 rounded-full bg-yellow-50 items-center justify-center mb-4">
-                <Wallet className="w-8 h-8 text-[#FFD60A]" />
-              </div>
-              <h3 className="font-semibold text-gray-900">
-                {busca || filtroTipo !== "todos"
-                  ? "Nenhuma movimentação encontrada"
-                  : "Nenhuma movimentação cadastrada"}
-              </h3>
-              <p className="text-gray-500 text-sm mt-1 max-w-sm mx-auto">
-                {busca || filtroTipo !== "todos"
-                  ? "Tente ajustar os filtros."
-                  : "Cadastre sua primeira receita ou despesa para começar."}
-              </p>
-              {!busca && filtroTipo === "todos" && (
-                <button
-                  type="button"
-                  onClick={abrirNovaMovimentacao}
-                  className="mt-5 inline-flex items-center gap-2 bg-[#FFD60A] hover:bg-yellow-400 text-[#0D1B2A] font-bold px-5 py-2.5 rounded-lg transition shadow-lg shadow-yellow-500/20"
-                >
-                  <Plus className="w-4 h-4" />
-                  Cadastrar primeira movimentação
-                </button>
-              )}
-            </div>
-          ) : (
-            <>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th
-                      scope="col"
-                      className="text-left px-6 py-4 text-sm font-semibold text-gray-600"
-                    >
-                      Data
-                    </th>
-                    <th
-                      scope="col"
-                      className="text-left px-6 py-4 text-sm font-semibold text-gray-600"
-                    >
-                      Tipo
-                    </th>
-                    <th
-                      scope="col"
-                      className="text-left px-6 py-4 text-sm font-semibold text-gray-600"
-                    >
-                      Categoria
-                    </th>
-                    <th
-                      scope="col"
-                      className="text-left px-6 py-4 text-sm font-semibold text-gray-600"
-                    >
-                      Descrição
-                    </th>
-                    <th
-                      scope="col"
-                      className="text-right px-6 py-4 text-sm font-semibold text-gray-600"
-                    >
-                      Valor
-                    </th>
-                    <th
-                      scope="col"
-                      className="text-right px-6 py-4 text-sm font-semibold text-gray-600"
-                    >
-                      Ações
-                    </th>
+        ) : (
+          <>
+            <div className="analysis-desktop-ledger">
+              <table className="data-table">
+                <thead><tr>
+                  <th scope="col">Data</th><th scope="col">Movimentação</th>
+                  <th scope="col">Pagamento</th><th scope="col" className="analysis-align-right">Valor</th>
+                  <th scope="col"><span className="sr-only">Ações</span></th>
+                </tr></thead>
+                <tbody>{movimentosFiltrados.map((mov) => (
+                  <tr key={mov.id}>
+                    <td className="analysis-date-cell">{formatarData(mov.data_movimento)}</td>
+                    <td>
+                      <p className="record-primary">{mov.descricao}</p>
+                      <p className="record-meta">{mov.tipo === "receita" ? "Receita" : "Despesa"} · {mov.categoria}</p>
+                      {mov.ordem_servico_id && <p className="record-meta">Receita automática · OS #{mov.ordem_servico_id}</p>}
+                    </td>
+                    <td className="record-meta">{mov.forma_pagamento || "Não informado"}</td>
+                    <td className={`analysis-money ${mov.tipo === "receita" ? "analysis-positive" : "analysis-negative"}`}>
+                      {mov.tipo === "receita" ? "+" : "−"} {formatarMoeda(mov.valor)}
+                    </td>
+                    <td>{acoesMovimento(mov)}</td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {movimentosFiltrados.map((mov) => (
-                    <tr
-                      key={mov.id}
-                      className="hover:bg-gray-50 transition"
-                    >
-                      <td className="px-6 py-4 text-sm text-gray-700">
-                        <span className="inline-flex items-center gap-1.5">
-                          <Calendar className="w-3.5 h-3.5 text-gray-500" />
-                          {formatarData(mov.data_movimento)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span
-                          className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${
-                            mov.tipo === "receita"
-                              ? "bg-emerald-100 text-emerald-700"
-                              : "bg-red-100 text-red-800"
-                          }`}
-                        >
-                          {mov.tipo === "receita" ? "Receita" : "Despesa"}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span
-                          className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${corCategoria(
-                            mov.categoria
-                          )}`}
-                        >
-                          {mov.categoria}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <p className="font-medium text-gray-900">
-                          {mov.descricao}
-                        </p>
-                        {mov.forma_pagamento && (
-                          <p className="text-xs text-gray-500 mt-0.5">
-                            via {mov.forma_pagamento}
-                          </p>
-                        )}
-                        {mov.ordem_servico_id && (
-                          <p className="text-xs text-emerald-600 mt-0.5">
-                            ↳ Receita automática da OS #
-                            {mov.ordem_servico_id}
-                          </p>
-                        )}
-                      </td>
-                      <td
-                        className={`px-6 py-4 text-right font-bold ${
-                          mov.tipo === "receita"
-                            ? "text-emerald-600"
-                            : "text-red-600"
-                        }`}
-                      >
-                        {mov.tipo === "receita" ? "+" : "−"}{" "}
-                        {formatarMoeda(mov.valor)}
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() => abrirEditarMovimentacao(mov)}
-                            title="Editar"
-                            aria-label="Editar movimentação"
-                            className="px-3 py-2 rounded-lg text-sm font-medium text-[#0D1B2A] bg-gray-100 hover:bg-gray-200 transition inline-flex items-center gap-1"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                            Editar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setMovParaExcluir(mov)}
-                            title="Excluir"
-                            aria-label="Excluir movimentação"
-                            className="px-3 py-2 rounded-lg text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 transition inline-flex items-center gap-1"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            Excluir
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
+                ))}</tbody>
               </table>
             </div>
-            <ControlesPaginacao
-              pagina={paginacao.pagina}
-              totalPaginas={paginacao.totalPaginas}
-              total={paginacao.total}
-              tamanho={paginacao.tamanho}
-              onAnterior={paginacao.anterior}
-              onProxima={paginacao.proxima}
-              onMudarTamanho={paginacao.setTamanho}
-            />
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Modal de cadastro/edição */}
-      {modalAberto && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl my-8">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 sticky top-0 bg-white rounded-t-2xl z-10">
-              <div>
-                <h2 className="text-xl font-bold text-gray-900">
-                  {movEditando ? "Editar movimentação" : "Nova movimentação"}
-                </h2>
-                <p className="text-sm text-gray-500 mt-1">
-                  Registre uma receita ou despesa
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  limparFormulario();
-                  setModalAberto(false);
-                }}
-                className="text-gray-500 hover:text-gray-700 transition p-1 rounded-lg hover:bg-gray-100"
-                aria-label="Fechar"
-              >
-                <X className="w-5 h-5" />
-              </button>
+            <div className="analysis-mobile-ledger">
+              {movimentosFiltrados.map((mov) => (
+                <article className="record-row" key={mov.id}>
+                  <div className="analysis-mobile-ledger-heading">
+                    <span className="record-meta">{formatarData(mov.data_movimento)} · {mov.tipo === "receita" ? "Receita" : "Despesa"}</span>
+                    <strong className={mov.tipo === "receita" ? "analysis-positive" : "analysis-negative"}>
+                      {mov.tipo === "receita" ? "+" : "−"} {formatarMoeda(mov.valor)}
+                    </strong>
+                  </div>
+                  <p className="record-primary">{mov.descricao}</p>
+                  <p className="record-meta">{mov.categoria} · {mov.forma_pagamento || "Pagamento não informado"}</p>
+                  {mov.ordem_servico_id && <p className="record-meta">Receita automática · OS #{mov.ordem_servico_id}</p>}
+                  {acoesMovimento(mov)}
+                </article>
+              ))}
             </div>
+          </>
+        )}
+        {!carregando && !erroCarregamento && paginacao.total > 0 && (
+          <ControlesPaginacao pagina={paginacao.pagina} totalPaginas={paginacao.totalPaginas}
+            total={paginacao.total} tamanho={paginacao.tamanho} onAnterior={paginacao.anterior}
+            onProxima={paginacao.proxima} onMudarTamanho={paginacao.setTamanho} />
+        )}
+      </section>
 
-            <form onSubmit={salvar} className="p-6 space-y-5">
-              {/* Tipo */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Tipo
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setTipo("receita")}
-                    className={`p-4 rounded-xl border-2 transition text-left ${
-                      tipo === "receita"
-                        ? "border-emerald-500 bg-emerald-50"
-                        : "border-gray-200 hover:border-gray-300"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <TrendingUp className="w-5 h-5 text-emerald-600" />
-                      <span className="font-bold text-gray-900">
-                        Receita
-                      </span>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Entrada de dinheiro
-                    </p>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTipo("despesa")}
-                    className={`p-4 rounded-xl border-2 transition text-left ${
-                      tipo === "despesa"
-                        ? "border-red-500 bg-red-50"
-                        : "border-gray-200 hover:border-gray-300"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <TrendingDown className="w-5 h-5 text-red-600" />
-                      <span className="font-bold text-gray-900">
-                        Despesa
-                      </span>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Saída de dinheiro
-                    </p>
-                  </button>
+      {modalAberto && (
+        <Modal title={movEditando ? "Editar movimentação" : "Nova movimentação"}
+          description="Registre os detalhes da entrada ou saída do seu caixa."
+          onClose={fecharModal} busy={salvando}
+          footer={<>
+            <button type="button" onClick={fecharModal} disabled={salvando} className="btn-secondary">Cancelar</button>
+            <button type="submit" form="movimentacao-form" disabled={salvando} className="btn-primary">
+              {salvando ? "Salvando…" : movEditando ? "Salvar alterações" : "Registrar movimentação"}
+            </button>
+          </>}>
+          <form id="movimentacao-form" onSubmit={salvar}>
+            <section className="form-section">
+              <h3>01 / Identificação</h3><p>O que esta movimentação representa?</p>
+              <div className="filter-tabs analysis-movement-type" aria-label="Tipo de movimentação">
+                <button type="button" aria-pressed={tipo === "receita"} onClick={() => setTipo("receita")}>
+                  <ArrowUpRight size={17} aria-hidden="true" /> Receita
+                </button>
+                <button type="button" aria-pressed={tipo === "despesa"} onClick={() => setTipo("despesa")}>
+                  <ArrowDownRight size={17} aria-hidden="true" /> Despesa
+                </button>
+              </div>
+              <div className="form-grid">
+                <div className="analysis-span-full">
+                  <label htmlFor="mov_descricao" className="field-label">Descrição *</label>
+                  <input id="mov_descricao" value={descricao} onChange={(e) => setDescricao(e.target.value)}
+                    placeholder="Ex.: Instalação elétrica residencial" className="input-base" required />
+                </div>
+                <div className="analysis-span-full">
+                  <label htmlFor="mov_categoria" className="field-label">Categoria</label>
+                  <select id="mov_categoria" value={categoria} onChange={(e) => setCategoria(e.target.value)} className="input-base">
+                    {categorias.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
                 </div>
               </div>
-
-              {/* Descrição */}
-              <div>
-                <label
-                  htmlFor="mov_descricao"
-                  className="block text-sm font-semibold text-gray-700 mb-2"
-                >
-                  Descrição{" "}
-                  <span className="text-red-500">*</span>
-                </label>
-                <input
-                  id="mov_descricao"
-                  type="text"
-                  value={descricao}
-                  onChange={(e) => setDescricao(e.target.value)}
-                  placeholder="Ex: Instalação elétrica residencial"
-                  className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none transition"
-                  required
-                />
-              </div>
-
-              {/* Valor + Data */}
-              <div className="grid grid-cols-2 gap-4">
+            </section>
+            <section className="form-section">
+              <h3>02 / Valor e pagamento</h3><p>Informe o valor e quando a movimentação aconteceu.</p>
+              <div className="form-grid">
                 <div>
-                  <label
-                    htmlFor="mov_valor"
-                    className="block text-sm font-semibold text-gray-700 mb-2"
-                  >
-                    Valor (R$){" "}
-                    <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    id="mov_valor"
-                    type="text"
-                    inputMode="decimal"
-                    value={valor}
+                  <label htmlFor="mov_valor" className="field-label">Valor (R$) *</label>
+                  <input id="mov_valor" type="text" inputMode="decimal" value={valor}
                     onChange={(e) => {
                       const digitos = e.target.value.replace(/\D/g, "");
-                      if (!digitos) {
-                        setValor("");
-                        return;
-                      }
-                      const n = Number(digitos) / 100;
-                      setValor(
-                        n.toLocaleString("pt-BR", {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })
-                      );
-                    }}
-                    placeholder="0,00"
-                    className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none transition"
-                    required
-                  />
+                      if (!digitos) { setValor(""); return; }
+                      setValor((Number(digitos) / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+                    }} placeholder="0,00" className="input-base" required />
                 </div>
                 <div>
-                  <label
-                    htmlFor="mov_data"
-                    className="block text-sm font-semibold text-gray-700 mb-2"
-                  >
-                    Data
-                  </label>
-                  <input
-                    id="mov_data"
-                    type="date"
-                    value={dataMovimento}
-                    onChange={(e) => setDataMovimento(e.target.value)}
-                    className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none"
-                  />
+                  <label htmlFor="mov_data" className="field-label">Data</label>
+                  <input id="mov_data" type="date" value={dataMovimento} onChange={(e) => setDataMovimento(e.target.value)} className="input-base" />
                 </div>
-              </div>
-
-              {/* Categoria + Forma de pagamento */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label
-                    htmlFor="mov_categoria"
-                    className="block text-sm font-semibold text-gray-700 mb-2"
-                  >
-                    Categoria
-                  </label>
-                  <select
-                    id="mov_categoria"
-                    value={categoria}
-                    onChange={(e) => setCategoria(e.target.value)}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-3 outline-none bg-white"
-                  >
-                    {categorias.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label
-                    htmlFor="mov_forma"
-                    className="block text-sm font-semibold text-gray-700 mb-2"
-                  >
-                    Forma de pagamento
-                  </label>
-                  <select
-                    id="mov_forma"
-                    value={formaPagamento}
-                    onChange={(e) => setFormaPagamento(e.target.value)}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-3 outline-none bg-white"
-                  >
+                <div className="analysis-span-full">
+                  <label htmlFor="mov_forma" className="field-label">Forma de pagamento</label>
+                  <select id="mov_forma" value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)} className="input-base">
                     <option value="">Não informar</option>
-                    {FORMAS_PAGAMENTO.map((f) => (
-                      <option key={f} value={f}>
-                        {f}
-                      </option>
-                    ))}
+                    {FORMAS_PAGAMENTO.map((f) => <option key={f} value={f}>{f}</option>)}
                   </select>
                 </div>
               </div>
-
-              {/* Observações */}
-              <div>
-                <label
-                  htmlFor="mov_observacoes"
-                  className="block text-sm font-semibold text-gray-700 mb-2"
-                >
-                  Observações
-                </label>
-                <textarea
-                  id="mov_observacoes"
-                  value={observacoes}
-                  onChange={(e) => setObservacoes(e.target.value)}
-                  rows={3}
-                  placeholder="Anotações opcionais..."
-                  className="w-full border border-gray-200 rounded-lg px-4 py-3 outline-none transition resize-none"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    limparFormulario();
-                    setModalAberto(false);
-                  }}
-                  className="px-5 py-3 rounded-lg border border-gray-200 text-gray-700 font-semibold hover:bg-gray-50 transition"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={salvando}
-                  className="px-5 py-3 rounded-lg bg-[#FFD60A] text-[#0D1B2A] font-bold hover:bg-yellow-400 disabled:opacity-60 transition shadow-lg shadow-yellow-500/20 inline-flex items-center gap-2"
-                >
-                  {salvando && (
-                    <div className="w-4 h-4 border-2 border-[#0D1B2A]/30 border-t-[#0D1B2A] rounded-full animate-spin" />
-                  )}
-                  {salvando
-                    ? "Salvando..."
-                    : movEditando
-                    ? "Salvar alterações"
-                    : "Cadastrar"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            </section>
+            <section className="form-section">
+              <h3>03 / Observações</h3><p>Acrescente informações úteis para consultar depois.</p>
+              <label htmlFor="mov_observacoes" className="field-label">Anotações opcionais</label>
+              <textarea id="mov_observacoes" value={observacoes} onChange={(e) => setObservacoes(e.target.value)}
+                rows={3} placeholder="Detalhes desta movimentação" className="input-base" />
+            </section>
+          </form>
+        </Modal>
       )}
-
-      {/* Confirmação de exclusão */}
-      <ConfirmDialog
-        aberto={movParaExcluir !== null}
-        titulo="Excluir movimentação?"
-        descricao={
-          movParaExcluir ? (
-            <>
-              Tem certeza que deseja excluir a movimentação{" "}
-              <strong className="text-gray-900">
-                "{movParaExcluir.descricao}"
-              </strong>{" "}
-              de{" "}
-              <strong className="text-gray-900">
-                {formatarMoeda(movParaExcluir.valor)}
-              </strong>
-              ? Esta ação não pode ser desfeita.
-            </>
-          ) : null
-        }
-        textoBotaoConfirmar="Excluir"
-        corBotaoConfirmar="vermelho"
-        carregando={excluindo}
-        aoConfirmar={confirmarExclusao}
-        aoCancelar={() => setMovParaExcluir(null)}
-      />
+      <ConfirmDialog aberto={movParaExcluir !== null} titulo="Excluir movimentação?"
+        descricao={movParaExcluir ? <>A movimentação <strong>{movParaExcluir.descricao}</strong>, de <strong>{formatarMoeda(movParaExcluir.valor)}</strong>, será excluída. Esta ação não pode ser desfeita.</> : null}
+        textoBotaoConfirmar="Excluir" corBotaoConfirmar="vermelho" carregando={excluindo}
+        aoConfirmar={confirmarExclusao} aoCancelar={() => setMovParaExcluir(null)} />
     </div>
   );
 }
