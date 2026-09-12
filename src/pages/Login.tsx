@@ -37,12 +37,7 @@ function Login() {
 
   return (
     <AuthShellSplit>
-      {/* Lado esquerdo: Hero */}
-      <div className="flex items-center justify-center">
-        <AuthHero />
-      </div>
-
-      {/* Lado direito: Formulário */}
+      <AuthHero />
       <SignInSplit aoIrParaRecuperacao={() => setTela("recuperacao")} />
     </AuthShellSplit>
   );

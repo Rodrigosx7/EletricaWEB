@@ -49,14 +49,14 @@ function NovaSenha() {
     return (
       <AuthShell>
         <AuthCard>
-          <div className="text-center">
-            <div className="inline-flex w-14 h-14 rounded-xl bg-green-500 items-center justify-center mb-3 shadow-lg shadow-green-500/30">
-              <CheckCircle2 className="w-8 h-8 text-white" />
-            </div>
-            <h2 className="text-3xl font-bold text-white">
+          <div className="auth-success">
+            <span className="auth-success-icon">
+              <CheckCircle2 />
+            </span>
+            <h2>
               Senha alterada!
             </h2>
-            <p className="mt-2 text-sm text-gray-300">
+            <p>
               Sua senha foi alterada com sucesso. Você já pode acessar o
               sistema.
             </p>
@@ -95,6 +95,7 @@ function NovaSenha() {
             value={senha}
             onChange={setSenha}
             placeholder="Nova senha"
+            autoComplete="new-password"
             required
           />
           <FloatingField
@@ -105,6 +106,7 @@ function NovaSenha() {
             value={confirmarSenha}
             onChange={setConfirmarSenha}
             placeholder="Confirmar nova senha"
+            autoComplete="new-password"
             required
           />
 

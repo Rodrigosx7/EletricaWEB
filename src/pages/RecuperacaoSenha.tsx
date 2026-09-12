@@ -46,6 +46,7 @@ export default function RecuperacaoSenha({
             value={email}
             onChange={setEmail}
             placeholder="E-mail"
+            autoComplete="email"
             required
           />
 
@@ -61,7 +62,7 @@ export default function RecuperacaoSenha({
         <button
           type="button"
           onClick={voltarLogin}
-          className="w-full flex items-center justify-center gap-2 text-sm text-gray-300 hover:text-[#FFD60A] transition"
+          className="auth-back-button"
         >
           <ArrowLeft className="w-4 h-4" />
           Voltar para o login

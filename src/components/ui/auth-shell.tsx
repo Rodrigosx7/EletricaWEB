@@ -1,83 +1,30 @@
 import type { ReactElement, ReactNode } from "react";
 
-interface AuthShellProps {
-  children: ReactNode;
-}
+interface AuthShellProps { children: ReactNode; }
 
-/**
- * Layout compartilhado para todas as telas de autenticação.
- * Fundo escuro limpo com halo amarelo sutil (sem animação WebGL pesada).
- */
 export function AuthShell({ children }: AuthShellProps): ReactElement {
-  return (
-    <main className="relative w-screen h-screen bg-[#0D1B2A] overflow-hidden">
-      {/* Halo amarelo suave no topo (decorativo, não atrapalha a leitura) */}
-      <div
-        className="absolute -top-40 left-1/2 -translate-x-1/2 w-[800px] h-[400px] rounded-full blur-3xl pointer-events-none"
-        style={{
-          background:
-            "radial-gradient(closest-side, rgba(255, 214, 10, 0.10), transparent 70%)",
-        }}
-      />
-      <div className="relative z-10 flex items-center justify-center w-full h-full p-4">
-        {children}
-      </div>
-    </main>
-  );
+  return <main className="auth-solo">{children}</main>;
 }
 
-/**
- * Layout split-screen com hero à esquerda e form à direita.
- * Esconde o hero em telas pequenas (mobile) — mostra só o form.
- */
 export function AuthShellSplit({ children }: AuthShellProps): ReactElement {
-  return (
-    <main className="relative w-screen min-h-screen lg:h-screen bg-[#0D1B2A] overflow-y-auto lg:overflow-hidden">
-      <div
-        className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full blur-3xl pointer-events-none opacity-20"
-        style={{
-          background:
-            "radial-gradient(closest-side, #FFD60A, transparent 70%)",
-        }}
-      />
-      <div className="relative z-10 grid grid-cols-1 lg:grid-cols-2 min-h-screen lg:h-full">
-        {children}
-      </div>
-    </main>
-  );
+  return <main className="auth-layout">{children}</main>;
 }
 
-interface AuthCardProps {
-  children: ReactNode;
-}
+interface AuthCardProps { children: ReactNode; }
 
 export function AuthCard({ children }: AuthCardProps): ReactElement {
-  return (
-    <div className="w-full max-w-sm p-8 space-y-6 bg-white/10 backdrop-blur-lg rounded-2xl border border-white/20 shadow-2xl">
-      {children}
-    </div>
-  );
+  return <section className="auth-card">{children}</section>;
 }
 
-interface AuthHeaderProps {
-  icone: ReactNode;
-  titulo: string;
-  subtitulo: string;
-}
+interface AuthHeaderProps { icone: ReactNode; titulo: string; subtitulo: string; }
 
-export function AuthHeader({
-  icone,
-  titulo,
-  subtitulo,
-}: AuthHeaderProps): ReactElement {
+export function AuthHeader({ icone, titulo, subtitulo }: AuthHeaderProps): ReactElement {
   return (
-    <div className="text-center">
-      <div className="inline-flex w-14 h-14 rounded-xl bg-[#FFD60A] items-center justify-center mb-3 shadow-lg shadow-yellow-500/30">
-        {icone}
-      </div>
-      <h2 className="text-3xl font-bold text-white">{titulo}</h2>
-      <p className="mt-2 text-sm text-gray-300">{subtitulo}</p>
-    </div>
+    <header className="auth-card-header">
+      <span className="auth-card-icon" aria-hidden="true">{icone}</span>
+      <h2>{titulo}</h2>
+      <p>{subtitulo}</p>
+    </header>
   );
 }
 
@@ -90,39 +37,17 @@ interface FloatingFieldProps {
   onChange: (valor: string) => void;
   placeholder?: string;
   required?: boolean;
+  autoComplete?: string;
 }
 
-/**
- * Input com floating label e ícone (estilo consistente com o login glassmorphism).
- */
-export function FloatingField({
-  id,
-  label,
-  icone,
-  type = "text",
-  value,
-  onChange,
-  placeholder = "",
-  required = false,
-}: FloatingFieldProps): ReactElement {
+export function FloatingField({ id, label, icone, type = "text", value, onChange, placeholder = "", required = false, autoComplete }: FloatingFieldProps): ReactElement {
   return (
-    <div className="relative z-0">
-      <input
-        id={id}
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="block py-2.5 px-0 w-full text-sm text-white bg-transparent border-0 border-b-2 border-gray-300/60 appearance-none focus:outline-none focus:ring-0 focus:border-[#FFD60A] peer placeholder-transparent"
-        placeholder={placeholder}
-        required={required}
-      />
-      <label
-        htmlFor={id}
-        className="absolute text-sm text-gray-300 duration-300 transform -translate-y-6 scale-75 top-3 -z-10 origin-[0] peer-focus:left-0 peer-focus:text-[#FFD60A] peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-6"
-      >
-        <span className="inline-flex items-center mr-2 -mt-1">{icone}</span>
-        {label}
-      </label>
+    <div className="auth-field">
+      <label htmlFor={id}>{label}</label>
+      <div className="auth-input-wrap">
+        <span aria-hidden="true">{icone}</span>
+        <input id={id} type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} required={required} autoComplete={autoComplete} />
+      </div>
     </div>
   );
 }
@@ -136,23 +61,11 @@ interface PrimaryButtonProps {
   icone?: ReactNode;
 }
 
-export function PrimaryButton({
-  type = "submit",
-  onClick,
-  carregando = false,
-  carregandoTexto,
-  texto,
-  icone,
-}: PrimaryButtonProps): ReactElement {
+export function PrimaryButton({ type = "submit", onClick, carregando = false, carregandoTexto, texto, icone }: PrimaryButtonProps): ReactElement {
   return (
-    <button
-      type={type}
-      onClick={onClick}
-      disabled={carregando}
-      className="group w-full flex items-center justify-center py-3 px-4 bg-[#FFD60A] hover:bg-yellow-400 rounded-lg text-[#0D1B2A] font-bold focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[#0D1B2A] focus:ring-[#FFD60A] transition-all duration-300 disabled:opacity-60 shadow-lg shadow-yellow-500/20"
-    >
+    <button type={type} onClick={onClick} disabled={carregando} className="btn-primary auth-primary-button">
       {carregando ? carregandoTexto : texto}
-      {icone}
+      {!carregando && icone}
     </button>
   );
 }
