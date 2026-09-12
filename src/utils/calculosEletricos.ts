@@ -29,7 +29,7 @@ function inteiro(valor: number, nome: string, max: number) {
   if (!Number.isInteger(valor)) throw new Error(`${nome}: use um número inteiro.`);
 }
 export const formatar = (n: number) => n.toLocaleString('pt-BR', { maximumFractionDigits: 4 });
-export type Resultado = { valor: number; unidade: string; titulo: string; formula: string; detalhes: [string, string][]; notas: string[]; atende?: boolean };
+export type Resultado = { valor: number; unidade: string; titulo: string; formula: string; detalhes: [string, string][]; notas: string[]; atende?: boolean; preenchimento?: Record<string, number> };
 const f = formatar;
 function resultado(r: Resultado): Resultado {
   if (!Number.isFinite(r.valor) || r.detalhes.some(([, v]) => /NaN|Infinity/.test(v))) throw new Error('Resultado fora do intervalo numérico suportado. Revise as entradas.');
@@ -77,6 +77,7 @@ export function bitola(ib: number, metodo: Metodo, carregados: number, n: number
   return resultado({ valor: s, unidade: 'mm²', titulo: 'Seção preliminar por ampacidade',
     formula: `Iz = Iz₀ × Ft × Fg = ${f(iz0)} × ${f(ft)} × ${f(fg)} = ${f(iz)} A ≥ Ib = ${f(ib)} A`,
     detalhes: [['Ampacidade de referência Iz₀', `${f(iz0)} A`], ['Ampacidade corrigida Iz', `${f(iz)} A`], ['Corrente equivalente para consulta', `${f(ib / (ft * fg))} A`], ['PE preliminar (mesmo material da fase)', `${f(secaoPE(s))} mm²`]],
+    preenchimento: { iz, secao: s },
     notas: ['Escopo: cobre, PVC 70 °C, instalação fixa, 2 ou 3 condutores carregados. A tensão não determina o número de condutores carregados.', 'Ft usa o próximo patamar de temperatura da tabela. Fg automático: feixe homogêneo, circuitos igualmente carregados; outras disposições exigem fator verificado.', 'A seção atende somente à ampacidade e ao mínimo por uso. Ainda faltam queda de tensão, proteção, curto-circuito e condições de instalação.', 'PE: regra simplificada para mesmo material; verificar mínimos mecânicos quando separado e suportabilidade térmica. Neutro não é automaticamente reduzido: verificar desequilíbrio e harmônicos.'] });
 }
 
