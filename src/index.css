@@ -114,6 +114,13 @@ input:disabled, select:disabled, textarea:disabled { cursor: not-allowed; }
 .btn-danger:hover:not(:disabled) { background: #942b2b; }
 .input-base { width: 100%; padding: .65rem .85rem; border: 1px solid var(--color-border); border-radius: var(--radius-input); background: var(--color-surface); color: var(--color-ink); transition: border-color var(--duration-fast); }
 .input-base::placeholder { color: var(--color-muted); opacity: .85; }
+.input-base.pl-10 { padding-left: 2.5rem; }
+.logo-crop-area { position: relative; width: min(100%, 280px); aspect-ratio: 1; margin: 0 auto; overflow: hidden; background: #eef1ef; border: 1px solid var(--color-border); touch-action: none; cursor: grab; }
+.logo-crop-area:active { cursor: grabbing; }
+.logo-crop-area img { position: absolute; max-width: none; pointer-events: none; user-select: none; }
+.logo-crop-grid { position: absolute; inset: 33.333%; border: 1px solid rgb(255 255 255 / .7); box-shadow: 0 0 0 1px rgb(0 0 0 / .15); pointer-events: none; }
+.logo-crop-controls { display: grid; gap: .5rem; margin-top: 1.5rem; }
+.logo-crop-controls input[type="range"] { width: 100%; }
 .field-label { display: block; font-size: var(--font-xs); color: var(--color-slate-700); font-weight: 650; margin-bottom: .5rem; }
 .form-section { padding-block: 1.5rem; border-bottom: 1px solid var(--color-border); min-width: 0; }
 .form-section:first-child { padding-top: 0; }

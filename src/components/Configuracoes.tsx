@@ -1,9 +1,19 @@
-import { useEffect, useRef, useState, type ReactElement } from "react";
-import { Upload, Trash2, Save, Check } from "lucide-react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactElement } from "react";
+import { Upload, Trash2, Save, Check, Move, RotateCcw } from "lucide-react";
 import { useEmpresa } from "../contexts/EmpresaContext";
 import { useToast } from "../components/ui/toast";
 import ConfirmDialog from "./ConfirmDialog";
+import Modal from "./ui/Modal";
 import "./analysis-pages.css";
+
+const TAMANHO_LOGO_EXPORTADA = 512;
+
+type ImagemParaRecorte = {
+  nome: string;
+  url: string;
+  largura: number;
+  altura: number;
+};
 
 const CORES_PRIMARIAS_SUGERIDAS = [
   { nome: "Amarelo", valor: "#FFD60A" },
@@ -41,8 +51,17 @@ export default function Configuracoes(): ReactElement {
   const [secao, setSecao] = useState<"empresa" | "visual">("empresa");
   const [confirmarRemocao, setConfirmarRemocao] = useState(false);
   const [removendoLogo, setRemovendoLogo] = useState(false);
+  const [imagemParaRecorte, setImagemParaRecorte] = useState<ImagemParaRecorte | null>(null);
+  const [zoomRecorte, setZoomRecorte] = useState(1);
+  const [posicaoRecorte, setPosicaoRecorte] = useState({ x: 0, y: 0 });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const arrastoRef = useRef<{ ponteiroX: number; ponteiroY: number; x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    if (!imagemParaRecorte) return;
+    return () => URL.revokeObjectURL(imagemParaRecorte.url);
+  }, [imagemParaRecorte]);
 
   // Preenche o form quando a empresa carrega
   useEffect(() => {
@@ -92,27 +111,112 @@ export default function Configuracoes(): ReactElement {
     }
   }
 
-  async function handleSelecionarArquivo(
+  function fecharRecorte() {
+    if (imagemParaRecorte) URL.revokeObjectURL(imagemParaRecorte.url);
+    setImagemParaRecorte(null);
+    setZoomRecorte(1);
+    setPosicaoRecorte({ x: 0, y: 0 });
+    arrastoRef.current = null;
+  }
+
+  function handleSelecionarArquivo(
     e: React.ChangeEvent<HTMLInputElement>
   ) {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const tiposAceitos = ["image/png", "image/jpeg", "image/svg+xml", "image/webp"];
+    if (!tiposAceitos.includes(file.type)) {
+      mostrarToast("Formato inválido. Use PNG, JPG, SVG ou WEBP.", "erro");
+      e.target.value = "";
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      mostrarToast("Arquivo muito grande. O limite é 5 MB.", "erro");
+      e.target.value = "";
+      return;
+    }
+
+    const url = URL.createObjectURL(file);
+    const imagem = new Image();
+    imagem.onload = () => {
+      if (!imagem.naturalWidth || !imagem.naturalHeight) {
+        URL.revokeObjectURL(url);
+        mostrarToast("A imagem precisa ter dimensões válidas.", "erro");
+        return;
+      }
+      setImagemParaRecorte({ nome: file.name, url, largura: imagem.naturalWidth, altura: imagem.naturalHeight });
+      setZoomRecorte(1);
+      setPosicaoRecorte({ x: 0, y: 0 });
+    };
+    imagem.onerror = () => {
+      URL.revokeObjectURL(url);
+      mostrarToast("Não foi possível abrir essa imagem.", "erro");
+    };
+    imagem.src = url;
+    e.target.value = "";
+  }
+
+  function limitarPosicao(valor: number) {
+    return Math.max(-1, Math.min(1, valor));
+  }
+
+  function iniciarArrasto(e: ReactPointerEvent<HTMLDivElement>) {
+    if (!imagemParaRecorte || enviandoLogo) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    arrastoRef.current = { ponteiroX: e.clientX, ponteiroY: e.clientY, x: posicaoRecorte.x, y: posicaoRecorte.y };
+  }
+
+  function moverRecorte(e: ReactPointerEvent<HTMLDivElement>) {
+    if (!imagemParaRecorte || !arrastoRef.current) return;
+    const tamanhoFonte = Math.min(imagemParaRecorte.largura, imagemParaRecorte.altura) / zoomRecorte;
+    const tamanhoArea = e.currentTarget.getBoundingClientRect().width;
+    const escala = tamanhoArea / tamanhoFonte;
+    const sobraX = Math.max(imagemParaRecorte.largura * escala - tamanhoArea, 1);
+    const sobraY = Math.max(imagemParaRecorte.altura * escala - tamanhoArea, 1);
+    const deltaX = e.clientX - arrastoRef.current.ponteiroX;
+    const deltaY = e.clientY - arrastoRef.current.ponteiroY;
+    setPosicaoRecorte({
+      x: limitarPosicao(arrastoRef.current.x - (deltaX * 2) / sobraX),
+      y: limitarPosicao(arrastoRef.current.y - (deltaY * 2) / sobraY),
+    });
+  }
+
+  function encerrarArrasto(e: ReactPointerEvent<HTMLDivElement>) {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+    arrastoRef.current = null;
+  }
+
+  async function aplicarRecorte() {
+    if (!imagemParaRecorte || enviandoLogo) return;
     setEnviandoLogo(true);
     try {
-      await uploadLogo(file);
-      mostrarToast("Logo atualizada com sucesso!", "sucesso");
+      const imagem = new Image();
+      imagem.src = imagemParaRecorte.url;
+      await imagem.decode();
+
+      const tamanhoFonte = Math.min(imagemParaRecorte.largura, imagemParaRecorte.altura) / zoomRecorte;
+      const origemX = ((imagemParaRecorte.largura - tamanhoFonte) * (posicaoRecorte.x + 1)) / 2;
+      const origemY = ((imagemParaRecorte.altura - tamanhoFonte) * (posicaoRecorte.y + 1)) / 2;
+      const canvas = document.createElement("canvas");
+      canvas.width = TAMANHO_LOGO_EXPORTADA;
+      canvas.height = TAMANHO_LOGO_EXPORTADA;
+      const contexto = canvas.getContext("2d");
+      if (!contexto) throw new Error("Não foi possível preparar o recorte.");
+      contexto.drawImage(imagem, origemX, origemY, tamanhoFonte, tamanhoFonte, 0, 0, TAMANHO_LOGO_EXPORTADA, TAMANHO_LOGO_EXPORTADA);
+
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((resultado) => resultado ? resolve(resultado) : reject(new Error("Não foi possível exportar o recorte.")), "image/png");
+      });
+      const nomeBase = imagemParaRecorte.nome.replace(/\.[^.]+$/, "") || "logo";
+      await uploadLogo(new File([blob], `${nomeBase}-recortada.png`, { type: "image/png" }));
+      mostrarToast("Logo recortada e atualizada com sucesso!", "sucesso");
+      fecharRecorte();
     } catch (error) {
       console.error(error);
-      const mensagem =
-        error instanceof Error ? error.message : "Erro ao enviar logo.";
-      mostrarToast(mensagem, "erro");
+      mostrarToast(error instanceof Error ? error.message : "Erro ao enviar logo.", "erro");
     } finally {
       setEnviandoLogo(false);
-      // Permite selecionar o mesmo arquivo de novo
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
     }
   }
 
@@ -233,7 +337,7 @@ export default function Configuracoes(): ReactElement {
                       </button>
                       {empresa?.logo_url && <button type="button" onClick={() => setConfirmarRemocao(true)} disabled={enviandoLogo} className="icon-button analysis-delete" aria-label="Remover logo" title="Remover logo"><Trash2 size={17} aria-hidden="true" /></button>}
                     </div>
-                    <p className="analysis-upload-note">O envio ou a remoção da logo é aplicado imediatamente.</p>
+                    <p className="analysis-upload-note">Ajuste o enquadramento antes de confirmar. A logo é aplicada ao confirmar o recorte.</p>
                   </div>
                 </div>
               </section>
@@ -322,6 +426,25 @@ export default function Configuracoes(): ReactElement {
           </button>
         </div>
       </footer>
+      {imagemParaRecorte && <Modal title="Enquadrar logomarca" description="Arraste a imagem ou use os controles para ajustar o recorte quadrado." onClose={fecharRecorte} busy={enviandoLogo}
+        footer={<><button type="button" className="btn-secondary" onClick={fecharRecorte} disabled={enviandoLogo}>Cancelar</button><button type="button" className="btn-primary" onClick={aplicarRecorte} disabled={enviandoLogo}>{enviandoLogo ? "Enviando…" : "Confirmar recorte e enviar"}</button></>}>
+        <div className="logo-crop-area" onPointerDown={iniciarArrasto} onPointerMove={moverRecorte} onPointerUp={encerrarArrasto} onPointerCancel={encerrarArrasto} onLostPointerCapture={() => { arrastoRef.current = null; }} aria-label="Prévia do recorte quadrado">
+          <img src={imagemParaRecorte.url} alt="Enquadramento da logo selecionada" draggable={false} style={{
+            width: `${100 * imagemParaRecorte.largura / Math.min(imagemParaRecorte.largura, imagemParaRecorte.altura) * zoomRecorte}%`,
+            height: `${100 * imagemParaRecorte.altura / Math.min(imagemParaRecorte.largura, imagemParaRecorte.altura) * zoomRecorte}%`,
+            left: `${-50 * (imagemParaRecorte.largura / Math.min(imagemParaRecorte.largura, imagemParaRecorte.altura) * zoomRecorte - 1) * (posicaoRecorte.x + 1)}%`,
+            top: `${-50 * (imagemParaRecorte.altura / Math.min(imagemParaRecorte.largura, imagemParaRecorte.altura) * zoomRecorte - 1) * (posicaoRecorte.y + 1)}%`,
+          }} />
+          <span className="logo-crop-grid" aria-hidden="true" />
+        </div>
+        <p className="tool-note flex items-center justify-center gap-2"><Move size={15} />Arraste para enquadrar · saída de 512 × 512 px</p>
+        <fieldset disabled={enviandoLogo} className="logo-crop-controls">
+          <label htmlFor="logo-zoom" className="field-label">Zoom: {zoomRecorte.toFixed(2)}×</label><input id="logo-zoom" type="range" min="1" max="4" step="0.01" value={zoomRecorte} onChange={e => setZoomRecorte(Number(e.target.value))} />
+          <label htmlFor="logo-x" className="field-label">Posição horizontal</label><input id="logo-x" type="range" min="-1" max="1" step="0.01" value={posicaoRecorte.x} onChange={e => setPosicaoRecorte(p => ({...p, x: Number(e.target.value)}))} />
+          <label htmlFor="logo-y" className="field-label">Posição vertical</label><input id="logo-y" type="range" min="-1" max="1" step="0.01" value={posicaoRecorte.y} onChange={e => setPosicaoRecorte(p => ({...p, y: Number(e.target.value)}))} />
+          <button className="btn-secondary" type="button" onClick={() => { setZoomRecorte(1); setPosicaoRecorte({x:0,y:0}); }}><RotateCcw size={15} />Centralizar</button>
+        </fieldset>
+      </Modal>}
       <ConfirmDialog aberto={confirmarRemocao} titulo="Remover a logo?" descricao="A logo será removida do painel e dos próximos documentos. Você poderá enviar outra imagem."
         textoBotaoConfirmar="Remover logo" corBotaoConfirmar="vermelho" carregando={removendoLogo} aoConfirmar={handleRemoverLogo} aoCancelar={() => setConfirmarRemocao(false)} />
     </div>
