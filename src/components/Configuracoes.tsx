@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
-import { Upload, Trash2, Save, Mail, Phone, MapPin, ArrowUpRight, Check } from "lucide-react";
+import { Upload, Trash2, Save, Check } from "lucide-react";
 import { useEmpresa } from "../contexts/EmpresaContext";
 import { useToast } from "../components/ui/toast";
 import ConfirmDialog from "./ConfirmDialog";
@@ -274,25 +274,42 @@ export default function Configuracoes(): ReactElement {
           </form>
         </div>
 
-        <aside className="analysis-brand-preview" aria-label="Prévia da identidade da empresa">
-          <p className="analysis-eyebrow">Prévia da sua marca</p>
-          <div className="analysis-brand-sheet">
-            <div className="analysis-brand-sheet-heading" style={{ background: corSecundaria }}>
+        <aside className="analysis-brand-preview" aria-label="Prévia do orçamento em PDF">
+          <p className="analysis-eyebrow">Prévia do orçamento</p>
+          <div className="analysis-quote-preview">
+            <header className="analysis-quote-header" style={{ background: corSecundaria }}>
               <div className="analysis-preview-logo">{empresa?.logo_url ? <img src={empresa.logo_url} alt="" /> : <span style={{ color: corPrimaria }}>{(nome || "M").charAt(0).toUpperCase()}</span>}</div>
-              <strong>{nome || "Sua empresa"}</strong>
-              <p>{slogan || "Sua assinatura profissional"}</p>
-              <div className="analysis-preview-accent" style={{ background: corPrimaria }} />
+              <div><strong>{(nome || "Sua empresa").toUpperCase()}</strong><span>{slogan || "Sua assinatura profissional"}</span><small>Gerado em {new Date().toLocaleDateString("pt-BR")}</small></div>
+            </header>
+
+            <div className="analysis-quote-body">
+              <h3>ORÇAMENTO DE SERVIÇOS ELÉTRICOS</h3>
+              <span className="analysis-quote-accent" style={{ background: corPrimaria }} />
+              <div className="analysis-quote-meta"><strong>ORÇAMENTO Nº 0042</strong><span>Data: {new Date().toLocaleDateString("pt-BR")}</span></div>
+              <div className="analysis-quote-client">
+                <strong>DADOS DO CLIENTE</strong>
+                <span>Cliente de exemplo</span>
+                <small>Local do atendimento</small>
+              </div>
+              <div className="analysis-quote-table">
+                <div className="analysis-quote-table-head" style={{ background: corSecundaria }}><span>Descrição</span><span>Qtd.</span><span>Subtotal</span></div>
+                <div><span>Instalação elétrica</span><span>1</span><span>R$ 250,00</span></div>
+                <div><span>Materiais</span><span>1</span><span>R$ 80,00</span></div>
+              </div>
+              <div className="analysis-quote-totals">
+                <span>Subtotal <strong>R$ 330,00</strong></span>
+                <div style={{ background: corSecundaria }}>TOTAL <strong>R$ 330,00</strong></div>
+              </div>
+              <div className="analysis-quote-signatures"><span>Cliente (de acordo)</span><span>Empresa / Responsável</span></div>
             </div>
-            <div className="analysis-brand-sheet-contact">
-              <p className="analysis-eyebrow">Informações de contato</p>
-              <p><Mail size={15} aria-hidden="true" /><span>{emailContato || "E-mail de contato"}</span></p>
-              <p><Phone size={15} aria-hidden="true" /><span>{telefoneContato || "Telefone / WhatsApp"}</span></p>
-              <p><MapPin size={15} aria-hidden="true" /><span>{enderecoEmpresa || "Endereço da empresa"}</span></p>
-              {cnpj && <p className="record-meta">CNPJ / CPF: {cnpj}</p>}
-              <div className="analysis-preview-action" style={{ background: corPrimaria, color: corSecundaria }}>Ver orçamento<ArrowUpRight size={16} aria-hidden="true" /></div>
-            </div>
+
+            <footer className="analysis-quote-footer" style={{ background: corSecundaria }}>
+              <strong>{(nome || "Sua empresa").toUpperCase()}</strong>
+              <span>{[emailContato, telefoneContato].filter(Boolean).join(" · ") || "Seus contatos aparecerão aqui"}</span>
+              <small>{[cnpj && `CNPJ: ${cnpj}`, enderecoEmpresa].filter(Boolean).join(" · ") || "CNPJ e endereço da empresa"}</small>
+            </footer>
           </div>
-          <p className="analysis-data-note">Confira a combinação antes de salvar. Os documentos mantêm as informações cadastradas.</p>
+          <p className="analysis-data-note">A miniatura acompanha logo, cores e dados preenchidos. O PDF final inclui os dados reais do cliente e do serviço.</p>
         </aside>
       </div>
 

@@ -100,6 +100,16 @@ function getLogoFromUrl(url: string, cache: LogoCache): LogoResult {
 // Fallback para /logo.png do projeto
 const FALLBACK_LOGO_URL = "/logo.png";
 
+function hexParaRgb(hex: string | null | undefined, fallback: [number, number, number]): [number, number, number] {
+  const valor = hex?.trim().replace(/^#/, "");
+  if (!valor || !/^[0-9a-fA-F]{6}$/.test(valor)) return fallback;
+  return [
+    parseInt(valor.slice(0, 2), 16),
+    parseInt(valor.slice(2, 4), 16),
+    parseInt(valor.slice(4, 6), 16),
+  ];
+}
+
 type OrcamentosProps = {
   setPagina: (pagina: string) => void;
   abrirAoMontar?: boolean;
@@ -723,8 +733,8 @@ const cliente = clienteCompleto?.nome || "Cliente";
     // =========================
     // CORES
     // =========================
-    const azulEscuro: [number, number, number] = [13, 27, 42];
-    const amarelo: [number, number, number] = [255, 214, 10];
+    const azulEscuro = hexParaRgb(empresa?.cor_secundaria, [13, 27, 42]);
+    const amarelo = hexParaRgb(empresa?.cor_primaria, [255, 214, 10]);
     const cinzaTexto: [number, number, number] = [90, 90, 90];
     const cinzaClaro: [number, number, number] = [245, 246, 248];
 
