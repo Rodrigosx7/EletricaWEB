@@ -16,6 +16,7 @@ import {
   Pencil,
   ChevronsLeft,
   ChevronsRight,
+  PanelsTopLeft,
 } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import { useEmpresa } from "../contexts/EmpresaContext";
@@ -119,6 +120,7 @@ export default function Sidebar({
     {
       titulo: "Ferramentas",
       itens: [
+        { id: "quadros", nome: "Montagem de Quadros", icone: PanelsTopLeft },
         {
           id: "calculadora",
           nome: "Calculadora Elétrica",

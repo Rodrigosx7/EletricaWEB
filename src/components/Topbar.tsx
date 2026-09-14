@@ -1,4 +1,4 @@
-import type { ReactElement } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import { Menu, ChevronRight, type LucideIcon } from "lucide-react";
 import { useEmpresa } from "../contexts/EmpresaContext";
 
@@ -17,6 +17,23 @@ export default function Topbar({
   acaoDireita,
 }: TopbarProps): ReactElement {
   const { empresa } = useEmpresa();
+  const [agora, setAgora] = useState(() => new Date());
+
+  useEffect(() => {
+    const intervalo = window.setInterval(() => setAgora(new Date()), 1_000);
+    return () => window.clearInterval(intervalo);
+  }, []);
+
+  const horaFormatada = agora.toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const dataFormatada = agora.toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
   return (
     <header aria-label={`Navegação: ${titulo}`} className="workspace-topbar">
       <div className="workspace-context">
@@ -46,7 +63,15 @@ export default function Topbar({
         </div>
 
       </div>
-      {acaoDireita || <time dateTime={new Date().toISOString().slice(0, 10)}>{new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}</time>}
+      {acaoDireita || (
+        <time
+          dateTime={agora.toISOString()}
+          className="flex items-center gap-4 tabular-nums whitespace-nowrap"
+        >
+          <span>{horaFormatada}</span>
+          <span>{dataFormatada}</span>
+        </time>
+      )}
     </header>
   );
 }

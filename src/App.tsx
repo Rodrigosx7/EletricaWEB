@@ -10,6 +10,7 @@ import Servicos from "./components/Servicos";
 import Produtos from "./components/Produtos";
 import Orcamentos from "./components/Orcamentos";
 import OrcamentoRapido from "./components/OrcamentoRapido";
+import MontagemQuadros from "./components/MontagemQuadros";
 import OrdensServico from "./components/OrdensServico";
 import Financeiro from "./components/Financeiro";
 import Relatorios from "./components/Relatorios";
@@ -46,6 +47,7 @@ export default function App() {
 function AppInterno() {
   const [usuario, setUsuario] = useState<User | null>(null);
   const [pagina, setPagina] = useState("dashboard");
+  const [quadroAlterado, setQuadroAlterado] = useState(false);
   const [novoOrcamento, setNovoOrcamento] = useState(false);
   const [perfilAberto, setPerfilAberto] = useState(false);
   const [logoutAberto, setLogoutAberto] = useState(false);
@@ -63,6 +65,10 @@ function AppInterno() {
   }, [sidebarRecolhida]);
 
   function navegar(paginaDestino: string) {
+    if (pagina === "quadros" && quadroAlterado && paginaDestino !== "quadros") {
+      if (!window.confirm("Há alterações não salvas no quadro. Deseja descartá-las e sair?")) return;
+      setQuadroAlterado(false);
+    }
     setNovoOrcamento(false);
     setPagina(paginaDestino);
     setMenuAberto(false);
@@ -137,6 +143,8 @@ function AppInterno() {
 
   // Logout
   async function sair() {
+    if (quadroAlterado && !window.confirm("Há alterações não salvas no quadro. Sair e descartá-las?")) return;
+    setQuadroAlterado(false);
     setSaindo(true);
     await supabase.auth.signOut();
     setSaindo(false);
@@ -158,6 +166,7 @@ function AppInterno() {
       servicos: { titulo: "Serviços", icone: Zap },
       produtos: { titulo: "Produtos", icone: Package },
       orcamentoRapido: { titulo: "Orçamento Rápido", icone: ClipboardList },
+      quadros: { titulo: "Montagem de Quadros", icone: ClipboardList },
       financeiro: { titulo: "Financeiro", icone: Wallet },
       relatorios: { titulo: "Relatórios", icone: BarChart3 },
       calculadora: { titulo: "Calculadora Elétrica", icone: CalcIcon },
@@ -252,6 +261,7 @@ function AppInterno() {
 
         {/* Orçamento Rápido */}
         {pagina === "orcamentoRapido" && <OrcamentoRapido />}
+        {pagina === "quadros" && <MontagemQuadros key={usuario.id} usuarioId={usuario.id} aoAlterar={setQuadroAlterado} />}
 
         {/* Ordens de Serviço */}
         {pagina === "ordens-servico" && <OrdensServico />}
