@@ -708,21 +708,18 @@ function idAleatorio(): string {
 /* ---------------- componente ---------------- */
 
 export default function OrcamentoRapido(): ReactElement {
-  const [comodos, setComodos] = useState<Comodo[]>([]);
-  const [comodoAtivo, setComodoAtivo] = useState<string>("");
+  const [estadoInicial] = useState(() => {
+    const dados = carregarComodos();
+    return { dados, ativo: dados[0]?.id ?? "" };
+  });
+  const [comodos, setComodos] = useState<Comodo[]>(estadoInicial.dados);
+  const [comodoAtivo, setComodoAtivo] = useState<string>(estadoInicial.ativo);
   const [mostrarListaGeral, setMostrarListaGeral] = useState(false);
   const [copiado, setCopiado] = useState(false);
   const [novoComodo, setNovoComodo] = useState("");
   const [itemPersonalizado, setItemPersonalizado] = useState("");
   const [mostrarTodasCats, setMostrarTodasCats] = useState(false);
   const [usados, setUsados] = useState<UsoItem[]>(() => carregarUsados());
-
-  // carrega do localStorage uma única vez
-  useEffect(() => {
-    const dados = carregarComodos();
-    setComodos(dados);
-    if (dados.length > 0) setComodoAtivo(dados[0].id);
-  }, []);
 
   // persiste com debounce de 500ms para evitar writes síncronos a cada clique
   useEffect(() => {
@@ -746,13 +743,6 @@ export default function OrcamentoRapido(): ReactElement {
     return () => window.removeEventListener("storage", onStorage);
   }, [comodoAtivo]);
 
-  // reseta mostrarListaGeral quando não há mais cômodos
-  useEffect(() => {
-    if (comodos.length === 0 && mostrarListaGeral) {
-      setMostrarListaGeral(false);
-    }
-  }, [comodos.length, mostrarListaGeral]);
-
   const comodoAtual = comodos.find((c) => c.id === comodoAtivo);
 
   function adicionarComodo() {
@@ -770,15 +760,10 @@ export default function OrcamentoRapido(): ReactElement {
   }
 
   function removerComodo(id: string) {
-    setComodos((prevComodos) => {
-      const restantes = prevComodos.filter((c) => c.id !== id);
-      // calcula próximo cômodo ativo a partir do estado atualizado
-      setComodoAtivo((prevAtivo) => {
-        if (prevAtivo !== id) return prevAtivo;
-        return restantes[0]?.id ?? "";
-      });
-      return restantes;
-    });
+    const restantes = comodos.filter((c) => c.id !== id);
+    setComodos(restantes);
+    if (comodoAtivo === id) setComodoAtivo(restantes[0]?.id ?? "");
+    if (restantes.length === 0) setMostrarListaGeral(false);
   }
 
   function adicionarItemPreDefinido(
@@ -990,7 +975,7 @@ export default function OrcamentoRapido(): ReactElement {
     return (
       <span
         key={it.id}
-        className="inline-flex items-center gap-1 pl-3 pr-1 py-1.5 bg-white border border-emerald-200 rounded-full text-sm text-emerald-800"
+        className="material-selected-item"
       >
         <span className="truncate max-w-[180px]">{it.nome}</span>
         {ehAtivo && (
@@ -998,18 +983,18 @@ export default function OrcamentoRapido(): ReactElement {
             <button
               type="button"
               onClick={() => ajustarItem(it.id, -1)}
-              className="w-6 h-6 inline-flex items-center justify-center rounded-full bg-emerald-100 hover:bg-emerald-200 text-emerald-700"
+              className="material-quantity-button"
               aria-label={`Diminuir ${it.nome}`}
             >
               <Minus className="w-3 h-3" />
             </button>
-            <span className="font-bold text-emerald-900 min-w-[24px] text-center">
+            <span className="material-quantity-value">
               {it.unidade === "metro" ? `${it.quantidade}m` : it.quantidade}
             </span>
             <button
               type="button"
               onClick={() => ajustarItem(it.id, +1)}
-              className="w-6 h-6 inline-flex items-center justify-center rounded-full bg-emerald-100 hover:bg-emerald-200 text-emerald-700"
+              className="material-quantity-button"
               aria-label={`Aumentar ${it.nome}`}
             >
               <Plus className="w-3 h-3" />
@@ -1019,7 +1004,7 @@ export default function OrcamentoRapido(): ReactElement {
         <button
           type="button"
           onClick={() => removerItem(it.id)}
-          className="ml-1 w-6 h-6 inline-flex items-center justify-center rounded-full text-slate-500 hover:text-red-600 hover:bg-red-50"
+          className="material-remove-button"
           aria-label={`Remover ${it.nome}`}
         >
           <Trash2 className="w-3.5 h-3.5" />
@@ -1035,7 +1020,7 @@ export default function OrcamentoRapido(): ReactElement {
     return (
       <span
         key={it.id}
-        className="inline-flex items-center gap-1 pl-3 pr-1 py-1.5 bg-white border border-blue-200 rounded-full text-sm text-blue-800"
+        className="material-selected-item"
       >
         <span className="truncate max-w-[180px]">{it.nome}</span>
         {ehAtivo && (
@@ -1043,18 +1028,18 @@ export default function OrcamentoRapido(): ReactElement {
             <button
               type="button"
               onClick={() => ajustarPersonalizado(it.id, -1)}
-              className="w-6 h-6 inline-flex items-center justify-center rounded-full bg-blue-100 hover:bg-blue-200 text-blue-700"
+              className="material-quantity-button"
               aria-label={`Diminuir ${it.nome}`}
             >
               <Minus className="w-3 h-3" />
             </button>
-            <span className="font-bold text-blue-900 min-w-[24px] text-center">
+            <span className="material-quantity-value">
               {it.quantidade}
             </span>
             <button
               type="button"
               onClick={() => ajustarPersonalizado(it.id, +1)}
-              className="w-6 h-6 inline-flex items-center justify-center rounded-full bg-blue-100 hover:bg-blue-200 text-blue-700"
+              className="material-quantity-button"
               aria-label={`Aumentar ${it.nome}`}
             >
               <Plus className="w-3 h-3" />
@@ -1064,7 +1049,7 @@ export default function OrcamentoRapido(): ReactElement {
         <button
           type="button"
           onClick={() => removerPersonalizado(it.id)}
-          className="ml-1 w-6 h-6 inline-flex items-center justify-center rounded-full text-slate-500 hover:text-red-600 hover:bg-red-50"
+          className="material-remove-button"
           aria-label={`Remover ${it.nome}`}
         >
           <Trash2 className="w-3.5 h-3.5" />
@@ -1074,22 +1059,19 @@ export default function OrcamentoRapido(): ReactElement {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-6 print:bg-white print:p-2">
-      <div className="max-w-7xl mx-auto">
-        {/* Cabeçalho */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+    <div className="product-page material-page">
+      <div>
+        <header className="page-header no-print">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-slate-900">
-              Orçamento Rápido
-            </h1>
-            <p className="text-slate-500 text-sm mt-1">
-              Lista de materiais sem preço — para o cliente comprar na loja
-            </p>
+            <span className="page-kicker">Ferramentas / levantamento</span>
+            <h1>Orçamento rápido</h1>
+            <p>Monte uma lista de materiais por ambiente e envie ao cliente sem incluir preços.</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="page-actions">
             <button
               onClick={copiarTexto}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition"
+              className="btn-secondary"
+              disabled={totalItens === 0}
             >
               {copiado ? (
                 <Check className="w-4 h-4 text-emerald-600" />
@@ -1100,7 +1082,8 @@ export default function OrcamentoRapido(): ReactElement {
             </button>
             <button
               onClick={enviarWhatsApp}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition"
+              className="btn-primary"
+              disabled={totalItens === 0}
             >
               <MessageCircle className="w-4 h-4" />
               WhatsApp
@@ -1108,32 +1091,56 @@ export default function OrcamentoRapido(): ReactElement {
             <button
               onClick={imprimir}
               aria-label="Imprimir orçamento"
-              className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition"
+              className="icon-button"
+              disabled={totalItens === 0}
             >
               <Printer className="w-4 h-4" />
               <span className="hidden print:inline">Imprimir</span>
             </button>
           </div>
-        </div>
+        </header>
 
-        <div className="flex flex-col lg:flex-row gap-6">
+        <section className="metric-strip no-print" aria-label="Resumo do levantamento">
+          <div className="metric">
+            <span>Ambientes</span>
+            <strong>{comodos.length}</strong>
+            <small>organizados no orçamento</small>
+          </div>
+          <div className="metric">
+            <span>Quantidade total</span>
+            <strong>{totalItens}</strong>
+            <small>unidades e metros</small>
+          </div>
+          <div className="metric">
+            <span>Ambiente atual</span>
+            <strong className="material-current-room">{comodoAtual?.nome || "Nenhum"}</strong>
+            <small>{comodoAtual ? `${totalItensDoComodo(comodoAtual)} itens selecionados` : "adicione ou escolha um ambiente"}</small>
+          </div>
+        </section>
+
+        <div className="material-workspace">
           {/* Painel esquerdo: cômodos */}
-          <div className="lg:w-72 xl:w-80 shrink-0 no-print">
-            <div className="bg-white rounded-xl shadow-sm p-4">
-              <h2 className="text-sm font-bold text-slate-700 mb-3 uppercase tracking-wide">
-                Cômodos
-              </h2>
+          <aside className="surface-card material-room-panel no-print">
+              <div className="material-panel-heading">
+                <div>
+                  <span>Etapa 01</span>
+                  <h2>Ambientes</h2>
+                </div>
+                <strong>{comodos.length}</strong>
+              </div>
 
               {/* Adicionar cômodo */}
-              <div className="flex gap-2 mb-4">
+              <label className="field-label" htmlFor="novo-comodo">Adicionar ambiente</label>
+              <div className="material-add-row">
                 <input
+                  id="novo-comodo"
                   type="text"
                   value={novoComodo}
                   onChange={(e) => setNovoComodo(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && adicionarComodo()}
-                  placeholder="Ex: Quarto Suite"
+                  placeholder="Ex.: Quarto suíte"
                   list="comodos-lista"
-                  className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none"
+                  className="input-base"
                 />
                 <datalist id="comodos-lista">
                   {COMODOS_PADRAO.filter(
@@ -1144,7 +1151,7 @@ export default function OrcamentoRapido(): ReactElement {
                 </datalist>
                 <button
                   onClick={adicionarComodo}
-                  className="px-3 py-2 bg-[#FFD60A] hover:bg-yellow-400 text-slate-900 rounded-lg text-sm font-bold transition"
+                  className="material-add-button"
                   aria-label="Adicionar cômodo"
                 >
                   <Plus className="w-4 h-4" />
@@ -1152,10 +1159,10 @@ export default function OrcamentoRapido(): ReactElement {
               </div>
 
               {/* Lista de cômodos */}
-              <div className="space-y-1 max-h-96 overflow-y-auto">
+              <div className="material-room-list">
                 {comodos.length === 0 && (
-                  <p className="text-sm text-slate-500 text-center py-6">
-                    Adicione um cômodo acima
+                  <p className="material-room-empty">
+                    Comece adicionando o primeiro ambiente.
                   </p>
                 )}
                 {comodos.map((c) => {
@@ -1164,66 +1171,31 @@ export default function OrcamentoRapido(): ReactElement {
                     c.personalizado.reduce((s, it) => s + it.quantidade, 0);
                   const ativo = c.id === comodoAtivo;
                   return (
-                    <button
-                      type="button"
-                      key={c.id}
-                      onClick={() => setComodoAtivo(c.id)}
-                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg cursor-pointer transition text-sm ${
-                        ativo
-                          ? "bg-[#FFD60A]/10 border border-[#FFD60A]/30 text-slate-900"
-                          : "hover:bg-slate-50 text-slate-700"
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div
-                          className={`w-2 h-2 rounded-full shrink-0 ${
-                            qtd > 0 ? "bg-emerald-500" : "bg-slate-300"
-                          }`}
-                        />
+                    <div key={c.id} className="room-row" data-active={ativo}>
+                      <button type="button" onClick={() => setComodoAtivo(c.id)} aria-pressed={ativo}>
+                        <span className="material-room-index">{String(comodos.indexOf(c) + 1).padStart(2, "0")}</span>
                         <span className="truncate font-medium">{c.nome}</span>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
                         {qtd > 0 && (
-                          <span className="bg-slate-200 text-slate-700 text-xs px-1.5 py-0.5 rounded-full font-bold">
+                          <span className="material-room-count">
                             {qtd}
                           </span>
                         )}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            e.preventDefault();
-                            removerComodo(c.id);
-                          }}
-                          className="p-1 text-slate-500 hover:text-red-500 transition"
-                          aria-label={`Remover cômodo ${c.nome}`}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </button>
+                      </button>
+                      <button type="button" onClick={() => removerComodo(c.id)} className="icon-button" aria-label={`Remover ambiente ${c.nome}`}>
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   );
                 })}
               </div>
 
               {/* Resumo */}
               {comodos.length > 0 && (
-                <div className="mt-4 pt-4 border-t border-slate-100">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-500">Total de cômodos</span>
-                    <span className="font-bold text-slate-900">
-                      {comodos.length}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm mt-1">
-                    <span className="text-slate-500">Total de itens</span>
-                    <span className="font-bold text-slate-900">
-                      {totalItens}
-                    </span>
-                  </div>
+                <div className="material-room-footer">
                   <button
                     onClick={() => setMostrarListaGeral(!mostrarListaGeral)}
-                    className="mt-3 w-full flex items-center justify-center gap-2 px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 text-sm rounded-lg transition border border-slate-200"
+                    className="btn-secondary"
+                    aria-expanded={mostrarListaGeral}
                   >
                     <FileText className="w-4 h-4" />
                     {mostrarListaGeral ? "Ocultar lista" : "Ver lista completa"}
@@ -1235,33 +1207,37 @@ export default function OrcamentoRapido(): ReactElement {
                   </button>
                 </div>
               )}
-            </div>
-          </div>
+          </aside>
 
           {/* Painel direito */}
-          <div className="flex-1 min-w-0">
+          <main className="material-main">
             {!comodoAtivo ? (
-              <div className="bg-white rounded-xl shadow-sm p-12 text-center">
-                <Package className="w-16 h-16 text-slate-200 mx-auto mb-4" />
-                <h2 className="text-xl font-bold text-slate-700 mb-2">
-                  Selecione um cômodo
-                </h2>
-                <p className="text-slate-500">
-                  Clique em um cômodo à esquerda para adicionar materiais
+              <div className="surface-card empty-state material-empty-state no-print">
+                <Package />
+                <h2>Escolha um ambiente</h2>
+                <p>
+                  Selecione um ambiente ao lado para começar o levantamento de materiais.
                 </p>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => document.getElementById("novo-comodo")?.focus()}
+                >
+                  <Plus className="w-4 h-4" />
+                  Adicionar ambiente
+                </button>
               </div>
             ) : (
-              <div className="space-y-4 no-print">
+              <div className="surface-card material-editor no-print">
                 {/* Info do cômodo ativo */}
-                <div className="bg-white rounded-xl shadow-sm p-4 flex items-center justify-between">
+                <div className="material-editor-header">
                   <div>
-                    <h2 className="text-lg font-bold text-slate-900">
-                      {comodoAtual?.nome}
-                    </h2>
+                    <span>Etapa 02 · Materiais do ambiente</span>
+                    <h2>{comodoAtual?.nome}</h2>
                     {(() => {
                       const qtdDoComodo = totalItensDoComodo(comodoAtual);
                       return (
-                        <p className="text-sm text-slate-500">
+                        <p>
                           {qtdDoComodo}{" "}
                           {qtdDoComodo === 1 ? "item adicionado" : "itens adicionados"}
                         </p>
@@ -1270,7 +1246,7 @@ export default function OrcamentoRapido(): ReactElement {
                   </div>
                   <button
                     onClick={() => limparComodo(comodoAtivo)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-red-600 hover:bg-red-50 rounded-lg text-sm transition"
+                    className="material-clear-button"
                   >
                     <Trash2 className="w-4 h-4" />
                     Limpar
@@ -1281,12 +1257,12 @@ export default function OrcamentoRapido(): ReactElement {
                 {comodoAtual &&
                   (comodoAtual.items.length > 0 ||
                     comodoAtual.personalizado.length > 0) && (
-                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
-                      <h3 className="text-sm font-bold text-emerald-800 mb-3 flex items-center gap-2">
+                    <section className="material-selection">
+                      <h3>
                         <Check className="w-4 h-4" />
-                        Itens neste cômodo
+                        Selecionados neste ambiente
                       </h3>
-                      <div className="flex flex-wrap gap-2">
+                      <div className="material-selection-list">
                         {comodoAtual.items.map((it) =>
                           chipItemPre(it, true)
                         )}
@@ -1297,20 +1273,24 @@ export default function OrcamentoRapido(): ReactElement {
                       <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
                         {(comodoAtual.items.length + comodoAtual.personalizado.length)} item(s) no cômodo.
                       </p>
-                      <p className="text-xs text-emerald-900 mt-3">
-                        Use os botões - e + dentro do chip para ajustar a
-                        quantidade. Lixeira remove o item do cômodo.
+                      <p className="material-help">
+                        Ajuste quantidade com menos e mais. Use lixeira para remover.
                       </p>
-                    </div>
+                    </section>
                   )}
 
                 {/* Campo personalizado */}
-                <div className="bg-white rounded-xl shadow-sm p-4">
-                  <h3 className="text-sm font-bold text-slate-700 mb-3">
-                    Adicionar item personalizado
-                  </h3>
-                  <div className="flex gap-2">
+                <section className="material-section material-custom-item">
+                  <div className="material-section-heading">
+                    <div>
+                      <span>Entrada manual</span>
+                      <h3>Item fora do catálogo</h3>
+                    </div>
+                  </div>
+                  <label className="field-label" htmlFor="item-personalizado">Descrição do material</label>
+                  <div className="material-add-row">
                     <input
+                      id="item-personalizado"
                       type="text"
                       value={itemPersonalizado}
                       onChange={(e) => setItemPersonalizado(e.target.value)}
@@ -1318,31 +1298,30 @@ export default function OrcamentoRapido(): ReactElement {
                         e.key === "Enter" && adicionarItemPersonalizado()
                       }
                       placeholder="Ex: Fio flex 4mm², Tubo 20mm..."
-                      className="flex-1 border border-slate-200 rounded-lg px-3 py-2.5 text-sm outline-none"
+                      className="input-base"
                     />
                     <button
                       onClick={adicionarItemPersonalizado}
-                      className="px-4 py-2 bg-[#FFD60A] hover:bg-yellow-400 text-slate-900 rounded-lg text-sm font-bold transition"
+                      className="material-add-button material-add-button-wide"
                       aria-label="Adicionar item personalizado"
                     >
                       <Plus className="w-4 h-4" />
+                      <span>Adicionar</span>
                     </button>
                   </div>
-                </div>
+                </section>
 
                 {/* Mais Usados */}
                 {usados.filter((u) => u.count >= 1).length > 0 && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <TrendingUp className="w-4 h-4 text-amber-600" />
-                      <h3 className="text-sm font-bold text-amber-800">
-                        Mais Usados
-                      </h3>
-                      <span className="text-xs text-amber-500">
-                        (baseado no seu uso)
-                      </span>
+                  <section className="material-section">
+                    <div className="material-section-heading">
+                      <div>
+                        <span>Atalhos pessoais</span>
+                        <h3><TrendingUp className="w-4 h-4" /> Mais usados</h3>
+                      </div>
+                      <small>Baseado nas seleções recentes</small>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-1.5">
+                    <div className="material-item-grid">
                       {usados
                         .filter((u) => u.count >= 1)
                         .slice(0, 12)
@@ -1366,36 +1345,35 @@ export default function OrcamentoRapido(): ReactElement {
                               onClick={() =>
                                 adicionarItemPreDefinido(u.id, u.nome, unidade)
                               }
-                              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm transition ${
-                                qtdJa > 0
-                                  ? "bg-amber-100 text-amber-800 border border-amber-300"
-                                  : "bg-white hover:bg-amber-100 text-amber-700 border border-amber-200 hover:border-amber-400"
-                              }`}
+                              className="material-catalog-item"
+                              data-selected={qtdJa > 0}
                             >
-                              <Star className="w-4 h-4 text-amber-500 shrink-0" />
+                              <Star className="w-4 h-4 shrink-0" />
                               <span className="truncate flex-1">{u.nome}</span>
                               {qtdJa > 0 && (
-                                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-600 text-white text-xs font-bold shrink-0">
+                                <span className="material-item-count">
                                   {qtdJa}
                                 </span>
                               )}
-                              <span className="text-xs text-amber-400 shrink-0">
+                              <span className="material-use-count">
                                 {u.count}x
                               </span>
                             </button>
                           );
                         })}
                     </div>
-                  </div>
+                  </section>
                 )}
 
                 {/* Categorias */}
-                <div className="space-y-3">
+                <section className="material-catalog">
                   <button
                     onClick={() => setMostrarTodasCats(!mostrarTodasCats)}
-                    className="w-full flex items-center justify-between px-4 py-3 bg-white rounded-xl shadow-sm text-sm font-bold text-slate-700 hover:bg-slate-50 transition"
+                    className="material-catalog-toggle"
+                    aria-expanded={mostrarTodasCats}
                   >
-                    <span>Todas as categorias ({CATEGORIAS.length})</span>
+                    <span><span>Catálogo técnico</span><strong>Todas as categorias</strong></span>
+                    <small>{CATEGORIAS.length} categorias</small>
                     <ChevronRight
                       className={`w-4 h-4 transition ${
                         mostrarTodasCats ? "rotate-90" : ""
@@ -1407,20 +1385,20 @@ export default function OrcamentoRapido(): ReactElement {
                     CATEGORIAS.map((cat) => {
                       const Icon = cat.icone;
                       return (
-                        <div
+                        <section
                           key={cat.id}
-                          className="bg-white rounded-xl shadow-sm p-4"
+                          className="material-category"
                         >
-                          <div className="flex items-center gap-2 mb-3">
-                            <Icon className="w-4 h-4 text-[#FFD60A]" />
-                            <h3 className="font-bold text-slate-900">
+                          <div className="material-category-heading">
+                            <Icon className="w-4 h-4" />
+                            <h3>
                               {cat.nome}
                             </h3>
-                            <span className="text-xs text-slate-500">
-                              ({cat.itens.length})
+                            <span>
+                              {cat.itens.length} opções
                             </span>
                           </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-1.5">
+                          <div className="material-item-grid">
                             {cat.itens.map((item) => {
                               const jaAdicionado =
                                 comodoAtual?.items.find(
@@ -1437,38 +1415,38 @@ export default function OrcamentoRapido(): ReactElement {
                                       item.unidade
                                     )
                                   }
-                                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm transition ${
-                                    qtdJa > 0
-                                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                      : "bg-slate-50 hover:bg-[#FFD60A]/10 text-slate-700 hover:text-slate-900 border border-transparent hover:border-[#FFD60A]/30"
-                                  }`}
+                                  className="material-catalog-item"
+                                  data-selected={qtdJa > 0}
                                 >
                                   {qtdJa > 0 ? (
-                                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-600 text-white text-xs font-bold shrink-0">
+                                    <span className="material-item-count">
                                       {qtdJa}
                                     </span>
                                   ) : (
-                                    <Plus className="w-4 h-4 text-slate-500 shrink-0" />
+                                    <Plus className="w-4 h-4 shrink-0" />
                                   )}
                                   <span className="truncate">{item.nome}</span>
                                 </button>
                               );
                             })}
                           </div>
-                        </div>
+                        </section>
                       );
                     })}
-                </div>
+                </section>
               </div>
             )}
 
             {/* Lista completa geral */}
             {mostrarListaGeral && comodos.length > 0 && (
-              <div className="bg-white rounded-xl shadow-sm p-6 mt-6 print:mt-2">
-                <h2 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-                  <FileText className="w-5 h-5" />
-                  Lista Completa
-                </h2>
+              <section className="surface-card material-summary print:mt-2">
+                <div className="material-summary-header">
+                  <div>
+                    <span>Documento para envio</span>
+                    <h2><FileText className="w-5 h-5" /> Lista completa</h2>
+                  </div>
+                  <strong>{totalItens} itens</strong>
+                </div>
                 {comodos
                   .filter((c) => {
                     const qtd =
@@ -1481,50 +1459,45 @@ export default function OrcamentoRapido(): ReactElement {
                       c.items.reduce((s, it) => s + it.quantidade, 0) +
                       c.personalizado.reduce((s, it) => s + it.quantidade, 0);
                     return (
-                      <div key={c.id} className="mb-6 last:mb-0">
-                        <h3 className="font-bold text-slate-800 text-base mb-2 flex items-center gap-2">
+                      <section key={c.id} className="material-summary-room">
+                        <header>
                           <span>{c.nome}</span>
-                          <span className="text-sm font-normal text-slate-500">
-                            ({qtd} {qtd === 1 ? "item" : "itens"})
-                          </span>
+                          <small>{qtd} {qtd === 1 ? "item" : "itens"}</small>
                           <button
                             onClick={() => limparComodo(c.id)}
-                            className="ml-auto text-xs text-red-500 hover:text-red-700 flex items-center gap-1"
+                            className="material-clear-button no-print"
                           >
-                            <Trash2 className="w-3 h-3" /> limpar
+                            <Trash2 className="w-4 h-4" /> Limpar
                           </button>
-                        </h3>
-                        <ul className="space-y-1 ml-6">
+                        </header>
+                        <ul>
                           {c.items.map((it) => (
                             <li
                               key={it.id}
-                              className="flex items-center gap-2 text-sm text-slate-700"
+                              className="material-summary-item"
                             >
-                              <span className="text-emerald-500">-</span>
                               <span>{formatarLinhaItem(it.nome, it.quantidade, it.unidade).trim()}</span>
                             </li>
                           ))}
                           {c.personalizado.map((it) => (
                             <li
                               key={it.id}
-                              className="flex items-center gap-2 text-sm text-blue-700"
+                              className="material-summary-item"
                             >
-                              <span>-</span>
                               <span>{formatarLinhaItem(it.nome, it.quantidade).trim()}</span>
                             </li>
                           ))}
                         </ul>
-                      </div>
+                      </section>
                     );
                   })}
-                <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-slate-500 text-sm">
-                    Total: {totalItens} itens em {comodos.length} cômodos
-                  </span>
+                <div className="material-summary-footer">
+                  <span>Total do levantamento</span>
+                  <strong>{totalItens} itens em {comodos.length} ambientes</strong>
                 </div>
-              </div>
+              </section>
             )}
-          </div>
+          </main>
         </div>
 
         {/* Print styles */}
