@@ -100,6 +100,7 @@ export default function Sidebar({
       itens: [
         { id: "orcamentos", nome: "Orçamentos", icone: FileText },
         { id: "ordens-servico", nome: "Ordens de Serviço", icone: Wrench },
+        { id: "notasFiscais", nome: "Notas fiscais", icone: FileText },
       ],
     },
     {

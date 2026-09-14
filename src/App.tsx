@@ -13,6 +13,7 @@ import OrcamentoRapido from "./components/OrcamentoRapido";
 import MontagemQuadros from "./components/MontagemQuadros";
 import OrdensServico from "./components/OrdensServico";
 import Financeiro from "./components/Financeiro";
+import NotasFiscais from "./components/NotasFiscais";
 import Relatorios from "./components/Relatorios";
 import Calculadora from "./components/Calculadora";
 import Perfil from "./components/Perfil";
@@ -167,6 +168,7 @@ function AppInterno() {
       produtos: { titulo: "Produtos", icone: Package },
       orcamentoRapido: { titulo: "Orçamento Rápido", icone: ClipboardList },
       quadros: { titulo: "Montagem de Quadros", icone: ClipboardList },
+      notasFiscais: { titulo: "Notas fiscais", icone: FileText },
       financeiro: { titulo: "Financeiro", icone: Wallet },
       relatorios: { titulo: "Relatórios", icone: BarChart3 },
       calculadora: { titulo: "Calculadora Elétrica", icone: CalcIcon },
@@ -274,6 +276,7 @@ function AppInterno() {
 
         {/* Financeiro */}
         {pagina === "financeiro" && <Financeiro />}
+        {pagina === "notasFiscais" && <NotasFiscais key={usuario.id} usuarioId={usuario.id} />}
         {pagina === "relatorios" && <Relatorios />}
 
         {/* Calculadora */}
