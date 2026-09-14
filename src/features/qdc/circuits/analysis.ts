@@ -1,5 +1,6 @@
 import { CATALOG } from '../electrical-components/catalog.ts';
 import { fits } from '../editor/operations.ts';
+import { isRailMounted } from '../wiring/routing.ts';
 import type { Circuit, Material, Project, Supply, Warning } from '../types.ts';
 
 export function availablePhases(supply: Supply): string[] {
@@ -37,11 +38,11 @@ export function warnings(project: Project): Warning[] {
   const result: Warning[] = [];
   const available = availablePhases(project.supply);
   const connections = new Set(project.wires.flatMap(wire => [`${wire.sourceComponent}:${wire.sourceTerminal}`, `${wire.targetComponent}:${wire.targetTerminal}`]));
-  if (project.devices.reduce((sum, device) => sum + device.modules, 0) > project.rails * project.modulesPerRail) result.push({ id: 'capacity', message: 'Há mais módulos utilizados que disponíveis.' });
+  if (project.devices.filter(isRailMounted).reduce((sum, device) => sum + device.modules, 0) > project.rails * project.modulesPerRail) result.push({ id: 'capacity', message: 'Há mais módulos utilizados que disponíveis.' });
   for (const device of project.devices) {
     if (!fits(project, device)) result.push({ id: `position-${device.id}`, deviceId: device.id, message: `${device.label || 'Componente'}: fora do trilho ou sobreposto.` });
     if (!device.label.trim()) result.push({ id: `label-${device.id}`, deviceId: device.id, message: 'Componente sem identificação.' });
-    const disconnected = device.terminals.filter(term => !connections.has(`${device.id}:${term.id}`));
+    const disconnected = device.type === 'comb-bus' ? [] : device.terminals.filter(term => !connections.has(`${device.id}:${term.id}`));
     if (disconnected.length) result.push({ id: `terminal-${device.id}`, deviceId: device.id, message: `${device.label}: ${disconnected.length} terminal(is) sem conexão no desenho. Entradas e saídas externas podem ficar abertas.` });
   }
   for (const wire of project.wires) {
@@ -70,7 +71,8 @@ export function materialList(project: Project): Material[] {
   for (const device of project.devices) {
     const catalog = CATALOG.find(item => item.type === device.type);
     const characteristics = [
-      `${device.modules} módulos`, `${device.poles} polos/pontos`,
+      device.type === 'comb-bus' ? `${device.modules} encaixes` : device.type === 'neutral-bus' || device.type === 'earth-bus' ? `${device.poles} bornes` : `${device.modules} módulos`,
+      device.type === 'comb-bus' ? ({ 1: 'unipolar', 2: 'bipolar', 4: 'tetrapolar' } as Record<number, string>)[device.poles] : device.type === 'neutral-bus' || device.type === 'earth-bus' ? '' : `${device.poles} polos/pontos`,
       device.amperage === null ? 'corrente a definir' : `${device.amperage} A`,
       device.type.includes('breaker') ? `curva ${device.curve}` : '',
       device.type.startsWith('rcd-') ? device.sensitivity > 0 ? `${device.sensitivity} mA` : 'sensibilidade a definir' : '',

@@ -13,14 +13,14 @@ import { addDevice, connect, deleteSelection, fits, moveDevices, organize, updat
 import { demoProject, emptyProject } from '../projects/factory';
 import { loadProjects, parseProjectFile, saveProjects } from '../projects/storage';
 import { warnings } from '../circuits/analysis';
-import { routeWires } from '../wiring/routing';
+import { isRailMounted, routeWires } from '../wiring/routing';
+import { TERMINATION_OPTIONS, WIRE_COLORS, WIRE_GAUGES } from '../wiring/options';
 import { exportMaterials, exportPDF, exportPNG, exportProject } from '../export/documents';
 import { PRELIMINARY_NOTICE, type Circuit, type Device, type Project, type Selection, type Tool, type ViewMode, type Viewport, type Wire, type WireOptions } from '../types';
 import '../editor.css';
 
 const NO_SELECTION: Selection = { devices: [], wire: null };
 const VIEW_LABELS: Record<ViewMode, string> = { realistic: 'Realista', schematic: 'Esquemático', installation: 'Instalação', labels: 'Identificação' };
-const COLORS = { phase: '#242932', neutral: '#1686cf', earth: '#238747', return: '#8055b5' };
 
 export default function QdcEditor({ usuarioId, aoAlterar }: { usuarioId: string; aoAlterar(alterado: boolean): void }) {
   const [initial] = useState(() => loadProjects(localStorage, usuarioId));
@@ -36,7 +36,7 @@ export default function QdcEditor({ usuarioId, aoAlterar }: { usuarioId: string;
   const [mode, setMode] = useState<ViewMode>('realistic');
   const [viewport, setViewport] = useState<Viewport>({ x: 0, y: 0, zoom: 1 });
   const [wireStart, setWireStart] = useState<{ componentId: string; terminalId: string } | null>(null);
-  const [wireOptions, setWireOptions] = useState<WireOptions>({ conductorType: 'phase', color: COLORS.phase, gauge: null });
+  const [wireOptions, setWireOptions] = useState<WireOptions>({ conductorType: 'phase', color: WIRE_COLORS.phase[0].value, gauge: 2.5, termination: 'tubular' });
   const [dialog, setDialog] = useState<'new' | 'auto' | 'projects' | 'saveAs' | 'help' | null>(null);
   const [copyName, setCopyName] = useState('');
   const [bottom, setBottom] = useState<'circuits' | 'materials' | 'warnings' | 'history'>('circuits');
@@ -49,7 +49,7 @@ export default function QdcEditor({ usuarioId, aoAlterar }: { usuarioId: string;
   const clipboard = useRef<QdcClipboard | null>(null);
   const importInput = useRef<HTMLInputElement>(null);
   const notices = useMemo(() => warnings(project), [project]);
-  const used = project.devices.reduce((n, d) => n + d.modules, 0), total = project.rails * project.modulesPerRail;
+  const used = project.devices.filter(isRailMounted).reduce((n, d) => n + d.modules, 0), total = project.rails * project.modulesPerRail;
   const dirty = fingerprint !== savedFingerprint;
 
   function persist(next: Project, announce = false): boolean {
@@ -185,13 +185,13 @@ export default function QdcEditor({ usuarioId, aoAlterar }: { usuarioId: string;
       <button className="ewq-icon ewq-panel-toggle" aria-label="Abrir biblioteca de componentes" aria-pressed={panel === 'library'} onClick={() => setPanel(panel === 'library' ? null : 'library')}><Boxes size={18} /></button>
       <button className="ewq-icon ewq-panel-toggle" aria-label="Abrir propriedades" aria-pressed={panel === 'properties'} onClick={() => setPanel(panel === 'properties' ? null : 'properties')}><Settings2 size={18} /></button>
     </div>
-    {tool === 'wire' && <div className="ewq-wire-controls"><strong>{wireStart ? '2. Escolha o terminal de destino' : '1. Escolha o terminal de origem'}</strong><label>Condutor<select value={wireOptions.conductorType} onChange={e => { const type = e.target.value as WireOptions['conductorType']; setWireOptions({ ...wireOptions, conductorType: type, color: COLORS[type] }); }}><option value="phase">Fase</option><option value="neutral">Neutro</option><option value="earth">Terra / PE</option><option value="return">Retorno</option></select></label><label>Cor<select value={wireOptions.color} onChange={e => setWireOptions({ ...wireOptions, color: e.target.value })}>{(wireOptions.conductorType === 'phase' ? [['#242932', 'Preto'], ['#c73535', 'Vermelho'], ['#805334', 'Marrom']] : wireOptions.conductorType === 'return' ? [['#8055b5', 'Violeta'], ['#e67e22', 'Laranja']] : [[COLORS[wireOptions.conductorType], wireOptions.conductorType === 'earth' ? 'Verde/amarelo' : 'Azul']]).map(([v, n]) => <option key={v} value={v}>{n}</option>)}</select></label><label>Bitola<select value={wireOptions.gauge ?? ''} onChange={e => setWireOptions({ ...wireOptions, gauge: e.target.value ? Number(e.target.value) : null })}><option value="">A definir</option>{[1.5, 2.5, 4, 6, 10, 16, 25, 35].map(g => <option key={g} value={g}>{g} mm²</option>)}</select></label><button className="ewq-button" onClick={() => { setTool('select'); setWireStart(null); }}>Concluir</button></div>}
+    {tool === 'wire' && <div className="ewq-wire-controls"><strong>{wireStart ? '2. Escolha o terminal de destino' : '1. Escolha o terminal de origem'}</strong><label>Condutor<select value={wireOptions.conductorType} onChange={e => { const conductorType = e.target.value as WireOptions['conductorType']; setWireOptions({ ...wireOptions, conductorType, color: WIRE_COLORS[conductorType][0].value }); }}><option value="phase">Fase</option><option value="neutral">Neutro</option><option value="earth">Terra / PE</option><option value="return">Retorno</option></select></label><label>Bitola<select value={wireOptions.gauge ?? ''} onChange={e => setWireOptions({ ...wireOptions, gauge: e.target.value ? Number(e.target.value) : null })}><option value="">A definir</option>{WIRE_GAUGES.map(gauge => <option key={gauge} value={gauge}>{gauge} mm²</option>)}</select></label><fieldset className="ewq-wire-color-picker"><legend>Cor</legend>{WIRE_COLORS[wireOptions.conductorType].map(color => <button key={color.value} type="button" className={wireOptions.color === color.value ? 'is-active' : ''} aria-label={color.label} aria-pressed={wireOptions.color === color.value} title={color.label} onClick={() => setWireOptions({ ...wireOptions, color: color.value })}><span style={{ background: color.value }} /></button>)}</fieldset><label>Terminal<select value={wireOptions.termination} onChange={e => setWireOptions({ ...wireOptions, termination: e.target.value as WireOptions['termination'] })}>{TERMINATION_OPTIONS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label><button className="ewq-button" onClick={() => { setTool('select'); setWireStart(null); }}>Concluir</button></div>}
     {message && <div className="ewq-feedback" role="status"><span>{message}</span><button className="ewq-icon" aria-label="Fechar mensagem" onClick={() => setMessage('')}><X size={14} /></button></div>}
     <div className={`ewq-workbench ewq-show-${panel ?? 'canvas'}`}>
       <aside className="ewq-library"><ComponentLibrary onAdd={type => add(type)} /></aside>
       <section className="ewq-canvas-panel" aria-label="Área de desenho do quadro"><div className="ewq-canvas-meta"><span><span className="ewq-live-dot" /> VISTA FRONTAL / {VIEW_LABELS[mode].toUpperCase()}</span><span>{project.widthMm} × {project.heightMm} mm</span></div>
         <BoardCanvas project={project} selection={selection} tool={tool} mode={mode} viewport={viewport} onViewport={setViewport} onSelect={setSelection} onMove={(ids, r, s) => run(() => moveDevices(project, ids, r, s), 'Mover dispositivos')} onAdd={add} onTerminal={terminal} wireStart={wireStart} onContextMenu={(x, y, id) => { if (id && !selection.devices.includes(id)) setSelection({ devices: [id], wire: null }); setContext({ x, y }); }} onMessage={setMessage} />
-        <div className="ewq-canvas-footer"><span>{tool === 'wire' ? 'Conecte exclusivamente pelos terminais.' : tool === 'pan' ? 'Arraste para mover a vista.' : 'Arraste para encaixar · Shift para seleção múltipla'}</span><span className="ewq-wire-legend" aria-label="Legenda dos condutores"><i className="is-phase" />Fase<i className="is-neutral" />Neutro<i className="is-earth" />PE <b>{project.devices.length} disp. · {project.wires.length} fios</b></span></div>
+        <div className="ewq-canvas-footer"><span>{tool === 'wire' ? 'Escolha bitola, cor e terminal; depois clique na origem e no destino.' : tool === 'pan' ? 'Arraste para mover a vista.' : 'Arraste para encaixar · Shift para seleção múltipla'}</span><span className="ewq-wire-legend" aria-label="Legenda dos condutores"><i className="is-phase" />Fase<i className="is-neutral" />Neutro<i className="is-earth" />PE <b>{project.devices.length} disp. · {project.wires.length} fios</b></span></div>
       </section>
       <aside className="ewq-properties"><PropertiesPanel project={project} selection={selection} onUpdateDevice={editDevice} onUpdateWire={editWire} onDelete={remove} onDuplicate={duplicate} onUpdateProject={editProject} /></aside>
     </div>

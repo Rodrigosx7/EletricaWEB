@@ -34,6 +34,8 @@ export function automaticProject(config: Partial<Project>, names: string[]): Pro
   const dr = { ...createDevice(count > 1 ? 'rcd-4p' : 'rcd-2p'), label: 'DR · seleção a definir' };
   const neutral = { ...createDevice('neutral-bus'), label: 'Neutro após DR' };
   const earth = { ...createDevice('earth-bus'), label: 'Proteção PE' };
+  const powerEntry = { ...createDevice('power-entry'), label: 'Entrada da rede', poles: count, terminals: buildTerminals('power-entry', count), edgeSide: 'top' as const, edgeOffset: 16 };
+  project.devices = [...project.devices, powerEntry];
   project = place(project, general);
   const spds: Device[] = [];
   for (let i = 0; i < count; i++) {
@@ -41,45 +43,36 @@ export function automaticProject(config: Partial<Project>, names: string[]): Pro
     spds.push(spd); project = place(project, spd);
   }
   for (const device of [dr, neutral, earth]) project = place(project, device);
-  let phaseComb: Device | null = null;
-  if (count === 1 && names.length > 0) {
-    const poles = names.length + 1;
-    const comb = createDevice('comb-bus');
-    phaseComb = {
-      ...comb,
-      label: 'Pente de fase · esquema visual',
-      poles,
-      modules: Math.max(2, Math.ceil(poles / 2)),
-      terminals: buildTerminals(comb.type, poles),
-    };
-    project = place(project, phaseComb);
-  }
   for (const [index, name] of names.entries()) {
-    const breaker = { ...createDevice('breaker-1p'), label: `C${index + 1} ${name.trim() || 'Novo circuito'}` };
+    const breaker = { ...createDevice('breaker-1p'), label: name.trim() || 'Novo circuito' };
     const phase = ['R', 'S', 'T'][index % count];
     const entry = circuit(index + 1, name.trim(), project, breaker, dr, phase);
     project = place(project, { ...breaker, circuitId: entry.id });
     project.circuits = [...project.circuits, entry];
   }
-  const phaseOptions = { conductorType: 'phase' as const, color: '#20252b', gauge: null };
-  const neutralOptions = { conductorType: 'neutral' as const, color: '#1686cf', gauge: null };
-  const earthOptions = { conductorType: 'earth' as const, color: '#27854c', gauge: null };
+  let phaseComb: Device | null = null;
+  if (count === 1 && names.length > 1) {
+    const breakers = project.devices.filter(device => device.type === 'breaker-1p' && device.circuitId);
+    const comb = createDevice('comb-bus');
+    phaseComb = { ...comb, label: 'Barramento pente', poles: 1, amperage: 63, rail: breakers[0].rail, slot: breakers[0].slot, modules: breakers.length, terminals: [] };
+    project.devices = [...project.devices, phaseComb];
+  }
+  const phaseOptions = { conductorType: 'phase' as const, color: '#20252b', gauge: null, termination: 'tubular' as const };
+  const neutralOptions = { conductorType: 'neutral' as const, color: '#1686cf', gauge: null, termination: 'tubular' as const };
+  const earthOptions = { conductorType: 'earth' as const, color: '#27854c', gauge: null, termination: 'tubular' as const };
   const endpoint = (device: Device, terminalId: string) => ({ componentId: device.id, terminalId });
   for (let i = 0; i < count; i++) {
+    project = connect(project, endpoint(powerEntry, `edge-${i}`), endpoint(general, `top-${i}`), phaseOptions);
     project = connect(project, endpoint(general, `bottom-${i}`), endpoint(dr, `top-${i}`), phaseOptions);
     project = connect(project, endpoint(general, `bottom-${i}`), endpoint(spds[i], 'top-0'), phaseOptions);
-    project = connect(project, endpoint(spds[i], 'bottom-0'), endpoint(earth, `top-${i}`), earthOptions);
+    project = connect(project, endpoint(spds[i], 'bottom-0'), endpoint(earth, `side-${i}`), earthOptions);
   }
   const neutralIndex = dr.poles - 1;
-  project = connect(project, endpoint(dr, `bottom-${neutralIndex}`), endpoint(neutral, 'top-0'), neutralOptions);
-  if (phaseComb) {
-    project = connect(project, endpoint(dr, 'bottom-0'), endpoint(phaseComb, 'top-0'), phaseOptions);
-  }
+  project = connect(project, endpoint(dr, `bottom-${neutralIndex}`), endpoint(neutral, 'side-0'), neutralOptions);
   for (const [index, entry] of project.circuits.entries()) {
     const device = project.devices.find(item => item.id === entry.breakerId)!;
     const phaseIndex = ['R', 'S', 'T'].indexOf(entry.phase);
-    const source = phaseComb ? endpoint(phaseComb, `top-${index + 1}`) : endpoint(dr, `bottom-${phaseIndex}`);
-    project = connect(project, source, endpoint(device, 'top-0'), phaseOptions);
+    if (!phaseComb || index === 0) project = connect(project, endpoint(dr, `bottom-${phaseIndex}`), endpoint(device, 'top-0'), phaseOptions);
   }
   return routeWires(project);
 }
@@ -122,8 +115,12 @@ export function migrateLegacy(value: unknown): Project | null {
     id: old.id, sourceComponent: old.origem.componente, sourceTerminal: `${old.origem.lado === 'superior' ? 'top' : 'bottom'}-${old.origem.numero}`,
     targetComponent: old.destino.componente, targetTerminal: `${old.destino.lado === 'superior' ? 'top' : 'bottom'}-${old.destino.numero}`,
     conductorType: old.cor === '#1686cf' ? 'neutral' : old.cor === '#27854c' ? 'earth' : 'phase',
-    color: old.cor, gauge: null, label: old.identificacao, path: [],
+    color: old.cor, gauge: null, label: old.identificacao, path: [], sourceTermination: 'tubular', targetTermination: 'tubular',
   }));
+  for (const wire of wires) {
+    if ((wire.targetComponent === '@N' || wire.targetComponent === '@PE') && wire.targetTerminal.startsWith('top-')) wire.targetTerminal = wire.targetTerminal.replace('top-', 'side-');
+    if ((wire.sourceComponent === '@N' || wire.sourceComponent === '@PE') && wire.sourceTerminal.startsWith('top-')) wire.sourceTerminal = wire.sourceTerminal.replace('top-', 'side-');
+  }
   project = routeWires({ ...project, wires });
   return validateProject(project) ? project : null;
 }

@@ -59,6 +59,11 @@
 .ewq-wire-endpoints strong { font-size: 12px; font-weight: 550; overflow-wrap: anywhere; }
 .ewq-wire-endpoints small { font-size: 12px; color: #677983; }
 .ewq-wire-endpoints > div > span { color: #637682; }
+.ewq-color-palette { display: flex; flex-wrap: wrap; gap: 6px; }
+.ewq-panel .ewq-color-palette button { display: inline-flex; align-items: center; gap: 5px; min-height: 34px; padding: 5px 7px; border: 1px solid #d6dfe4; border-radius: 4px; background: #fff; color: #40545f; }
+.ewq-panel .ewq-color-palette button.is-active { border-color: #947313; box-shadow: 0 0 0 1px #d2ad30; background: #fffaf0; }
+.ewq-color-palette button > span, .ewq-fixed-color > span, .ewq-ferrule-swatch { display: inline-block; width: 16px; height: 16px; border: 1px solid #738087; border-radius: 50%; flex: 0 0 auto; }
+.ewq-fixed-color { display: flex; align-items: center; gap: 8px; min-height: 35px; padding: 7px 8px; border: 1px solid #d6dfe4; border-radius: 4px; background: #f7f9f9; color: #40545f; font-weight: 400; }
 .ewq-selection-list { list-style: none; padding: 0; display: grid; gap: 7px; }
 .ewq-selection-list li { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 7px 0; border-bottom: 1px solid #edf0f2; }
 .ewq-selection-list small { white-space: nowrap; font-size: 12px; color: #617580; }

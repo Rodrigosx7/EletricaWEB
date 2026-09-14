@@ -1,17 +1,25 @@
-import { CATALOG, buildTerminals, createDevice } from '../electrical-components/catalog.ts';
-import { routeWires } from '../wiring/routing.ts';
-import type { Circuit, Device, Project, Selection, Terminal, WireOptions } from '../types.ts';
+import { CATALOG, DPS_MODELS, buildTerminals, createDevice } from '../electrical-components/catalog.ts';
+import { deviceMount, isRailMounted, routeWires } from '../wiring/routing.ts';
+import type { Circuit, Device, Project, Selection, Terminal, WireOptions, WireTermination } from '../types.ts';
 
 type Endpoint = { componentId: string; terminalId: string };
 const isBreaker = (type: string) => type.startsWith('breaker-') || type === 'main-breaker' || type.startsWith('rcbo-') || type.startsWith('motor-breaker-');
 const isRcd = (type: string) => type.startsWith('rcd-') || type.startsWith('rcbo-');
+const isCircuitBreaker = (type: string) => isBreaker(type) && type !== 'main-breaker';
 const stamp = (project: Project) => routeWires({ ...project, updatedAt: new Date().toISOString() });
+const terminations: WireTermination[] = ['tubular', 'pente', 'olhal', 'garfo', 'pino', 'sem-terminal'];
 
 export function fits(project: Project, device: Device): boolean {
+  if (!Number.isInteger(device.modules) || device.modules < 1) return false;
+  const mount = deviceMount(device);
+  if (mount === 'edge') return ['top', 'bottom', 'left', 'right'].includes(device.edgeSide ?? 'top') && Number.isFinite(device.edgeOffset ?? 50) && (device.edgeOffset ?? 50) >= 0 && (device.edgeOffset ?? 50) <= 100;
+  if (mount === 'overlay') return Number.isInteger(device.rail) && device.rail >= 0 && device.rail < project.rails &&
+    Number.isInteger(device.slot) && device.slot >= 0 && device.slot + device.modules <= project.modulesPerRail &&
+    !project.devices.some(other => other.id !== device.id && deviceMount(other) === 'overlay' && other.rail === device.rail && other.slot < device.slot + device.modules && device.slot < other.slot + other.modules);
   return Number.isInteger(device.modules) && device.modules >= 1 &&
     Number.isInteger(device.rail) && device.rail >= 0 && device.rail < project.rails &&
     Number.isInteger(device.slot) && device.slot >= 0 && device.slot + device.modules <= project.modulesPerRail &&
-    !project.devices.some(other => other.id !== device.id && other.rail === device.rail &&
+    !project.devices.some(other => other.id !== device.id && isRailMounted(other) && other.rail === device.rail &&
       other.slot < device.slot + device.modules && device.slot < other.slot + other.modules);
 }
 
@@ -19,7 +27,7 @@ export function firstSpace(project: Project, modules: number): { rail: number; s
   if (!Number.isInteger(modules) || modules < 1) return null;
   for (let rail = 0; rail < project.rails; rail++) {
     for (let slot = 0; slot <= project.modulesPerRail - modules; slot++) {
-      if (fits(project, { id: '', modules, rail, slot } as Device)) return { rail, slot };
+      if (fits(project, { id: '', modules, rail, slot, mount: 'rail' } as Device)) return { rail, slot };
     }
   }
   return null;
@@ -27,7 +35,16 @@ export function firstSpace(project: Project, modules: number): { rail: number; s
 
 export function addDevice(project: Project, type: string, position?: { rail: number; slot: number }): Project {
   const device = createDevice(type);
-  const place = position ?? firstSpace(project, device.modules);
+  if (deviceMount(device) === 'edge') {
+    const count = project.devices.filter(item => deviceMount(item) === 'edge' && (item.edgeSide ?? 'top') === (device.edgeSide ?? 'top')).length;
+    const placed = { ...device, ...(position ?? {}), edgeOffset: Math.min(90, 15 + count * 15) };
+    return stamp({ ...project, devices: [...project.devices, placed] });
+  }
+  const overlayPlace = deviceMount(device) === 'overlay' ? {
+    rail: position?.rail ?? 0,
+    slot: position?.slot ?? Math.max(0, project.devices.filter(isRailMounted).find(item => isCircuitBreaker(item.type))?.slot ?? 0),
+  } : null;
+  const place = overlayPlace ?? position ?? firstSpace(project, device.modules);
   if (!place) throw new Error('Não há módulos livres suficientes. Amplie o quadro ou reorganize os componentes.');
   const placed = { ...device, ...place };
   if (!fits(project, placed)) throw new Error('Posição ocupada ou fora do trilho DIN.');
@@ -56,8 +73,25 @@ export function updateDevice(project: Project, id: string, patch: Partial<Device
   if (!original) throw new Error('Componente não encontrado.');
   let device = { ...original, ...patch, id: original.id };
   if (!CATALOG.some(item => item.type === device.type)) throw new Error('Tipo de componente desconhecido.');
+  if (device.type === 'spd') {
+    const model = DPS_MODELS.find(item => item.id === device.model) ?? DPS_MODELS[0];
+    device = { ...device, label: 'DPS', model: model.id, amperage: null, poles: 1, modules: 1, voltage: model.voltage, surgeCurrent: model.surgeCurrent, description: model.description, circuitId: null, color: '#20252b', terminals: buildTerminals('spd', 1), mount: 'rail' };
+  }
+  if (device.type === 'neutral-bus' || device.type === 'earth-bus') {
+    if (!Number.isInteger(device.poles) || device.poles < 2 || device.poles > 24) throw new Error('Escolha entre 2 e 24 bornes.');
+    device = { ...device, modules: 1, amperage: null, gauge: null, voltage: 0, surgeCurrent: 0, circuitId: null, description: '', color: device.type === 'neutral-bus' ? '#1686cf' : '#27854c', terminals: buildTerminals(device.type, device.poles) };
+  }
+  if (device.type === 'comb-bus') {
+    if (![1, 2, 4].includes(device.poles)) throw new Error('Escolha pente unipolar, bipolar ou tetrapolar.');
+    if (!Number.isInteger(device.modules) || device.modules < 2 || device.modules > 24) throw new Error('Escolha entre 2 e 24 encaixes para o pente.');
+    device = { ...device, mount: 'overlay', terminals: [], circuitId: null, gauge: null, voltage: 0, surgeCurrent: 0 };
+  }
+  if (device.type === 'power-entry' || device.type === 'conduit-entry') {
+    if (!Number.isInteger(device.poles) || device.poles < 1 || device.poles > 12) throw new Error('Escolha entre 1 e 12 fios.');
+    device = { ...device, mount: 'edge', modules: 1, terminals: buildTerminals(device.type, device.poles), circuitId: null, gauge: null, voltage: 0, surgeCurrent: 0 };
+  }
   if (device.poles !== original.poles || device.type !== original.type) {
-    if (!Number.isInteger(device.poles) || device.poles < 1 || device.poles > 12) throw new Error('Quantidade de polos inválida.');
+    if (!Number.isInteger(device.poles) || device.poles < 1 || device.poles > 24) throw new Error('Quantidade de polos inválida.');
     if ((isBreaker(device.type) || isRcd(device.type)) && device.poles > 4) throw new Error('Disjuntores e DR aceitam até quatro polos neste editor.');
     if (device.type.startsWith('rcd-') && ![2, 4].includes(device.poles)) throw new Error('Selecione DR bipolar ou tetrapolar.');
     if (device.type.startsWith('rcbo-') && device.poles !== 2) throw new Error('O dispositivo combinado disponível usa dois polos neste editor.');
@@ -68,14 +102,24 @@ export function updateDevice(project: Project, id: string, patch: Partial<Device
       if (device.type.startsWith('breaker-') && device.poles <= 3) device.type = `breaker-${device.poles}p`;
       if (device.type.startsWith('rcd-')) device.type = `rcd-${device.poles}p`;
     }
-    device.terminals = buildTerminals(device.type, device.poles);
+    if (device.type !== 'comb-bus') device.terminals = buildTerminals(device.type, device.poles);
   }
   if (!fits(project, device)) throw new Error('A alteração não cabe neste espaço do trilho.');
   if (!deviceShape(device)) throw new Error('Revise as características do componente: valores numéricos e identificação.');
   if (device.circuitId && (!isBreaker(device.type) || !project.circuits.some(circuit => circuit.id === device.circuitId))) throw new Error('Vincule um circuito existente a um disjuntor.');
+  let circuits = [...project.circuits];
+  if (isCircuitBreaker(device.type) && patch.label !== undefined && device.label.trim()) {
+    let linked = circuits.find(circuit => circuit.id === device.circuitId);
+    if (!linked) {
+      const nextNumber = Math.max(0, ...circuits.map(circuit => circuit.number)) + 1;
+      linked = { id: crypto.randomUUID(), number: nextNumber, name: device.label.trim(), phase: project.supply === 'tri' ? 'R' : 'R', breakerId: id, cableGauge: device.gauge, load: null, loadUnit: 'W', voltage: project.voltage, powerFactor: 1, drId: null, notes: '', color: device.color };
+      circuits = [...circuits, linked];
+      device = { ...device, circuitId: linked.id };
+    }
+  }
   let devices = project.devices.map(entry => entry.id === id ? device : entry);
   if (device.circuitId) devices = devices.map(entry => entry.id !== id && entry.circuitId === device.circuitId ? { ...entry, circuitId: null } : entry);
-  const circuits = project.circuits.map(circuit => {
+  circuits = circuits.map(circuit => {
     if (circuit.id === device.circuitId) return {
       ...circuit, breakerId: id, cableGauge: device.gauge,
       name: patch.label !== undefined ? device.label.replace(/^C\d+\s*[·–—-]?\s*/, '') : circuit.name,
@@ -124,18 +168,20 @@ export function duplicateSelection(project: Project, ids: string[]): Project {
 export function connect(project: Project, source: Endpoint, target: Endpoint, options: WireOptions): Project {
   if (!validEndpoint(project, source) || !validEndpoint(project, target)) throw new Error('Escolha terminais existentes para conectar.');
   if (source.componentId === target.componentId && source.terminalId === target.terminalId) throw new Error('Escolha outro terminal para concluir o fio.');
-  if (!['phase', 'neutral', 'earth', 'return'].includes(options.conductorType) || !color(options.color) || !nullablePositive(options.gauge)) throw new Error('Revise a cor e a seção do condutor.');
+  if (!['phase', 'neutral', 'earth', 'return'].includes(options.conductorType) || !color(options.color) || !nullablePositive(options.gauge) || !terminations.includes(options.termination)) throw new Error('Revise a cor, a seção e o terminal do condutor.');
   if (project.wires.some(wire => (wire.sourceComponent === source.componentId && wire.sourceTerminal === source.terminalId && wire.targetComponent === target.componentId && wire.targetTerminal === target.terminalId) || (wire.sourceComponent === target.componentId && wire.sourceTerminal === target.terminalId && wire.targetComponent === source.componentId && wire.targetTerminal === source.terminalId))) throw new Error('Esses terminais já estão conectados.');
   return stamp({ ...project, wires: [...project.wires, {
     id: crypto.randomUUID(), sourceComponent: source.componentId, sourceTerminal: source.terminalId,
     targetComponent: target.componentId, targetTerminal: target.terminalId,
     conductorType: options.conductorType, color: options.color, gauge: options.gauge, label: '', path: [],
+    sourceTermination: options.termination, targetTermination: options.termination,
   }] });
 }
 
 export function organize(project: Project): Project {
-  const originalOrder = [...project.devices].sort((a, b) => a.rail - b.rail || a.slot - b.slot);
-  let result = { ...project, devices: [] as Device[] };
+  const fixed = project.devices.filter(device => !isRailMounted(device));
+  const originalOrder = project.devices.filter(isRailMounted).sort((a, b) => a.rail - b.rail || a.slot - b.slot);
+  let result = { ...project, devices: fixed };
   for (const device of originalOrder) {
     const place = firstSpace(result, device.modules);
     if (!place) throw new Error('Não há espaço suficiente para organizar o quadro.');
@@ -154,7 +200,7 @@ export function updateCircuit(project: Project, id: string, patch: Partial<Circu
   if (project.circuits.some(other => other.id !== id && other.number === circuit.number)) throw new Error('Já existe um circuito com esse número.');
   const circuits = project.circuits.map(entry => entry.id === id ? circuit : entry.breakerId && entry.breakerId === circuit.breakerId ? { ...entry, breakerId: null } : entry);
   const devices = project.devices.map(device => {
-    if (device.id === circuit.breakerId) return { ...device, circuitId: id, label: `C${circuit.number} ${circuit.name}`, gauge: circuit.cableGauge, color: circuit.color };
+    if (device.id === circuit.breakerId) return { ...device, circuitId: id, label: circuit.name, gauge: circuit.cableGauge, color: circuit.color };
     return device.circuitId === id ? { ...device, circuitId: null } : device;
   });
   return stamp({ ...project, circuits, devices });
@@ -173,14 +219,18 @@ const integer = (value: unknown, min: number, max: number): value is number => t
 function deviceShape(value: unknown): value is Device {
   if (!record(value) || !identifier(value.id) || !CATALOG.some(item => item.type === value.type) ||
     !text(value.label) || !integer(value.rail, 0, 11) || !integer(value.slot, 0, 71) || !integer(value.modules, 1, 72) ||
-    !integer(value.poles, 1, 12) || !nullablePositive(value.amperage) || !['B', 'C', 'D'].includes(value.curve as string) ||
+    !integer(value.poles, 1, 24) || !nullablePositive(value.amperage) || !['B', 'C', 'D'].includes(value.curve as string) ||
     !nullablePositive(value.gauge) || !nonnegative(value.sensitivity) || !nonnegative(value.voltage) || !nonnegative(value.surgeCurrent) ||
-    !text(value.description) || !nullableId(value.circuitId) || !color(value.color) || !Array.isArray(value.terminals) || value.terminals.length > 32) return false;
+    !text(value.description) || !nullableId(value.circuitId) || !color(value.color) || !Array.isArray(value.terminals) || value.terminals.length > 32 ||
+    (value.mount !== undefined && !['rail', 'edge', 'overlay'].includes(value.mount as string)) ||
+    (value.edgeSide !== undefined && !['top', 'bottom', 'left', 'right'].includes(value.edgeSide as string)) ||
+    (value.edgeOffset !== undefined && (!nonnegative(value.edgeOffset) || value.edgeOffset > 100)) ||
+    (value.model !== undefined && !text(value.model))) return false;
   const ids = new Set<string>();
   const indices = new Set<string>();
-  if (!value.terminals.length) return false;
+  if (!value.terminals.length) return value.type === 'comb-bus';
   return value.terminals.every(term => {
-    if (!record(term) || !identifier(term.id) || ids.has(term.id) || !text(term.label) || !['top', 'bottom'].includes(term.side as string) || !integer(term.index, 0, 31) || !['L', 'N', 'PE', 'control'].includes(term.kind as string)) return false;
+    if (!record(term) || !identifier(term.id) || ids.has(term.id) || !text(term.label) || !['top', 'bottom', 'left', 'right'].includes(term.side as string) || !integer(term.index, 0, 31) || !['L', 'N', 'PE', 'control'].includes(term.kind as string)) return false;
     const location = `${term.side}-${term.index}`;
     if (indices.has(location)) return false;
     ids.add(term.id); indices.add(location); return true;
@@ -215,6 +265,8 @@ export function validateProject(value: unknown): value is Project {
   for (const wire of value.wires) {
     if (!record(wire) || !identifier(wire.id) || wireIds.has(wire.id) || !identifier(wire.sourceComponent) || !identifier(wire.sourceTerminal) || !identifier(wire.targetComponent) || !identifier(wire.targetTerminal) ||
       !['phase', 'neutral', 'earth', 'return'].includes(wire.conductorType as string) || !color(wire.color) || !nullablePositive(wire.gauge) || !text(wire.label) || !Array.isArray(wire.path) || wire.path.length > 128 ||
+      (wire.sourceTermination !== undefined && !terminations.includes(wire.sourceTermination as WireTermination)) ||
+      (wire.targetTermination !== undefined && !terminations.includes(wire.targetTermination as WireTermination)) ||
       !wire.path.every(point => record(point) && typeof point.x === 'number' && Number.isFinite(point.x) && typeof point.y === 'number' && Number.isFinite(point.y)) ||
       !validEndpoint(project, { componentId: wire.sourceComponent, terminalId: wire.sourceTerminal }) || !validEndpoint(project, { componentId: wire.targetComponent, terminalId: wire.targetTerminal })) return false;
     const endpoints = [`${wire.sourceComponent}\0${wire.sourceTerminal}`, `${wire.targetComponent}\0${wire.targetTerminal}`];

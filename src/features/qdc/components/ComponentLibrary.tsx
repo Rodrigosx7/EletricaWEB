@@ -7,7 +7,14 @@ import './panels.css';
 export type ComponentLibraryProps = { onAdd(type: string): void };
 
 const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-const categoryIcons = { Proteção: ShieldCheck, Distribuição: Cable, Automação: SlidersHorizontal, Outros: Boxes };
+const categoryIcons = { Proteção: ShieldCheck, Distribuição: Cable, Infraestrutura: CircuitBoard, Automação: SlidersHorizontal, Outros: Boxes };
+const catalogMeta = (item: CatalogItem) => item.type === 'comb-bus'
+  ? `${item.modules} encaixes · ${({ 1: 'unipolar', 2: 'bipolar', 4: 'tetrapolar' } as Record<number, string>)[item.poles]}`
+  : item.type === 'neutral-bus' || item.type === 'earth-bus'
+    ? `${item.poles} bornes · 1 módulo`
+    : item.mount === 'edge'
+      ? `${item.poles} fios · borda do quadro`
+      : `${item.modules} ${item.modules === 1 ? 'módulo' : 'módulos'}${item.poles > 0 ? ` · ${item.poles}P` : ''}`;
 
 /** Decorative catalogue illustration. Device dimensions are defined by the editor catalogue. */
 function CatalogThumbnail({ item }: { item: CatalogItem }) {
@@ -60,7 +67,7 @@ export function ComponentLibrary({ onAdd }: ComponentLibraryProps) {
         return <details key={category} className="ewq-catalog-group" open>
           <summary><Icon size={14} aria-hidden="true" /><span>{category}</span><span className="ewq-group-count">{items.length}</span><ChevronDown size={13} aria-hidden="true" /></summary>
           <div className="ewq-catalog-items">{items.map(item => <button key={item.type} type="button" className="ewq-catalog-item" draggable onDragStart={event => { event.dataTransfer.setData('application/qdc-device', item.type); event.dataTransfer.effectAllowed = 'copy'; }} onClick={() => onAdd(item.type)} aria-label={`Adicionar ${item.name}`} title={item.description}>
-            <CatalogThumbnail item={item} /><span className="ewq-catalog-copy"><strong>{item.name}</strong><span>{item.modules} {item.modules === 1 ? 'módulo' : 'módulos'}{item.poles > 0 ? ` · ${item.poles}P` : ''}</span></span><Plus size={14} className="ewq-catalog-add" aria-hidden="true" />
+            <CatalogThumbnail item={item} /><span className="ewq-catalog-copy"><strong>{item.name}</strong><span>{catalogMeta(item)}</span></span><Plus size={14} className="ewq-catalog-add" aria-hidden="true" />
           </button>)}</div>
         </details>;
       })}

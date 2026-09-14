@@ -1,4 +1,4 @@
-import type { Device, Point, Project, Wire } from '../types.ts';
+import type { Device, DeviceMount, Point, Project, TerminalSide, Wire } from '../types.ts';
 
 export const MODULE = 44;
 export const RAIL = 210;
@@ -6,22 +6,65 @@ export const LEFT = 90;
 export const TOP = 110;
 export const DEVICE_HEIGHT = 126;
 
+export function deviceMount(device: Device): DeviceMount {
+  if (device.mount) return device.mount;
+  if (device.type === 'comb-bus') return 'overlay';
+  if (device.type === 'power-entry' || device.type === 'conduit-entry') return 'edge';
+  return 'rail';
+}
+
+export const isRailMounted = (device: Device) => deviceMount(device) === 'rail';
+
 export function boardSize(project: Project): { width: number; height: number } {
   return { width: LEFT * 2 + project.modulesPerRail * MODULE, height: TOP * 2 + (project.rails - 1) * RAIL + DEVICE_HEIGHT };
 }
 
-export function deviceRect(device: Device) {
+export function deviceRect(device: Device, project?: Project) {
+  const mount = deviceMount(device);
+  if (mount === 'overlay') return {
+    x: LEFT + device.slot * MODULE + 4,
+    y: TOP + device.rail * RAIL - 18,
+    width: Math.max(MODULE - 8, device.modules * MODULE - 8),
+    height: 26,
+  };
+  if (mount === 'edge') {
+    const size = project ? boardSize(project) : { width: LEFT * 2 + 12 * MODULE, height: TOP * 2 + DEVICE_HEIGHT };
+    const isBus = device.type === 'neutral-bus' || device.type === 'earth-bus';
+    const width = isBus ? 30 : 42;
+    const height = isBus ? 92 : 42;
+    const offset = Math.max(5, Math.min(95, device.edgeOffset ?? 50)) / 100;
+    const side = device.edgeSide ?? 'top';
+    if (side === 'top' || side === 'bottom') {
+      const x = 42 + (size.width - 84) * offset - width / 2;
+      return { x, y: side === 'top' ? 8 : size.height - height - 8, width, height };
+    }
+    const y = 42 + (size.height - 84) * offset - height / 2;
+    return { x: side === 'left' ? 8 : size.width - width - 8, y, width, height };
+  }
+  if (device.type === 'neutral-bus' || device.type === 'earth-bus') return {
+    x: LEFT + device.slot * MODULE + 8,
+    y: TOP + device.rail * RAIL + 18,
+    width: MODULE - 16,
+    height: 90,
+  };
   return { x: LEFT + device.slot * MODULE + 2, y: TOP + device.rail * RAIL, width: device.modules * MODULE - 4, height: DEVICE_HEIGHT };
+}
+
+export function terminalSide(device: Device, side: TerminalSide): TerminalSide {
+  if (deviceMount(device) !== 'edge') return side;
+  return ({ top: 'bottom', bottom: 'top', left: 'right', right: 'left' } as const)[device.edgeSide ?? 'top'];
 }
 
 export function terminalPoint(project: Project, componentId: string, terminalId: string): Point | null {
   const device = project.devices.find(d => d.id === componentId);
   const terminal = device?.terminals.find(t => t.id === terminalId);
   if (!device || !terminal) return null;
-  const peers = device.terminals.filter(t => t.side === terminal.side).sort((a, b) => a.index - b.index);
+  const side = terminalSide(device, terminal.side);
+  const peers = device.terminals.filter(t => terminalSide(device, t.side) === side).sort((a, b) => a.index - b.index);
   const index = peers.findIndex(t => t.id === terminal.id);
-  const rect = deviceRect(device);
-  return { x: rect.x + rect.width * (index + 0.5) / peers.length, y: rect.y + (terminal.side === 'bottom' ? rect.height : 0) };
+  const rect = deviceRect(device, project);
+  if (side === 'left' || side === 'right') return { x: rect.x + (side === 'right' ? rect.width : 0), y: rect.y + rect.height * (index + .5) / peers.length };
+  return { x: rect.x + rect.width * (index + .5) / peers.length, y: rect.y + (side === 'bottom' ? rect.height : 0) };
 }
 
 function compact(points: Point[]): Point[] {
@@ -37,12 +80,12 @@ function compact(points: Point[]): Point[] {
 }
 
 /** Boundary contact is allowed; passing through any device body is not. */
-export function pathAvoidsDevices(points: Point[], devices: Device[]): boolean {
+export function pathAvoidsDevices(points: Point[], devices: Device[], project?: Project): boolean {
   return points.slice(1).every((end, i) => {
     const start = points[i];
     if (start.x !== end.x && start.y !== end.y) return false;
-    return devices.every(device => {
-      const rect = deviceRect(device);
+    return devices.filter(device => deviceMount(device) !== 'overlay').every(device => {
+      const rect = deviceRect(device, project);
       if (start.x === end.x) return !(start.x > rect.x && start.x < rect.x + rect.width && Math.max(start.y, end.y) > rect.y && Math.min(start.y, end.y) < rect.y + rect.height);
       return !(start.y > rect.y && start.y < rect.y + rect.height && Math.max(start.x, end.x) > rect.x && Math.min(start.x, end.x) < rect.x + rect.width);
     });
@@ -50,10 +93,7 @@ export function pathAvoidsDevices(points: Point[], devices: Device[]): boolean {
 }
 
 type Segment = { a: Point; b: Point; horizontal: boolean };
-
-function segments(points: Point[]): Segment[] {
-  return points.slice(1).map((b, index) => ({ a: points[index], b, horizontal: points[index].y === b.y }));
-}
+const segments = (points: Point[]): Segment[] => points.slice(1).map((b, index) => ({ a: points[index], b, horizontal: points[index].y === b.y }));
 
 /** Length shared by collinear wire segments. Endpoint contact is not overlap. */
 export function pathOverlapLength(a: Point[], b: Point[]): number {
@@ -78,34 +118,40 @@ function crossings(a: Point[], b: Point[]): number {
     const horizontal = first.horizontal ? first : second;
     const vertical = first.horizontal ? second : first;
     const x = vertical.a.x, y = horizontal.a.y;
-    const insideHorizontal = x > Math.min(horizontal.a.x, horizontal.b.x) && x < Math.max(horizontal.a.x, horizontal.b.x);
-    const insideVertical = y > Math.min(vertical.a.y, vertical.b.y) && y < Math.max(vertical.a.y, vertical.b.y);
-    if (insideHorizontal && insideVertical) count++;
+    if (x > Math.min(horizontal.a.x, horizontal.b.x) && x < Math.max(horizontal.a.x, horizontal.b.x) && y > Math.min(vertical.a.y, vertical.b.y) && y < Math.max(vertical.a.y, vertical.b.y)) count++;
   }
   return count;
 }
 
-function terminalExit(point: Point, side: 'top' | 'bottom', fanLane: number, depthLane: number): Point[] {
+function terminalExit(point: Point, side: TerminalSide, fanLane: number, depthLane: number): Point[] {
   const localLane = fanLane % 12;
   const localDepth = depthLane % 12;
-  const direction = side === 'top' ? -1 : 1;
-  const depth = point.y + direction * (18 + localDepth * 4.5);
-  if (fanLane === 0) return [point, { x: point.x, y: depth }];
+  const vertical = side === 'top' || side === 'bottom';
+  const direction = side === 'top' || side === 'left' ? -1 : 1;
+  const depth = (vertical ? point.y : point.x) + direction * (18 + localDepth * 4.5);
+  if (fanLane === 0) return vertical ? [point, { x: point.x, y: depth }] : [point, { x: depth, y: point.y }];
   const fan = (localLane % 2 ? 1 : -1) * (3 + Math.floor(localLane / 2) * 2.5);
-  const stub = { x: point.x, y: point.y + direction * 8 };
-  const shifted = { x: point.x + fan, y: stub.y };
-  return [point, stub, shifted, { x: shifted.x, y: depth }];
+  if (vertical) {
+    const stub = { x: point.x, y: point.y + direction * 8 };
+    const shifted = { x: point.x + fan, y: stub.y };
+    return [point, stub, shifted, { x: shifted.x, y: depth }];
+  }
+  const stub = { x: point.x + direction * 8, y: point.y };
+  const shifted = { x: stub.x, y: point.y + fan };
+  return [point, stub, shifted, { x: depth, y: shifted.y }];
 }
 
 function route(project: Project, wire: Wire, sourceLane: number, targetLane: number, globalLane: number, occupied: Point[][]): Point[] {
   const source = terminalPoint(project, wire.sourceComponent, wire.sourceTerminal);
   const target = terminalPoint(project, wire.targetComponent, wire.targetTerminal);
-  const a = project.devices.find(d => d.id === wire.sourceComponent)?.terminals.find(t => t.id === wire.sourceTerminal);
-  const b = project.devices.find(d => d.id === wire.targetComponent)?.terminals.find(t => t.id === wire.targetTerminal);
-  if (!source || !target || !a || !b) return [];
+  const sourceDevice = project.devices.find(d => d.id === wire.sourceComponent);
+  const targetDevice = project.devices.find(d => d.id === wire.targetComponent);
+  const a = sourceDevice?.terminals.find(t => t.id === wire.sourceTerminal);
+  const b = targetDevice?.terminals.find(t => t.id === wire.targetTerminal);
+  if (!source || !target || !a || !b || !sourceDevice || !targetDevice) return [];
   const family = { phase: 0, neutral: 1, earth: 2, return: 3 }[wire.conductorType];
-  const sourceExit = terminalExit(source, a.side, sourceLane, globalLane);
-  const targetExit = terminalExit(target, b.side, targetLane, globalLane + 1).reverse();
+  const sourceExit = terminalExit(source, terminalSide(sourceDevice, a.side), sourceLane, globalLane);
+  const targetExit = terminalExit(target, terminalSide(targetDevice, b.side), targetLane, globalLane + 1).reverse();
   const from = sourceExit.at(-1)!;
   const to = targetExit[0];
   const size = boardSize(project);
@@ -122,7 +168,7 @@ function route(project: Project, wire: Wire, sourceLane: number, targetLane: num
     ...[left, right].map(x => [from, { x, y: from.y }, { x, y: to.y }, to]),
     ...[topLane, bottomLane].map(y => [from, { x: from.x, y }, { x: to.x, y }, to]),
   ];
-  const candidates = joins.map(join => compact([...sourceExit, ...join.slice(1), ...targetExit.slice(1)])).filter(points => pathAvoidsDevices(points, project.devices));
+  const candidates = joins.map(join => compact([...sourceExit, ...join.slice(1), ...targetExit.slice(1)])).filter(points => pathAvoidsDevices(points, project.devices, project));
   const distance = (points: Point[]) => points.slice(1).reduce((sum, p, i) => sum + Math.abs(p.x - points[i].x) + Math.abs(p.y - points[i].y), 0);
   const cost = (points: Point[]) => distance(points) + points.length * 5 + occupied.reduce((sum, path) => sum + pathOverlapLength(points, path) * 2500 + crossings(points, path) * 90, 0);
   candidates.sort((aPath, bPath) => cost(aPath) - cost(bPath));
@@ -146,10 +192,8 @@ export function routeWires(project: Project): Project {
     terminalUses.set(key, lane + 1);
     return lane;
   };
-  ordered.forEach((wire, globalLane) => {
-    const sourceLane = takeTerminalLane(wire.sourceComponent, wire.sourceTerminal);
-    const targetLane = takeTerminalLane(wire.targetComponent, wire.targetTerminal);
-    const path = route(project, wire, sourceLane, targetLane, globalLane, occupied);
+  ordered.forEach((wire, index) => {
+    const path = route(project, wire, takeTerminalLane(wire.sourceComponent, wire.sourceTerminal), takeTerminalLane(wire.targetComponent, wire.targetTerminal), index, occupied);
     paths.set(wire.id, path);
     if (path.length) occupied.push(path);
   });

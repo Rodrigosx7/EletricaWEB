@@ -4,10 +4,12 @@ import { CATALOG, createDevice } from '../src/features/qdc/electrical-components
 import { addDevice, connect, deleteSelection, duplicateSelection, firstSpace, fits, moveDevices, organize, updateCircuit, updateDevice, validateProject } from '../src/features/qdc/editor/operations.ts';
 import { circuitCurrent, materialList, phaseBalance, warnings } from '../src/features/qdc/circuits/analysis.ts';
 import { automaticProject, demoProject, emptyProject, migrateLegacy } from '../src/features/qdc/projects/factory.ts';
+import { parseProjectFile } from '../src/features/qdc/projects/storage.ts';
 import { boardSize, pathAvoidsDevices, pathOverlapLength, routeWires, terminalPoint } from '../src/features/qdc/wiring/routing.ts';
+import { ferruleColor } from '../src/features/qdc/wiring/options.ts';
 import type { Circuit, Project } from '../src/features/qdc/types.ts';
 
-const options = { conductorType: 'phase' as const, color: '#20252b', gauge: 2.5 };
+const options = { conductorType: 'phase' as const, color: '#20252b', gauge: 2.5, termination: 'tubular' as const };
 const endpoint = (componentId: string, terminalId = 'top-0') => ({ componentId, terminalId });
 const loadCircuit = (patch: Partial<Circuit> = {}): Circuit => ({ id: 'c1', number: 1, name: 'Carga de teste', phase: 'R', breakerId: null, cableGauge: null, load: 1000, loadUnit: 'W', voltage: 127, powerFactor: 1, drId: null, notes: '', color: '#20252b', ...patch });
 
@@ -17,7 +19,8 @@ test('catalog contains the complete QDC families with usable terminal identities
   for (const required of ['comb-bus', 'terminal', 'terminal-n', 'terminal-pe', 'rcbo-2p', 'motor-breaker-3p', 'phase-monitor', 'voltmeter', 'ammeter']) assert.ok(CATALOG.some(item => item.type === required), required);
   for (const item of CATALOG) {
     const device = createDevice(item.type);
-    assert.ok(device.terminals.length);
+    if (item.type === 'comb-bus') assert.equal(device.terminals.length, 0);
+    else assert.ok(device.terminals.length);
     assert.equal(new Set(device.terminals.map(term => term.id)).size, device.terminals.length);
     assert.equal(device.amperage, null);
     assert.equal(device.gauge, null);
@@ -80,7 +83,7 @@ test('pole changes rebuild terminals, clean removed and relabeled-neutral endpoi
   project = addDevice(project, 'rcd-2p', { rail: 0, slot: 0 });
   project = addDevice(project, 'neutral-bus', { rail: 1, slot: 0 });
   const dr = project.devices[0];
-  project = connect(project, endpoint(dr.id, 'bottom-1'), endpoint(project.devices[1].id), { ...options, conductorType: 'neutral', color: '#1686cf' });
+  project = connect(project, endpoint(dr.id, 'bottom-1'), endpoint(project.devices[1].id, 'side-0'), { ...options, conductorType: 'neutral', color: '#1686cf' });
   const changed = updateDevice(project, dr.id, { poles: 4 });
   assert.equal(changed.devices[0].modules, 4);
   assert.equal(changed.devices[0].type, 'rcd-4p');
@@ -97,7 +100,7 @@ test('circuit and device edits maintain one reciprocal breaker assignment and ca
   const changed = updateCircuit(initial, first.id, { name: 'Oficina', cableGauge: 4, color: '#ff0000', breakerId: second.breakerId });
   assert.equal(changed.circuits[1].breakerId, null);
   assert.equal(changed.devices.find(device => device.id === first.breakerId)?.circuitId, null);
-  assert.equal(changed.devices.find(device => device.id === second.breakerId)?.label, 'C1 Oficina');
+  assert.equal(changed.devices.find(device => device.id === second.breakerId)?.label, 'Oficina');
   const changedAgain = updateDevice(changed, second.breakerId!, { circuitId: second.id, gauge: 6, label: 'Ar condicionado' });
   assert.equal(changedAgain.circuits[0].breakerId, null);
   assert.equal(changedAgain.circuits[1].cableGauge, 6);
@@ -170,7 +173,54 @@ test('automatic proposal and demo preserve unknown electrical settings and valid
   assert.ok(tri.circuits.every(circuit => circuit.load === null && circuit.cableGauge === null));
   assert.ok(tri.devices.every(device => device.amperage === null && device.gauge === null));
   assert.ok(validateProject(tri));
-  assert.throws(() => automaticProject({ rails: 1, modulesPerRail: 8 }, ['Luz']), /não comporta/);
+  assert.throws(() => automaticProject({ rails: 1, modulesPerRail: 8 }, ['Luz', 'Tomadas', 'Cozinha', 'Chuveiro']), /não comporta/);
+});
+
+test('breaker identification creates and keeps a circuit without adding layout prefixes', () => {
+  let project = addDevice(emptyProject(), 'breaker-1p');
+  const breaker = project.devices[0];
+  project = updateDevice(project, breaker.id, { label: 'Tomadas cozinha' });
+  assert.equal(project.circuits.length, 1);
+  assert.equal(project.circuits[0].name, 'Tomadas cozinha');
+  assert.equal(project.circuits[0].breakerId, breaker.id);
+  assert.equal(project.devices[0].label, 'Tomadas cozinha');
+  project = updateDevice(project, breaker.id, { label: 'Forno elétrico' });
+  assert.equal(project.circuits.length, 1);
+  assert.equal(project.circuits[0].name, 'Forno elétrico');
+  assert.ok(validateProject(project));
+});
+
+test('special components use their requested mounting and connection rules', () => {
+  let project = emptyProject({ rails: 1, modulesPerRail: 12 });
+  project = addDevice(project, 'neutral-bus', { rail: 0, slot: 0 });
+  project = addDevice(project, 'earth-bus', { rail: 0, slot: 1 });
+  project = addDevice(project, 'comb-bus', { rail: 0, slot: 2 });
+  project = addDevice(project, 'power-entry');
+  project = addDevice(project, 'breaker-1p', { rail: 0, slot: 2 });
+  const [neutral, earth, comb, entry, breaker] = project.devices;
+  assert.equal(neutral.modules, 1);
+  assert.equal(neutral.color, '#1686cf');
+  assert.equal(earth.color, '#27854c');
+  assert.equal(comb.mount, 'overlay');
+  assert.equal(comb.terminals.length, 0);
+  assert.equal(entry.mount, 'edge');
+  assert.throws(() => connect(project, endpoint(comb.id), endpoint(breaker.id), options), /existentes/);
+  project = connect(project, endpoint(entry.id, 'edge-0'), endpoint(breaker.id), options);
+  assert.equal(project.wires[0].sourceTermination, 'tubular');
+  assert.ok(project.wires[0].path.length);
+  assert.ok(validateProject(project));
+});
+
+test('DPS values are model controlled and tubular colors follow conductor section', () => {
+  let project = addDevice(emptyProject(), 'spd');
+  const dps = project.devices[0];
+  project = updateDevice(project, dps.id, { voltage: 999, surgeCurrent: 999, label: 'personalizado' });
+  assert.equal(project.devices[0].label, 'DPS');
+  assert.notEqual(project.devices[0].voltage, 999);
+  assert.notEqual(project.devices[0].surgeCurrent, 999);
+  assert.equal(ferruleColor(1.5).name, 'preto');
+  assert.equal(ferruleColor(2.5).name, 'azul');
+  assert.equal(ferruleColor(6).name, 'amarelo');
 });
 
 test('import validation rejects malformed nested data, nonfinite numbers and dangling references', () => {
@@ -197,10 +247,29 @@ test('legacy migration preserves device positions, wire labels and neutral bus r
   assert.equal(migrated.devices[0].description, 'DR existente');
   assert.equal(migrated.wires[0].label, 'N após DR');
   assert.equal(migrated.wires[0].targetComponent, '@N');
-  assert.ok(migrated.rails > old.trilhos);
+  assert.equal(migrated.rails, old.trilhos);
   assert.ok(validateProject(migrated));
   assert.equal(old.trilhos, 1);
   assert.equal(migrateLegacy({ ...old, componentes: [null] }), null);
+});
+
+test('saved projects normalize old horizontal bus endpoints and missing wire terminals', () => {
+  const oldStyle = structuredClone(demoProject());
+  const neutral = oldStyle.devices.find(device => device.type === 'neutral-bus')!;
+  neutral.terminals = neutral.terminals.map(term => ({ ...term, id: term.id.replace('side-', 'top-'), side: 'top' as const }));
+  for (const wire of oldStyle.wires) {
+    if (wire.sourceComponent === neutral.id) wire.sourceTerminal = wire.sourceTerminal.replace('side-', 'top-');
+    if (wire.targetComponent === neutral.id) wire.targetTerminal = wire.targetTerminal.replace('side-', 'top-');
+    delete wire.sourceTermination;
+    delete wire.targetTermination;
+  }
+  assert.ok(validateProject(oldStyle));
+  const normalized = parseProjectFile(JSON.stringify(oldStyle));
+  const normalizedNeutral = normalized.devices.find(device => device.id === neutral.id)!;
+  assert.equal(normalizedNeutral.modules, 1);
+  assert.ok(normalizedNeutral.terminals.every(term => term.side === 'right'));
+  assert.ok(normalized.wires.every(wire => wire.sourceTermination === 'tubular' && wire.targetTermination === 'tubular'));
+  assert.ok(validateProject(normalized));
 });
 
 test('phase indicators use active input power and per-line current, never breaker ratings', () => {

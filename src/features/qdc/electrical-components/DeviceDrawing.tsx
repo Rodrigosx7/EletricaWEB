@@ -15,6 +15,25 @@ function DeviceDrawing({ device: d, width: w, height: h, mode }: Props) {
   const main = d.type === 'main-breaker';
   const amp = d.amperage === null ? '— A' : `${d.amperage} A`;
   const caption = d.type === 'rcbo-2p' ? 'RCBO' : d.type === 'motor-breaker-3p' ? 'MOTOR' : d.type.startsWith('switch-disconnector') ? 'SECC.' : breaker ? `${d.curve}${d.amperage ?? '—'}` : rcd ? 'DR' : ({ spd: 'DPS', 'fuse-holder': 'FUSÍVEL', 'comb-bus': 'PENTE', 'neutral-bus': 'NEUTRO', 'earth-bus': 'TERRA', terminal: 'BORNE', 'through-terminal': 'PASS.', 'terminal-n': 'N', 'terminal-pe': 'PE', 'distribution-block': 'DIST.', contactor: 'CONTATOR', relay: 'RELÉ', timer: 'TIMER', 'level-relay': 'NÍVEL', 'power-supply': 'FONTE', 'smart-relay': 'SMART', 'impulse-relay': 'IMPULSO', 'overload-relay': 'SOBREC.', 'phase-monitor': 'FASES', 'din-socket': 'TOMADA', bell: 'CAMPAINHA', indicator: 'SINAL', meter: 'MEDIDOR', voltmeter: 'VOLTÍMETRO', ammeter: 'AMPERÍMETRO' }[d.type] ?? d.type);
+  if (d.type === 'comb-bus') return <g>
+    <rect x="1" y="10" width={w - 2} height="10" rx="4" fill="#d3a14d" stroke="#7b5927" />
+    <path d={`M5 12 H${w - 5}`} stroke="#f3d18c" strokeWidth="2" />
+    {Array.from({ length: d.modules }, (_, index) => { const x = (index + .5) * w / d.modules; return <g key={index}><path d={`M${x} 7 V23`} stroke="#a97331" strokeWidth="3" /><rect x={x - 3} y="3" width="6" height="7" rx="1" fill="#303b40" /></g>; })}
+  </g>;
+  if (d.type === 'neutral-bus' || d.type === 'earth-bus') {
+    const earth = d.type === 'earth-bus';
+    return <g>
+      <rect x="2" y="1" width={w - 4} height={h - 2} rx="5" fill="#d8dfdb" stroke="#9daaaa" />
+      <rect x="6" y="6" width={w - 12} height={h - 12} rx="3" fill={earth ? '#3d8b52' : '#2f82af'} />
+      <path d={`M${w / 2} 11 V${h - 11}`} stroke="#d7b76b" strokeWidth="5" />
+      {Array.from({ length: Math.min(d.poles, 12) }, (_, index) => { const y = 10 + (index + .5) * (h - 20) / Math.min(d.poles, 12); return <circle key={index} cx={w / 2} cy={y} r="2.3" fill="#efe2b8" stroke="#675c42" />; })}
+    </g>;
+  }
+  if (d.type === 'power-entry' || d.type === 'conduit-entry') return <g>
+    <circle cx={w / 2} cy={h / 2} r={Math.min(w, h) / 2 - 3} fill="#d2d9d7" stroke="#73848a" strokeWidth="2" />
+    <circle cx={w / 2} cy={h / 2} r={Math.min(w, h) / 2 - 9} fill="#65767c" stroke="#263941" strokeWidth="2" />
+    {d.type === 'power-entry' && <path d={`M${w / 2 - 4} ${h / 2 + 7} l5 -8 h-4 l6 -8 -2 7 h5 Z`} fill="#f0cb3b" />}
+  </g>;
   if (mode === 'schematic') return <g fill="none" stroke={INK} strokeWidth="1.6">
     <rect x="2" y="7" width={w - 4} height={h - 14} rx="2" fill="#fff" stroke="#a4b1b9" />
     <text x={w / 2} y="31" textAnchor="middle" fill={INK} stroke="none" fontSize="10" fontWeight="700">{caption}</text>
@@ -29,13 +48,12 @@ function DeviceDrawing({ device: d, width: w, height: h, mode }: Props) {
     <rect x="2" y="6" width={w - 4} height={h - 12} rx="4" fill="#fff" stroke="#acb5b8" />
     <rect x="2" y="6" width={w - 4} height="8" rx="3" fill={d.color || '#e3be19'} />
     <text x={w / 2} y="48" textAnchor="middle" fill={INK} fontSize={compact ? 11 : 14} fontWeight="700">{caption}</text>
-    <text x={w / 2} y="69" textAnchor="middle" fill="#53626a" fontSize="11">{d.poles}P</text>
-    <text x={w / 2} y="91" textAnchor="middle" fill={INK} fontSize="13" fontWeight="700">{amp}</text>
+    {!breaker && <text x={w / 2} y="82" textAnchor="middle" fill={INK} fontSize="13" fontWeight="700">{amp}</text>}
   </g>;
   if (mode === 'installation') return <g>
     <rect x="2" y="3" width={w - 4} height={h - 6} rx="4" fill="#fafbfc" fillOpacity="0.76" stroke="#b2bdc3" strokeDasharray="4 3" />
     <text x={w / 2} y={h / 2 - 4} textAnchor="middle" fill="#74838c" fontSize="11" fontWeight="700">{caption}</text>
-    <text x={w / 2} y={h / 2 + 14} textAnchor="middle" fill="#74838c" fontSize="10">{d.poles}P · {amp}</text>
+    {!breaker && <text x={w / 2} y={h / 2 + 14} textAnchor="middle" fill="#74838c" fontSize="10">{amp}</text>}
   </g>;
   if (bus) {
     const earth = d.type === 'earth-bus';
@@ -85,7 +103,7 @@ function DeviceDrawing({ device: d, width: w, height: h, mode }: Props) {
         </g>;
       })}
       <text x="8" y="39" fill={INK} fontSize={compact ? 9 : 10} fontWeight="800">{d.type === 'rcbo-2p' ? 'RCBO' : rcd ? 'IDR' : main ? 'GERAL' : caption}</text>
-      <text x="8" y="51" fill="#56636a" fontSize="7">{rcd ? `${amp} / ${d.sensitivity > 0 ? `${d.sensitivity} mA` : '— mA'}` : `${d.poles}P · ${d.voltage > 0 ? `${d.voltage} V` : '— V'}`}</text>
+      {rcd && <text x="8" y="51" fill="#56636a" fontSize="7">{`${amp} / ${d.sensitivity > 0 ? `${d.sensitivity} mA` : '— mA'}`}</text>}
       {rcd && <g><rect x={w - 27} y="31" width="18" height="14" rx="3" fill="#6b8790" stroke="#3f5e68" /><text x={w - 18} y="40" textAnchor="middle" fill="#fff" fontSize="6" fontWeight="700">TEST</text></g>}
       {d.poles > 1 && <path d={`M12 82 H${w - 12}`} stroke="#182a32" strokeWidth="5" />}
       <text x={w / 2} y="101" textAnchor="middle" fill="#727d80" fontSize="6.5">{rcd ? 'Δ' : '6000'}  ~</text>
