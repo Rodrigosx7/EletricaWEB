@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { useEffect, useState } from 'react';
 import { Plus, Save, Download, Trash2, PanelsTopLeft, Copy } from 'lucide-react';
 import { cabeNoQuadro, CATALOGO_QUADRO, materiaisQuadro, primeiroEspaco, quadroValido, type Quadro, type ComponenteQuadro } from '../utils/quadros';
 import { exportarQuadroPdf } from '../utils/quadroPdf';
