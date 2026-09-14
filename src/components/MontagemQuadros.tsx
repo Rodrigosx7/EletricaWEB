@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Plus, Save, Download, Trash2, PanelsTopLeft, Copy } from 'lucide-react';
 import { cabeNoQuadro, CATALOGO_QUADRO, materiaisQuadro, primeiroEspaco, quadroValido, type Quadro, type ComponenteQuadro } from '../utils/quadros';
 import { exportarQuadroPdf } from '../utils/quadroPdf';
+import QuadroCanvas from './QuadroCanvas';
 import './montagem-quadros.css';
 
 function novoQuadro(): Quadro {
@@ -74,6 +76,10 @@ export default function MontagemQuadros({ usuarioId, aoAlterar }: { usuarioId: s
     atualizar({ ...quadro, componentes: quadro.componentes.map(c => c.id === item.id ? proximo : c) });
   }
 
+  function mover(trilho: number, inicio: number) {
+    editar({ trilho, inicio });
+  }
+
   function salvar() {
     if (!quadro.nome.trim()) { setMensagem('Informe um nome para o quadro.'); return; }
     if (inicial.erro) { setMensagem(inicial.erro); return; }
@@ -134,19 +140,7 @@ export default function MontagemQuadros({ usuarioId, aoAlterar }: { usuarioId: s
       </aside>
       <section className="qdc-board" aria-label="Montagem física do quadro">
         <div className="qdc-board-heading"><div><span>Vista frontal · trilhos DIN</span><h2>{quadro.nome || 'Quadro sem nome'}</h2></div><PanelsTopLeft size={24} /></div>
-        <p className="qdc-board-hint">Selecione um componente para editar. Para mover, selecione e clique num espaço livre.</p>
-        <div className="qdc-rails-scroll" tabIndex={0} aria-label="Trilhos; rolagem horizontal disponível em quadros largos">
-          {quadro.barramentoN && <div className="qdc-busbar qdc-busbar-n"><strong>N</strong><span aria-hidden="true">⊕ ⊕ ⊕ ⊕ ⊕ ⊕ ⊕ ⊕ ⊕ ⊕</span><small>Neutro</small></div>}
-          {Array.from({ length: quadro.trilhos }, (_, trilho) => <div className="qdc-rail" key={trilho}>
-            <div className="qdc-rail-label"><strong>Trilho {trilho + 1}</strong><span>{quadro.componentes.filter(c => c.trilho === trilho).reduce((s, c) => s + c.modulos, 0)} / {quadro.modulosPorTrilho} M</span></div>
-            <div className="qdc-slots" style={{ gridTemplateColumns: `repeat(${quadro.modulosPorTrilho}, 46px)` }}>
-              {Array.from({ length: quadro.modulosPorTrilho }, (_, inicio) => <button key={inicio} className="qdc-slot" style={{ gridColumn: inicio + 1, gridRow: 1 }} disabled={quadro.componentes.some(c => c.trilho === trilho && inicio >= c.inicio && inicio < c.inicio + c.modulos)} aria-label={`Trilho ${trilho + 1}, posição ${inicio + 1}${item ? `: mover ${item.tipo}` : ': livre'}`} onClick={() => { if (item) editar({ trilho, inicio }); else setMensagem('Adicione um componente pelo catálogo ou selecione um componente para movê-lo.'); }}><span>{inicio + 1}</span><Plus size={12} /></button>)}
-              {quadro.componentes.filter(c => c.trilho === trilho).map(c => <button key={c.id} className="qdc-device" data-type={c.tipo.startsWith('DPS') ? 'dps' : c.tipo.startsWith('DR') ? 'dr' : 'other'} aria-pressed={selecionado === c.id} title={`${c.tipo} · ${c.circuito || 'Sem identificação'} · ${c.modulos} módulos`} aria-label={`Componente ${quadro.componentes.indexOf(c) + 1}: ${c.tipo}, ${c.circuito || 'sem identificação'}, ${c.modulos} módulos`} style={{ gridColumn: `${c.inicio + 1} / span ${c.modulos}`, gridRow: 1 }} onClick={() => setSelecionado(c.id)}><small>{String(quadro.componentes.indexOf(c) + 1).padStart(2, '0')}</small><span className="qdc-device-switch" /><strong>{c.tipo}</strong><span>{c.circuito || 'Identificar'}</span></button>)}
-            </div>
-          </div>)}
-          {quadro.barramentoPE && <div className="qdc-busbar qdc-busbar-pe"><strong>PE</strong><span aria-hidden="true">⊕ ⊕ ⊕ ⊕ ⊕ ⊕ ⊕ ⊕ ⊕ ⊕</span><small>Proteção</small></div>}
-        </div>
-        <p className="qdc-board-hint">Disposição física ilustrativa. Não representa ligações ou dimensionamento elétrico.</p>
+        <QuadroCanvas quadro={quadro} selecionado={selecionado} selecionar={setSelecionado} atualizar={atualizar} mover={mover} />
       </section>
     </div>
     <section className="surface-card qdc-inspector" aria-label="Editar componente">
