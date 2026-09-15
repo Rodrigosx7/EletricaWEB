@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Cable, Copy, Info, Settings2, Trash2 } from 'lucide-react';
 import { CATALOG, DPS_MODELS } from '../electrical-components/catalog';
-import { isRailMounted } from '../wiring/routing';
+import { deviceRect, isRailMounted } from '../wiring/routing';
 import { ferruleColor, TERMINATION_OPTIONS, WIRE_COLORS, WIRE_GAUGES } from '../wiring/options';
 import type { Conductor, Device, EdgeSide, Project, Selection, Wire, WireTermination } from '../types';
 import './panels.css';
@@ -46,9 +46,11 @@ export function PropertiesPanel({ project, selection, onUpdateDevice, onUpdateWi
   const isBus = !!device && (device.type === 'neutral-bus' || device.type === 'earth-bus');
   const isComb = device?.type === 'comb-bus';
   const isEdgeEntry = device?.type === 'power-entry' || device?.type === 'conduit-entry';
+  const isPlanePositioned = !!device && ['power-entry', 'conduit-entry'].includes(device.type) && !!device.canvasPosition;
   const heading = multiple ? 'Seleção múltipla' : wire ? 'Condutor' : device ? 'Componente' : 'Configuração do quadro';
   const railPlacement = device && <><Field label="Trilho"><select value={device.rail} onChange={event => update({ rail: Number(event.target.value) })}>{Array.from({ length: project.rails }, (_, index) => <option key={index} value={index}>Trilho {index + 1}</option>)}</select></Field><Field label="Módulo inicial"><select value={device.slot} onChange={event => update({ slot: Number(event.target.value) })}>{Array.from({ length: Math.max(1, project.modulesPerRail - device.modules + 1) }, (_, index) => <option key={index} value={index}>{index + 1}</option>)}</select></Field></>;
   const edgePlacement = device && <><Field label="Borda"><select value={device.edgeSide ?? 'top'} onChange={event => update({ edgeSide: event.target.value as EdgeSide })}>{SIDES.map(side => <option key={side.value} value={side.value}>{side.label}</option>)}</select></Field><Field label="Posição na borda (%)"><Numeric value={device.edgeOffset ?? 50} min={0} max={100} step={1} list="ewq-edge-offset" onChange={edgeOffset => update({ edgeOffset: edgeOffset ?? 50 })} /></Field></>;
+  const edgeEntryPlacement = device && ['power-entry', 'conduit-entry'].includes(device.type) ? <><Field label="Posicionamento" wide><select value={isPlanePositioned ? 'plane' : 'edge'} onChange={event => update({ canvasPosition: event.target.value === 'plane' ? device.canvasPosition ?? (() => { const rect = deviceRect(device, project); return { x: rect.x, y: rect.y }; })() : undefined })}><option value="plane">Livre no plano</option><option value="edge">Borda do quadro</option></select></Field>{!isPlanePositioned && edgePlacement}</> : edgePlacement;
   return <aside className="ewq-panel ewq-properties" aria-label="Propriedades do quadro e da seleção">
     <header className="ewq-panel-heading"><div><Settings2 size={17} /><h2>Propriedades</h2></div></header>
     <div className="ewq-properties-body"><p className="ewq-eyebrow">{heading}</p>
@@ -66,6 +68,7 @@ export function PropertiesPanel({ project, selection, onUpdateDevice, onUpdateWi
           <Field label="Bitola (mm²)"><select value={wire.gauge ?? ''} onChange={event => onUpdateWire(wire.id, { gauge: event.target.value ? Number(event.target.value) : null })}><option value="">A definir</option>{WIRE_GAUGES.map(gauge => <option key={gauge} value={gauge}>{gauge} mm²</option>)}</select></Field>
           <Field label="Terminal na origem"><select value={wire.sourceTermination ?? 'tubular'} onChange={event => onUpdateWire(wire.id, { sourceTermination: event.target.value as WireTermination })}>{TERMINATION_OPTIONS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field>
           <Field label="Terminal no destino"><select value={wire.targetTermination ?? 'tubular'} onChange={event => onUpdateWire(wire.id, { targetTermination: event.target.value as WireTermination })}>{TERMINATION_OPTIONS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field>
+          <Field label="Traçado do fio" wide><div className="ewq-wire-route-actions"><span>{wire.manualPath ? 'Manual · arraste os pontos amarelos no desenho' : 'Automático · selecione o fio e arraste um ponto amarelo para ajustar'}</span><button type="button" disabled={!wire.manualPath} onClick={() => onUpdateWire(wire.id, { manualPath: false, path: [] })}>Refazer automaticamente</button></div></Field>
         </div>
         {(wire.sourceTermination ?? 'tubular') === 'tubular' || (wire.targetTermination ?? 'tubular') === 'tubular' ? <p className="ewq-field-note"><span className="ewq-ferrule-swatch" style={{ background: ferruleColor(wire.gauge).hex }} /><span>Colar do terminal tubular: {ferruleColor(wire.gauge).name}. A cor muda automaticamente conforme a bitola.</span></p> : null}
         <SelectedActions onDelete={onDelete} />
@@ -77,11 +80,13 @@ export function PropertiesPanel({ project, selection, onUpdateDevice, onUpdateWi
           {railPlacement}
         </div><SelectedActions onDelete={onDelete} onDuplicate={onDuplicate} />
       </> : isBus ? <>
-        <h3 className="ewq-properties-title">{catalogItem?.name}</h3><p className="ewq-panel-hint">Vertical e compacto. A cor é fixa: {device.type === 'neutral-bus' ? 'azul para neutro' : 'verde para terra'}.</p>
+        <h3 className="ewq-properties-title">{catalogItem?.name}</h3><p className="ewq-panel-hint">Compacto e girável. A cor é fixa: {device.type === 'neutral-bus' ? 'azul para neutro' : 'verde para terra'}.</p>
         <div className="ewq-field-grid">
           <Field label="Quantidade de bornes" wide><select value={device.poles} onChange={event => update({ poles: Number(event.target.value) })}>{[4, 6, 8, 10, 12, 16, 20, 24].map(count => <option key={count} value={count}>{count} bornes</option>)}</select></Field>
           <Field label="Cor" wide><div className="ewq-fixed-color"><span style={{ background: device.color }} />{device.type === 'neutral-bus' ? 'Azul · neutro' : 'Verde · terra'}</div></Field>
           <Field label="Fixação" wide><select value={device.mount ?? 'rail'} onChange={event => update({ mount: event.target.value as Device['mount'] })}><option value="rail">Trilho DIN · ocupa 1 módulo</option><option value="edge">Borda do quadro</option></select></Field>
+          <Field label="Orientação" wide><select value={device.orientation ?? 'vertical'} onChange={event => { const orientation = event.target.value as Device['orientation']; update({ orientation, busTerminalSide: orientation === 'horizontal' ? 'bottom' : 'right' }); }}><option value="vertical">Vertical</option><option value="horizontal">Horizontal</option></select></Field>
+          <Field label="Lado dos bornes" wide><select value={device.busTerminalSide ?? (device.orientation === 'horizontal' ? 'bottom' : 'right')} onChange={event => update({ busTerminalSide: event.target.value as Device['busTerminalSide'] })}>{device.orientation === 'horizontal' ? <><option value="top">Para cima</option><option value="bottom">Para baixo</option></> : <><option value="left">Para a esquerda</option><option value="right">Para a direita</option></>}</select></Field>
           {(device.mount ?? 'rail') === 'edge' ? edgePlacement : railPlacement}
         </div><SelectedActions onDelete={onDelete} onDuplicate={onDuplicate} />
       </> : isComb ? <>
@@ -90,14 +95,15 @@ export function PropertiesPanel({ project, selection, onUpdateDevice, onUpdateWi
           <Field label="Tipo"><select value={device.poles} onChange={event => update({ poles: Number(event.target.value) })}><option value="1">Unipolar</option><option value="2">Bipolar</option><option value="4">Tetrapolar</option></select></Field>
           <Field label="Amperagem (A)"><Numeric value={device.amperage} options={[40, 63, 80, 100, 125]} list="ewq-comb-current" onChange={amperage => update({ amperage })} /></Field>
           <Field label="Número de encaixes" wide><select value={device.modules} onChange={event => update({ modules: Number(event.target.value) })}>{Array.from({ length: 23 }, (_, index) => index + 2).map(count => <option key={count} value={count}>{count} encaixes</option>)}</select></Field>
+          <Field label="Encaixe nos bornes" wide><select value={device.combSide ?? 'top'} onChange={event => update({ combSide: event.target.value as Device['combSide'] })}><option value="top">Bornes superiores</option><option value="bottom">Bornes inferiores</option></select></Field>
           {railPlacement}
         </div><SelectedActions onDelete={onDelete} onDuplicate={onDuplicate} />
       </> : isEdgeEntry ? <>
         <h3 className="ewq-properties-title">{catalogItem?.name}</h3><p className="ewq-panel-hint">Os fios podem começar ou terminar aqui para representar a passagem pela caixa.</p>
         <div className="ewq-field-grid">
           <Field label="Identificação" wide><input value={device.label} maxLength={80} onChange={event => update({ label: event.target.value })} /></Field>
-          <Field label={device.type === 'power-entry' ? 'Quantidade de condutores' : 'Quantidade de fios'} wide><select value={device.poles} onChange={event => update({ poles: Number(event.target.value) })}>{Array.from({ length: 12 }, (_, index) => index + 1).map(count => <option key={count} value={count}>{count}</option>)}</select></Field>
-          {edgePlacement}
+          <Field label={device.type === 'power-entry' ? 'Alimentação disponível' : 'Quantidade de fios'} wide><select value={device.poles} onChange={event => update({ poles: Number(event.target.value) })}>{device.type === 'power-entry' ? <><option value="3">1 fase + neutro + terra</option><option value="4">2 fases + neutro + terra</option><option value="5">3 fases + neutro + terra</option></> : Array.from({ length: 12 }, (_, index) => index + 1).map(count => <option key={count} value={count}>{count}</option>)}</select></Field>
+           {edgeEntryPlacement}
         </div><SelectedActions onDelete={onDelete} onDuplicate={onDuplicate} />
       </> : device ? <>
         <h3 className="ewq-properties-title">{catalogItem?.name ?? device.type}</h3><p className="ewq-panel-hint">{device.modules} {device.modules === 1 ? 'módulo DIN' : 'módulos DIN'} · trilho {device.rail + 1}</p>

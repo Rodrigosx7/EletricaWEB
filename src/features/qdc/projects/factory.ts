@@ -34,7 +34,7 @@ export function automaticProject(config: Partial<Project>, names: string[]): Pro
   const dr = { ...createDevice(count > 1 ? 'rcd-4p' : 'rcd-2p'), label: 'DR · seleção a definir' };
   const neutral = { ...createDevice('neutral-bus'), label: 'Neutro após DR' };
   const earth = { ...createDevice('earth-bus'), label: 'Proteção PE' };
-  const powerEntry = { ...createDevice('power-entry'), label: 'Entrada da rede', poles: count, terminals: buildTerminals('power-entry', count), edgeSide: 'top' as const, edgeOffset: 16 };
+  const powerEntry = { ...createDevice('power-entry'), label: 'Entrada da rede', poles: count + 2, terminals: buildTerminals('power-entry', count + 2), edgeSide: 'top' as const, edgeOffset: 88 };
   project.devices = [...project.devices, powerEntry];
   project = place(project, general);
   const spds: Device[] = [];
@@ -68,6 +68,8 @@ export function automaticProject(config: Partial<Project>, names: string[]): Pro
     project = connect(project, endpoint(spds[i], 'bottom-0'), endpoint(earth, `side-${i}`), earthOptions);
   }
   const neutralIndex = dr.poles - 1;
+  project = connect(project, endpoint(powerEntry, `edge-${count}`), endpoint(dr, `top-${neutralIndex}`), neutralOptions);
+  project = connect(project, endpoint(powerEntry, `edge-${count + 1}`), endpoint(earth, `side-${count}`), earthOptions);
   project = connect(project, endpoint(dr, `bottom-${neutralIndex}`), endpoint(neutral, 'side-0'), neutralOptions);
   for (const [index, entry] of project.circuits.entries()) {
     const device = project.devices.find(item => item.id === entry.breakerId)!;

@@ -59,6 +59,8 @@
 .ewq-wire-endpoints strong { font-size: 12px; font-weight: 550; overflow-wrap: anywhere; }
 .ewq-wire-endpoints small { font-size: 12px; color: #677983; }
 .ewq-wire-endpoints > div > span { color: #637682; }
+.ewq-wire-route-actions { display: grid; gap: 8px; padding: 9px; border: 1px solid #d6dfe4; border-radius: 4px; background: #f7f9f9; color: #60717b; font-weight: 400; }
+.ewq-panel .ewq-wire-route-actions button { justify-self: start; min-height: 31px; padding: 5px 8px; border: 1px solid #ccd6da; border-radius: 4px; background: #fff; color: #354952; }
 .ewq-color-palette { display: flex; flex-wrap: wrap; gap: 6px; }
 .ewq-panel .ewq-color-palette button { display: inline-flex; align-items: center; gap: 5px; min-height: 34px; padding: 5px 7px; border: 1px solid #d6dfe4; border-radius: 4px; background: #fff; color: #40545f; }
 .ewq-panel .ewq-color-palette button.is-active { border-color: #947313; box-shadow: 0 0 0 1px #d2ad30; background: #fffaf0; }

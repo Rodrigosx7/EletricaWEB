@@ -22,16 +22,18 @@ export function boardSize(project: Project): { width: number; height: number } {
 export function deviceRect(device: Device, project?: Project) {
   const mount = deviceMount(device);
   if (mount === 'overlay') return {
-    x: LEFT + device.slot * MODULE + 4,
-    y: TOP + device.rail * RAIL - 18,
-    width: Math.max(MODULE - 8, device.modules * MODULE - 8),
-    height: 26,
+    x: LEFT + device.slot * MODULE + 2,
+    y: device.combSide === 'bottom' ? TOP + device.rail * RAIL + DEVICE_HEIGHT - 8 : TOP + device.rail * RAIL - 8,
+    width: Math.max(MODULE - 4, device.modules * MODULE - 4),
+    height: 16,
   };
   if (mount === 'edge') {
     const size = project ? boardSize(project) : { width: LEFT * 2 + 12 * MODULE, height: TOP * 2 + DEVICE_HEIGHT };
     const isBus = device.type === 'neutral-bus' || device.type === 'earth-bus';
-    const width = isBus ? 30 : 42;
-    const height = isBus ? 92 : 42;
+    const horizontal = isBus && device.orientation === 'horizontal';
+    const width = isBus ? horizontal ? 92 : 30 : device.type === 'power-entry' ? Math.max(58, device.poles * 18) : 48;
+    const height = isBus ? horizontal ? 30 : 92 : 48;
+    if (device.canvasPosition) return { x: device.canvasPosition.x, y: device.canvasPosition.y, width, height };
     const offset = Math.max(5, Math.min(95, device.edgeOffset ?? 50)) / 100;
     const side = device.edgeSide ?? 'top';
     if (side === 'top' || side === 'bottom') {
@@ -41,17 +43,31 @@ export function deviceRect(device: Device, project?: Project) {
     const y = 42 + (size.height - 84) * offset - height / 2;
     return { x: side === 'left' ? 8 : size.width - width - 8, y, width, height };
   }
-  if (device.type === 'neutral-bus' || device.type === 'earth-bus') return {
-    x: LEFT + device.slot * MODULE + 8,
-    y: TOP + device.rail * RAIL + 18,
-    width: MODULE - 16,
-    height: 90,
-  };
+  if (device.type === 'neutral-bus' || device.type === 'earth-bus') {
+    const horizontal = device.orientation === 'horizontal';
+    return horizontal ? {
+      x: LEFT + device.slot * MODULE + MODULE / 2 - 46,
+      y: TOP + device.rail * RAIL + 48,
+      width: 92,
+      height: 30,
+    } : {
+      x: LEFT + device.slot * MODULE + 8,
+      y: TOP + device.rail * RAIL + 18,
+      width: MODULE - 16,
+      height: 90,
+    };
+  }
   return { x: LEFT + device.slot * MODULE + 2, y: TOP + device.rail * RAIL, width: device.modules * MODULE - 4, height: DEVICE_HEIGHT };
 }
 
 export function terminalSide(device: Device, side: TerminalSide): TerminalSide {
-  if (deviceMount(device) !== 'edge') return side;
+  if (device.type === 'neutral-bus' || device.type === 'earth-bus') {
+    const allowed = device.orientation === 'horizontal' ? ['top', 'bottom'] : ['left', 'right'];
+    return allowed.includes(device.busTerminalSide ?? '') ? device.busTerminalSide! : device.orientation === 'horizontal' ? 'bottom' : 'right';
+  }
+  if (deviceMount(device) !== 'edge') {
+    return side;
+  }
   return ({ top: 'bottom', bottom: 'top', left: 'right', right: 'left' } as const)[device.edgeSide ?? 'top'];
 }
 
@@ -149,6 +165,7 @@ function route(project: Project, wire: Wire, sourceLane: number, targetLane: num
   const a = sourceDevice?.terminals.find(t => t.id === wire.sourceTerminal);
   const b = targetDevice?.terminals.find(t => t.id === wire.targetTerminal);
   if (!source || !target || !a || !b || !sourceDevice || !targetDevice) return [];
+  if (wire.manualPath && wire.path.length >= 2) return compact([source, ...wire.path.slice(1, -1), target]);
   const family = { phase: 0, neutral: 1, earth: 2, return: 3 }[wire.conductorType];
   const sourceExit = terminalExit(source, terminalSide(sourceDevice, a.side), sourceLane, globalLane);
   const targetExit = terminalExit(target, terminalSide(targetDevice, b.side), targetLane, globalLane + 1).reverse();
@@ -161,12 +178,16 @@ function route(project: Project, wire: Wire, sourceLane: number, targetLane: num
   const topLane = Math.max(8, TOP - 28 - globalLane * 4);
   const bottomLane = Math.min(size.height - 8, TOP + (project.rails - 1) * RAIL + DEVICE_HEIGHT + 28 + globalLane * 4);
   const middleX = Math.round((from.x + to.x) / 2 + (globalLane % 2 ? 1 : -1) * (12 + globalLane * 2));
+  const xLanes = [middleX, left, right, ...Array.from({ length: 6 }, (_, index) => {
+    const distance = 16 + Math.floor(index / 2) * 18;
+    return Math.max(8, Math.min(size.width - 8, middleX + (index % 2 ? distance : -distance)));
+  })];
+  const yLanes = [topLane, bottomLane, ...Array.from({ length: project.rails + 1 }, (_, index) => Math.max(8, Math.min(size.height - 8, TOP - 18 + index * RAIL)) )];
   const joins: Point[][] = [
     [from, { x: to.x, y: from.y }, to],
     [from, { x: from.x, y: to.y }, to],
-    [from, { x: middleX, y: from.y }, { x: middleX, y: to.y }, to],
-    ...[left, right].map(x => [from, { x, y: from.y }, { x, y: to.y }, to]),
-    ...[topLane, bottomLane].map(y => [from, { x: from.x, y }, { x: to.x, y }, to]),
+    ...[...new Set(xLanes)].map(x => [from, { x, y: from.y }, { x, y: to.y }, to]),
+    ...[...new Set(yLanes)].map(y => [from, { x: from.x, y }, { x: to.x, y }, to]),
   ];
   const candidates = joins.map(join => compact([...sourceExit, ...join.slice(1), ...targetExit.slice(1)])).filter(points => pathAvoidsDevices(points, project.devices, project));
   const distance = (points: Point[]) => points.slice(1).reduce((sum, p, i) => sum + Math.abs(p.x - points[i].x) + Math.abs(p.y - points[i].y), 0);

@@ -56,7 +56,7 @@ export function SignInSplit({ aoIrParaRecuperacao }: SignInSplitProps): ReactEle
   return (
     <section className="auth-form-side">
       <div className="auth-form">
-        <div className="auth-mobile-brand" aria-label="Portal Elétrico"><span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>Portal Elétrico</div>
+        <div className="auth-mobile-brand" aria-label="Portal Elétrico"><img className="auth-brand-logo" src="/logo.png" alt="" width="30" height="30" />Portal Elétrico</div>
         <header className="auth-form-heading">
           <span className="auth-kicker">ÁREA DO CLIENTE</span>
           <h1>{isSignUp ? "Crie sua área de trabalho" : "Acesse sua operação"}</h1>

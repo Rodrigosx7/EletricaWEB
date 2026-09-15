@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CATALOG, createDevice } from '../src/features/qdc/electrical-components/catalog.ts';
-import { addDevice, connect, deleteSelection, duplicateSelection, firstSpace, fits, moveDevices, organize, updateCircuit, updateDevice, validateProject } from '../src/features/qdc/editor/operations.ts';
+import { addDevice, connect, deleteSelection, duplicateSelection, firstSpace, fits, moveDeviceOnPlane, moveDevices, organize, updateCircuit, updateDevice, validateProject } from '../src/features/qdc/editor/operations.ts';
 import { circuitCurrent, materialList, phaseBalance, warnings } from '../src/features/qdc/circuits/analysis.ts';
 import { automaticProject, demoProject, emptyProject, migrateLegacy } from '../src/features/qdc/projects/factory.ts';
 import { parseProjectFile } from '../src/features/qdc/projects/storage.ts';
-import { boardSize, pathAvoidsDevices, pathOverlapLength, routeWires, terminalPoint } from '../src/features/qdc/wiring/routing.ts';
-import { ferruleColor } from '../src/features/qdc/wiring/options.ts';
+import { boardSize, deviceRect, pathAvoidsDevices, pathOverlapLength, routeWires, terminalPoint } from '../src/features/qdc/wiring/routing.ts';
+import { ferruleColor, TERMINATION_OPTIONS, WIRE_COLORS } from '../src/features/qdc/wiring/options.ts';
 import type { Circuit, Project } from '../src/features/qdc/types.ts';
 
 const options = { conductorType: 'phase' as const, color: '#20252b', gauge: 2.5, termination: 'tubular' as const };
@@ -204,10 +204,67 @@ test('special components use their requested mounting and connection rules', () 
   assert.equal(comb.mount, 'overlay');
   assert.equal(comb.terminals.length, 0);
   assert.equal(entry.mount, 'edge');
+  assert.equal(entry.edgeOffset, 88);
+  assert.deepEqual(entry.terminals.map(terminal => terminal.kind), ['L', 'N', 'PE']);
   assert.throws(() => connect(project, endpoint(comb.id), endpoint(breaker.id), options), /existentes/);
   project = connect(project, endpoint(entry.id, 'edge-0'), endpoint(breaker.id), options);
   assert.equal(project.wires[0].sourceTermination, 'tubular');
   assert.ok(project.wires[0].path.length);
+  assert.ok(validateProject(project));
+});
+
+test('edge entries can move freely inside the plan and keep their wire endpoints aligned', () => {
+  let project = emptyProject({ rails: 1, modulesPerRail: 8 });
+  project = addDevice(project, 'power-entry');
+  project = addDevice(project, 'conduit-entry');
+  project = addDevice(project, 'breaker-1p', { rail: 0, slot: 0 });
+  const entry = project.devices[0], breaker = project.devices[2];
+  project = connect(project, endpoint(entry.id, 'edge-0'), endpoint(breaker.id, 'top-0'), options);
+  project = moveDeviceOnPlane(project, entry.id, { x: 220, y: 270 });
+  const moved = project.devices.find(device => device.id === entry.id)!;
+  assert.deepEqual(moved.canvasPosition, { x: 220, y: 270 });
+  assert.deepEqual(project.wires[0].path[0], terminalPoint(project, entry.id, 'edge-0'));
+  assert.throws(() => moveDeviceOnPlane(project, entry.id, { x: 700, y: 400 }), /dentro do quadro/);
+  assert.ok(validateProject(project));
+});
+
+test('buses rotate, comb bars can use either terminal side and new overlays find another space', () => {
+  let project = emptyProject({ rails: 2, modulesPerRail: 12 });
+  project = addDevice(project, 'neutral-bus', { rail: 0, slot: 5 });
+  const neutral = project.devices[0];
+  const vertical = deviceRect(neutral, project);
+  project = updateDevice(project, neutral.id, { orientation: 'horizontal' });
+  const horizontal = deviceRect(project.devices[0], project);
+  assert.ok(vertical.height > vertical.width);
+  assert.ok(horizontal.width > horizontal.height);
+  assert.equal(terminalPoint(project, neutral.id, 'side-0')?.y, horizontal.y + horizontal.height);
+  project = updateDevice(project, neutral.id, { orientation: 'vertical', busTerminalSide: 'left' });
+  const leftFacing = deviceRect(project.devices[0], project);
+  assert.equal(terminalPoint(project, neutral.id, 'side-0')?.x, leftFacing.x);
+  project = addDevice(project, 'comb-bus');
+  project = addDevice(project, 'comb-bus');
+  const combs = project.devices.filter(device => device.type === 'comb-bus');
+  assert.equal(combs.length, 2);
+  assert.notDeepEqual([combs[0].rail, combs[0].slot], [combs[1].rail, combs[1].slot]);
+  const top = deviceRect(combs[0], project);
+  project = updateDevice(project, combs[0].id, { combSide: 'bottom' });
+  const bottom = deviceRect(project.devices.find(device => device.id === combs[0].id)!, project);
+  assert.ok(bottom.y > top.y);
+  assert.ok(validateProject(project));
+});
+
+test('manual wire paths survive routing and generic connectors and added colors are available', () => {
+  let project = emptyProject({ rails: 1, modulesPerRail: 8 });
+  project = addDevice(project, 'breaker-1p', { rail: 0, slot: 0 });
+  project = addDevice(project, 'breaker-1p', { rail: 0, slot: 5 });
+  project = connect(project, endpoint(project.devices[0].id), endpoint(project.devices[1].id), { ...options, termination: 'generico' });
+  const wire = project.wires[0];
+  const manualPath = [wire.path[0], { x: 180, y: 40 }, { x: 260, y: 40 }, wire.path.at(-1)!];
+  project = routeWires({ ...project, wires: [{ ...wire, manualPath: true, path: manualPath }] });
+  assert.deepEqual(project.wires[0].path.slice(1, -1), manualPath.slice(1, -1));
+  assert.equal(project.wires[0].sourceTermination, 'generico');
+  assert.ok(TERMINATION_OPTIONS.some(option => option.value === 'generico'));
+  for (const color of ['Azul', 'Verde', 'Branco', 'Amarelo']) assert.ok(WIRE_COLORS.phase.some(option => option.label === color));
   assert.ok(validateProject(project));
 });
 
@@ -255,6 +312,8 @@ test('legacy migration preserves device positions, wire labels and neutral bus r
 
 test('saved projects normalize old horizontal bus endpoints and missing wire terminals', () => {
   const oldStyle = structuredClone(demoProject());
+  const oldEntry = oldStyle.devices.find(device => device.type === 'power-entry')!;
+  oldEntry.edgeOffset = 16;
   const neutral = oldStyle.devices.find(device => device.type === 'neutral-bus')!;
   neutral.terminals = neutral.terminals.map(term => ({ ...term, id: term.id.replace('side-', 'top-'), side: 'top' as const }));
   for (const wire of oldStyle.wires) {
@@ -265,6 +324,7 @@ test('saved projects normalize old horizontal bus endpoints and missing wire ter
   }
   assert.ok(validateProject(oldStyle));
   const normalized = parseProjectFile(JSON.stringify(oldStyle));
+  assert.equal(normalized.devices.find(device => device.type === 'power-entry')?.edgeOffset, 88);
   const normalizedNeutral = normalized.devices.find(device => device.id === neutral.id)!;
   assert.equal(normalizedNeutral.modules, 1);
   assert.ok(normalizedNeutral.terminals.every(term => term.side === 'right'));

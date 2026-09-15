@@ -10,8 +10,19 @@ const key = (userId: string) => `eletricaweb-qdc-v2:${userId}`;
 
 function normalizeProject(project: Project): Project {
   const devices = project.devices.map(device => {
-    if (device.type === 'neutral-bus' || device.type === 'earth-bus') return { ...device, modules: 1, mount: device.mount ?? 'rail', color: device.type === 'neutral-bus' ? '#1686cf' : '#27854c', terminals: buildTerminals(device.type, device.poles) };
-    if (device.type === 'comb-bus') return { ...device, mount: 'overlay' as const, poles: [1, 2, 4].includes(device.poles) ? device.poles : 1, terminals: [] };
+    if (device.type === 'neutral-bus' || device.type === 'earth-bus') {
+      const orientation = device.orientation ?? 'vertical';
+      const allowedSides = orientation === 'horizontal' ? ['top', 'bottom'] : ['left', 'right'];
+      const busTerminalSide = allowedSides.includes(device.busTerminalSide ?? '') ? device.busTerminalSide : orientation === 'horizontal' ? 'bottom' : 'right';
+      return { ...device, modules: 1, mount: device.mount ?? 'rail', orientation, busTerminalSide, color: device.type === 'neutral-bus' ? '#1686cf' : '#27854c', terminals: buildTerminals(device.type, device.poles) };
+    }
+    if (device.type === 'comb-bus') return { ...device, mount: 'overlay' as const, combSide: device.combSide ?? 'top' as const, poles: [1, 2, 4].includes(device.poles) ? device.poles : 1, terminals: [] };
+    if (device.type === 'power-entry') {
+      const phases = device.poles >= 3 ? Math.min(3, device.poles - 2) : Math.max(1, device.poles);
+      const poles = phases + 2;
+      const legacyAutomaticPosition = device.label === 'Entrada da rede' && device.edgeSide === 'top' && device.edgeOffset === 16;
+      return { ...device, mount: 'edge' as const, poles, edgeOffset: legacyAutomaticPosition ? 88 : device.edgeOffset ?? 88, terminals: buildTerminals('power-entry', poles) };
+    }
     if (device.type === 'spd') {
       const model = DPS_MODELS.find(item => item.id === device.model) ?? DPS_MODELS[0];
       return { ...device, model: model.id, label: 'DPS', voltage: model.voltage, surgeCurrent: model.surgeCurrent, description: model.description, poles: 1, modules: 1, terminals: buildTerminals('spd', 1) };

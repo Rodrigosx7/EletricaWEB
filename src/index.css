@@ -220,6 +220,7 @@ input:disabled, select:disabled, textarea:disabled { cursor: not-allowed; }
 .brand-mark i { display: block; height: 25px; width: 5px; background: var(--color-primary); }
 .brand-mark i:nth-child(2) { height: 17px; }
 .brand-mark i:nth-child(3) { height: 9px; }
+.auth-brand-logo { display: block; width: 2.15rem; height: 2.15rem; object-fit: contain; flex: 0 0 auto; border-radius: .55rem; background: var(--color-nav); }
 .auth-story-copy { margin-top: clamp(4rem,10vh,8rem); }
 .auth-kicker { display: block; color: var(--color-warning); font-size: .6875rem; font-weight: 750; letter-spacing: .12em; }
 .auth-story .auth-kicker { color: var(--color-primary); }

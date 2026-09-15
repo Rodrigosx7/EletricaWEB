@@ -5,7 +5,9 @@ export type Conductor = 'phase' | 'neutral' | 'earth' | 'return';
 export type TerminalSide = 'top' | 'bottom' | 'left' | 'right';
 export type DeviceMount = 'rail' | 'edge' | 'overlay';
 export type EdgeSide = 'top' | 'bottom' | 'left' | 'right';
-export type WireTermination = 'tubular' | 'pente' | 'olhal' | 'garfo' | 'pino' | 'sem-terminal';
+export type BusOrientation = 'vertical' | 'horizontal';
+export type CombSide = 'top' | 'bottom';
+export type WireTermination = 'tubular' | 'generico' | 'pente' | 'olhal' | 'garfo' | 'pino' | 'sem-terminal';
 export type Point = { x: number; y: number };
 export type Terminal = { id: string; label: string; side: TerminalSide; index: number; kind: 'L' | 'N' | 'PE' | 'control' };
 export type Device = {
@@ -14,12 +16,15 @@ export type Device = {
   sensitivity: number; voltage: number; surgeCurrent: number; description: string;
   circuitId: string | null; color: string; terminals: Terminal[];
   mount?: DeviceMount; edgeSide?: EdgeSide; edgeOffset?: number; model?: string;
+  canvasPosition?: Point;
+  orientation?: BusOrientation; busTerminalSide?: TerminalSide; combSide?: CombSide;
 };
 export type Wire = {
   id: string; sourceComponent: string; sourceTerminal: string;
   targetComponent: string; targetTerminal: string;
   conductorType: Conductor; color: string; gauge: number | null; label: string; path: Point[];
   sourceTermination?: WireTermination; targetTermination?: WireTermination;
+  manualPath?: boolean;
 };
 export type Circuit = {
   id: string; number: number; name: string; phase: string; breakerId: string | null;

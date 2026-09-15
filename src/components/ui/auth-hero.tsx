@@ -5,7 +5,7 @@ export default function AuthHero(): ReactElement {
     <section className="auth-story" aria-label="Portal Elétrico">
       <div>
         <div className="auth-brand">
-          <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
+          <img className="auth-brand-logo" src="/logo.png" alt="" width="34" height="34" />
           <span>Portal Elétrico<small>Gestão para empresas elétricas</small></span>
         </div>
         <div className="auth-story-copy">

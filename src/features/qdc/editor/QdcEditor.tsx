@@ -9,7 +9,7 @@ import CircuitsPanel from '../circuits/CircuitsPanel';
 import ProjectDialog from '../projects/ProjectDialog';
 import { initialHistory, historyReducer } from './history';
 import { copyDevices, pasteDevices, type QdcClipboard } from './clipboard';
-import { addDevice, connect, deleteSelection, fits, moveDevices, organize, updateCircuit, updateDevice, validateProject } from './operations';
+import { addDevice, connect, deleteSelection, fits, moveDeviceOnPlane, moveDevices, organize, updateCircuit, updateDevice, validateProject } from './operations';
 import { demoProject, emptyProject } from '../projects/factory';
 import { loadProjects, parseProjectFile, saveProjects } from '../projects/storage';
 import { warnings } from '../circuits/analysis';
@@ -190,7 +190,7 @@ export default function QdcEditor({ usuarioId, aoAlterar }: { usuarioId: string;
     <div className={`ewq-workbench ewq-show-${panel ?? 'canvas'}`}>
       <aside className="ewq-library"><ComponentLibrary onAdd={type => add(type)} /></aside>
       <section className="ewq-canvas-panel" aria-label="Área de desenho do quadro"><div className="ewq-canvas-meta"><span><span className="ewq-live-dot" /> VISTA FRONTAL / {VIEW_LABELS[mode].toUpperCase()}</span><span>{project.widthMm} × {project.heightMm} mm</span></div>
-        <BoardCanvas project={project} selection={selection} tool={tool} mode={mode} viewport={viewport} onViewport={setViewport} onSelect={setSelection} onMove={(ids, r, s) => run(() => moveDevices(project, ids, r, s), 'Mover dispositivos')} onAdd={add} onTerminal={terminal} wireStart={wireStart} onContextMenu={(x, y, id) => { if (id && !selection.devices.includes(id)) setSelection({ devices: [id], wire: null }); setContext({ x, y }); }} onMessage={setMessage} />
+        <BoardCanvas project={project} selection={selection} tool={tool} mode={mode} viewport={viewport} onViewport={setViewport} onSelect={setSelection} onMove={(ids, r, s) => run(() => moveDevices(project, ids, r, s), 'Mover dispositivos')} onMovePlane={(id, position) => run(() => moveDeviceOnPlane(project, id, position), 'Mover entrada de energia')} onAdd={add} onTerminal={terminal} onWirePath={(id, path) => editWire(id, { path, manualPath: true })} wireStart={wireStart} onContextMenu={(x, y, id) => { if (id && !selection.devices.includes(id)) setSelection({ devices: [id], wire: null }); setContext({ x, y }); }} onMessage={setMessage} />
         <div className="ewq-canvas-footer"><span>{tool === 'wire' ? 'Escolha bitola, cor e terminal; depois clique na origem e no destino.' : tool === 'pan' ? 'Arraste para mover a vista.' : 'Arraste para encaixar · Shift para seleção múltipla'}</span><span className="ewq-wire-legend" aria-label="Legenda dos condutores"><i className="is-phase" />Fase<i className="is-neutral" />Neutro<i className="is-earth" />PE <b>{project.devices.length} disp. · {project.wires.length} fios</b></span></div>
       </section>
       <aside className="ewq-properties"><PropertiesPanel project={project} selection={selection} onUpdateDevice={editDevice} onUpdateWire={editWire} onDelete={remove} onDuplicate={duplicate} onUpdateProject={editProject} /></aside>

@@ -1,5 +1,5 @@
 import { CATALOG, DPS_MODELS, buildTerminals, createDevice } from '../electrical-components/catalog.ts';
-import { deviceMount, isRailMounted, routeWires } from '../wiring/routing.ts';
+import { boardSize, deviceMount, deviceRect, isRailMounted, routeWires } from '../wiring/routing.ts';
 import type { Circuit, Device, Project, Selection, Terminal, WireOptions, WireTermination } from '../types.ts';
 
 type Endpoint = { componentId: string; terminalId: string };
@@ -7,12 +7,17 @@ const isBreaker = (type: string) => type.startsWith('breaker-') || type === 'mai
 const isRcd = (type: string) => type.startsWith('rcd-') || type.startsWith('rcbo-');
 const isCircuitBreaker = (type: string) => isBreaker(type) && type !== 'main-breaker';
 const stamp = (project: Project) => routeWires({ ...project, updatedAt: new Date().toISOString() });
-const terminations: WireTermination[] = ['tubular', 'pente', 'olhal', 'garfo', 'pino', 'sem-terminal'];
+const terminations: WireTermination[] = ['tubular', 'generico', 'pente', 'olhal', 'garfo', 'pino', 'sem-terminal'];
 
 export function fits(project: Project, device: Device): boolean {
   if (!Number.isInteger(device.modules) || device.modules < 1) return false;
   const mount = deviceMount(device);
-  if (mount === 'edge') return ['top', 'bottom', 'left', 'right'].includes(device.edgeSide ?? 'top') && Number.isFinite(device.edgeOffset ?? 50) && (device.edgeOffset ?? 50) >= 0 && (device.edgeOffset ?? 50) <= 100;
+  if (mount === 'edge') {
+    if (!device.canvasPosition) return ['top', 'bottom', 'left', 'right'].includes(device.edgeSide ?? 'top') && Number.isFinite(device.edgeOffset ?? 50) && (device.edgeOffset ?? 50) >= 0 && (device.edgeOffset ?? 50) <= 100;
+    const size = boardSize(project), rect = deviceRect(device, project);
+    return (device.type === 'power-entry' || device.type === 'conduit-entry') && rect.x >= 0 && rect.y >= 0 && rect.x + rect.width <= size.width && rect.y + rect.height <= size.height &&
+      !project.devices.some(other => other.id !== device.id && deviceMount(other) !== 'overlay' && (() => { const otherRect = deviceRect(other, project); return rect.x < otherRect.x + otherRect.width && rect.x + rect.width > otherRect.x && rect.y < otherRect.y + otherRect.height && rect.y + rect.height > otherRect.y; })());
+  }
   if (mount === 'overlay') return Number.isInteger(device.rail) && device.rail >= 0 && device.rail < project.rails &&
     Number.isInteger(device.slot) && device.slot >= 0 && device.slot + device.modules <= project.modulesPerRail &&
     !project.devices.some(other => other.id !== device.id && deviceMount(other) === 'overlay' && other.rail === device.rail && other.slot < device.slot + device.modules && device.slot < other.slot + other.modules);
@@ -33,18 +38,27 @@ export function firstSpace(project: Project, modules: number): { rail: number; s
   return null;
 }
 
+function firstOverlaySpace(project: Project, modules: number): { rail: number; slot: number } | null {
+  for (let rail = 0; rail < project.rails; rail++) for (let slot = 0; slot <= project.modulesPerRail - modules; slot++) {
+    const probe = { id: '__overlay__', type: 'comb-bus', mount: 'overlay', modules, rail, slot } as Device;
+    if (fits(project, probe)) return { rail, slot };
+  }
+  return null;
+}
+
 export function addDevice(project: Project, type: string, position?: { rail: number; slot: number }): Project {
   const device = createDevice(type);
   if (deviceMount(device) === 'edge') {
     const count = project.devices.filter(item => deviceMount(item) === 'edge' && (item.edgeSide ?? 'top') === (device.edgeSide ?? 'top')).length;
-    const placed = { ...device, ...(position ?? {}), edgeOffset: Math.min(90, 15 + count * 15) };
+    const placed = { ...device, ...(position ?? {}), edgeOffset: type === 'power-entry' ? 88 : Math.min(90, 15 + count * 15) };
     return stamp({ ...project, devices: [...project.devices, placed] });
   }
-  const overlayPlace = deviceMount(device) === 'overlay' ? {
-    rail: position?.rail ?? 0,
-    slot: position?.slot ?? Math.max(0, project.devices.filter(isRailMounted).find(item => isCircuitBreaker(item.type))?.slot ?? 0),
-  } : null;
-  const place = overlayPlace ?? position ?? firstSpace(project, device.modules);
+  const firstBreaker = project.devices.filter(isRailMounted).find(item => isCircuitBreaker(item.type));
+  const preferredOverlay = firstBreaker ? { rail: firstBreaker.rail, slot: firstBreaker.slot } : null;
+  const overlayPlace = deviceMount(device) === 'overlay'
+    ? position ?? (preferredOverlay && fits(project, { ...device, ...preferredOverlay }) ? preferredOverlay : firstOverlaySpace(project, device.modules))
+    : null;
+  const place = deviceMount(device) === 'overlay' ? overlayPlace : position ?? firstSpace(project, device.modules);
   if (!place) throw new Error('Não há módulos livres suficientes. Amplie o quadro ou reorganize os componentes.');
   const placed = { ...device, ...place };
   if (!fits(project, placed)) throw new Error('Posição ocupada ou fora do trilho DIN.');
@@ -57,6 +71,15 @@ export function moveDevices(project: Project, ids: string[], railDelta: number, 
   if (!Number.isInteger(railDelta) || !Number.isInteger(slotDelta)) throw new Error('Use posições inteiras de trilho e módulo.');
   const next = { ...project, devices: project.devices.map(device => selected.has(device.id) ? { ...device, rail: device.rail + railDelta, slot: device.slot + slotDelta } : device) };
   if (!next.devices.every(device => fits(next, device))) throw new Error('O movimento sobrepõe componentes ou ultrapassa o quadro.');
+  return stamp(next);
+}
+
+export function moveDeviceOnPlane(project: Project, id: string, position: { x: number; y: number }): Project {
+  const original = project.devices.find(device => device.id === id);
+  if (!original || (original.type !== 'power-entry' && original.type !== 'conduit-entry')) throw new Error('Somente entradas e eletrodutos podem ser movidos livremente pelo plano.');
+  if (!Number.isFinite(position.x) || !Number.isFinite(position.y)) throw new Error('A posição da entrada de energia é inválida.');
+  const next = { ...project, devices: project.devices.map(device => device.id === id ? { ...device, canvasPosition: { x: position.x, y: position.y } } : device) };
+  if (!next.devices.every(device => fits(next, device))) throw new Error('A entrada de energia precisa ficar dentro do quadro e sem sobrepor componentes.');
   return stamp(next);
 }
 
@@ -79,15 +102,21 @@ export function updateDevice(project: Project, id: string, patch: Partial<Device
   }
   if (device.type === 'neutral-bus' || device.type === 'earth-bus') {
     if (!Number.isInteger(device.poles) || device.poles < 2 || device.poles > 24) throw new Error('Escolha entre 2 e 24 bornes.');
-    device = { ...device, modules: 1, amperage: null, gauge: null, voltage: 0, surgeCurrent: 0, circuitId: null, description: '', color: device.type === 'neutral-bus' ? '#1686cf' : '#27854c', terminals: buildTerminals(device.type, device.poles) };
+    if (!['vertical', 'horizontal'].includes(device.orientation ?? 'vertical')) throw new Error('Escolha a orientação vertical ou horizontal.');
+    const allowedSides = device.orientation === 'horizontal' ? ['top', 'bottom'] : ['left', 'right'];
+    const busTerminalSide = allowedSides.includes(device.busTerminalSide ?? '') ? device.busTerminalSide : device.orientation === 'horizontal' ? 'bottom' : 'right';
+    device = { ...device, modules: 1, orientation: device.orientation ?? 'vertical', busTerminalSide, amperage: null, gauge: null, voltage: 0, surgeCurrent: 0, circuitId: null, description: '', color: device.type === 'neutral-bus' ? '#1686cf' : '#27854c', terminals: buildTerminals(device.type, device.poles) };
   }
   if (device.type === 'comb-bus') {
     if (![1, 2, 4].includes(device.poles)) throw new Error('Escolha pente unipolar, bipolar ou tetrapolar.');
     if (!Number.isInteger(device.modules) || device.modules < 2 || device.modules > 24) throw new Error('Escolha entre 2 e 24 encaixes para o pente.');
-    device = { ...device, mount: 'overlay', terminals: [], circuitId: null, gauge: null, voltage: 0, surgeCurrent: 0 };
+    if (!['top', 'bottom'].includes(device.combSide ?? 'top')) throw new Error('Escolha os bornes superiores ou inferiores.');
+    device = { ...device, mount: 'overlay', combSide: device.combSide ?? 'top', terminals: [], circuitId: null, gauge: null, voltage: 0, surgeCurrent: 0 };
   }
   if (device.type === 'power-entry' || device.type === 'conduit-entry') {
-    if (!Number.isInteger(device.poles) || device.poles < 1 || device.poles > 12) throw new Error('Escolha entre 1 e 12 fios.');
+    const minimum = device.type === 'power-entry' ? 3 : 1;
+    const maximum = device.type === 'power-entry' ? 5 : 12;
+    if (!Number.isInteger(device.poles) || device.poles < minimum || device.poles > maximum) throw new Error(device.type === 'power-entry' ? 'Escolha uma entrada com 1, 2 ou 3 fases, além de neutro e terra.' : 'Escolha entre 1 e 12 fios.');
     device = { ...device, mount: 'edge', modules: 1, terminals: buildTerminals(device.type, device.poles), circuitId: null, gauge: null, voltage: 0, surgeCurrent: 0 };
   }
   if (device.poles !== original.poles || device.type !== original.type) {
@@ -187,7 +216,7 @@ export function organize(project: Project): Project {
     if (!place) throw new Error('Não há espaço suficiente para organizar o quadro.');
     result = { ...result, devices: [...result.devices, { ...device, ...place }] };
   }
-  return stamp(result);
+  return stamp({ ...result, wires: result.wires.map(wire => ({ ...wire, manualPath: false })) });
 }
 
 export function updateCircuit(project: Project, id: string, patch: Partial<Circuit>): Project {
@@ -225,7 +254,11 @@ function deviceShape(value: unknown): value is Device {
     (value.mount !== undefined && !['rail', 'edge', 'overlay'].includes(value.mount as string)) ||
     (value.edgeSide !== undefined && !['top', 'bottom', 'left', 'right'].includes(value.edgeSide as string)) ||
     (value.edgeOffset !== undefined && (!nonnegative(value.edgeOffset) || value.edgeOffset > 100)) ||
-    (value.model !== undefined && !text(value.model))) return false;
+    (value.canvasPosition !== undefined && (!record(value.canvasPosition) || !nonnegative(value.canvasPosition.x) || !nonnegative(value.canvasPosition.y))) ||
+    (value.model !== undefined && !text(value.model)) ||
+    (value.orientation !== undefined && !['vertical', 'horizontal'].includes(value.orientation as string)) ||
+    (value.busTerminalSide !== undefined && !['top', 'bottom', 'left', 'right'].includes(value.busTerminalSide as string)) ||
+    (value.combSide !== undefined && !['top', 'bottom'].includes(value.combSide as string))) return false;
   const ids = new Set<string>();
   const indices = new Set<string>();
   if (!value.terminals.length) return value.type === 'comb-bus';
@@ -267,6 +300,7 @@ export function validateProject(value: unknown): value is Project {
       !['phase', 'neutral', 'earth', 'return'].includes(wire.conductorType as string) || !color(wire.color) || !nullablePositive(wire.gauge) || !text(wire.label) || !Array.isArray(wire.path) || wire.path.length > 128 ||
       (wire.sourceTermination !== undefined && !terminations.includes(wire.sourceTermination as WireTermination)) ||
       (wire.targetTermination !== undefined && !terminations.includes(wire.targetTermination as WireTermination)) ||
+      (wire.manualPath !== undefined && typeof wire.manualPath !== 'boolean') ||
       !wire.path.every(point => record(point) && typeof point.x === 'number' && Number.isFinite(point.x) && typeof point.y === 'number' && Number.isFinite(point.y)) ||
       !validEndpoint(project, { componentId: wire.sourceComponent, terminalId: wire.sourceTerminal }) || !validEndpoint(project, { componentId: wire.targetComponent, terminalId: wire.targetTerminal })) return false;
     const endpoints = [`${wire.sourceComponent}\0${wire.sourceTerminal}`, `${wire.targetComponent}\0${wire.targetTerminal}`];

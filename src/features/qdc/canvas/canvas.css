@@ -14,6 +14,8 @@
 .qdc-device { outline: none; }
 .qdc-device:focus-visible > rect, .qdc-device:focus-visible > g > rect:first-child { stroke: #926f09; stroke-width: 3px; }
 .qdc-wire { cursor: pointer; outline: none; }
+.qdc-wire-edit-points > g { cursor: move; outline: none; }
+.qdc-wire-edit-points > g:hover circle:last-child, .qdc-wire-edit-points > g:focus-visible circle:last-child { fill: #f5d448; stroke-width: 2.4; }
 .qdc-wire:focus-visible > path:first-of-type { stroke: #f3d439; stroke-opacity: .5; }
 .qdc-terminal { outline: none; }
 .qdc-terminal.is-connectable { cursor: crosshair; }
