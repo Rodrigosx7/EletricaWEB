@@ -1,12 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CATALOG, createDevice } from '../src/features/qdc/electrical-components/catalog.ts';
-import { addDevice, connect, deleteSelection, duplicateSelection, firstSpace, fits, moveDeviceOnPlane, moveDevices, organize, updateCircuit, updateDevice, validateProject } from '../src/features/qdc/editor/operations.ts';
+import { addDevice, connect, connectionIssue, deleteSelection, duplicateSelection, firstSpace, fits, moveDeviceOnPlane, moveDevices, organize, rerouteWires, updateCircuit, updateDevice, validateProject } from '../src/features/qdc/editor/operations.ts';
 import { circuitCurrent, materialList, phaseBalance, warnings } from '../src/features/qdc/circuits/analysis.ts';
-import { automaticProject, demoProject, emptyProject, migrateLegacy } from '../src/features/qdc/projects/factory.ts';
+import { automaticProject, automaticRequiredModules, demoProject, emptyProject, migrateLegacy } from '../src/features/qdc/projects/factory.ts';
 import { parseProjectFile } from '../src/features/qdc/projects/storage.ts';
-import { boardSize, deviceRect, pathAvoidsDevices, pathOverlapLength, routeWires, terminalPoint } from '../src/features/qdc/wiring/routing.ts';
+import { boardSize, deviceRect, isRailMounted, pathAvoidsDevices, pathOverlapLength, routeWires, terminalPoint } from '../src/features/qdc/wiring/routing.ts';
+import { bendWirePoint, flexWireSegment, reattachManualWirePath, removeWireBend, roundedWirePath, snapWirePoint } from '../src/features/qdc/wiring/geometry.ts';
 import { ferruleColor, TERMINATION_OPTIONS, WIRE_COLORS } from '../src/features/qdc/wiring/options.ts';
+import { canvasFocus } from '../src/features/qdc/canvas/focus.ts';
 import type { Circuit, Project } from '../src/features/qdc/types.ts';
 
 const options = { conductorType: 'phase' as const, color: '#20252b', gauge: 2.5, termination: 'tubular' as const };
@@ -26,6 +28,19 @@ test('catalog contains the complete QDC families with usable terminal identities
     assert.equal(device.gauge, null);
   }
   assert.throws(() => createDevice('unknown'), /não encontrado/);
+});
+
+test('visual device models change only appearance and reject unknown imported values', () => {
+  let project = addDevice(emptyProject(), 'breaker-2p');
+  const original = structuredClone(project.devices[0]);
+  project = updateDevice(project, original.id, { visualModel: 'graphite' });
+  const changed = project.devices[0];
+  assert.equal(changed.visualModel, 'graphite');
+  assert.equal(changed.type, original.type);
+  assert.equal(changed.modules, original.modules);
+  assert.deepEqual(changed.terminals, original.terminals);
+  assert.ok(validateProject(project));
+  assert.equal(validateProject({ ...project, devices: [{ ...changed, visualModel: 'fabricante-inventado' }] }), false);
 });
 
 test('collision rejection preserves input and checks board bounds', () => {
@@ -119,6 +134,44 @@ test('wire operations reject missing endpoints, loops and duplicate reversed con
   assert.throws(() => connect(project, endpoint(a.id, 'bottom-0'), endpoint(b.id), { ...options, gauge: Number.NaN }), /seção/);
 });
 
+test('wire operations enforce conductor compatibility with L, N and PE terminals', () => {
+  let project = emptyProject({ rails: 2, modulesPerRail: 12 });
+  project = addDevice(project, 'breaker-1p', { rail: 0, slot: 0 });
+  project = addDevice(project, 'neutral-bus', { rail: 0, slot: 1 });
+  project = addDevice(project, 'earth-bus', { rail: 0, slot: 2 });
+  const [breaker, neutral, earth] = project.devices;
+  assert.match(connectionIssue(project, endpoint(breaker.id), endpoint(neutral.id, 'side-0'), 'phase') ?? '', /não é compatível/);
+  assert.equal(connectionIssue(project, endpoint(neutral.id, 'side-0'), endpoint(neutral.id, 'side-1'), 'neutral'), null);
+  assert.throws(() => connect(project, endpoint(breaker.id), endpoint(neutral.id, 'side-0'), options), /não é compatível/);
+  assert.throws(() => connect(project, endpoint(breaker.id), endpoint(earth.id, 'side-0'), { ...options, conductorType: 'neutral', color: '#1686cf' }), /não é compatível/);
+  const validNeutral = connect(project, endpoint(neutral.id, 'side-0'), endpoint(neutral.id, 'side-1'), { ...options, conductorType: 'neutral', color: '#1686cf' });
+  assert.ok(validateProject(validNeutral));
+  const invalidImported = { ...validNeutral, wires: validNeutral.wires.map(wire => ({ ...wire, conductorType: 'phase' as const })) };
+  assert.equal(validateProject(invalidImported), false);
+});
+
+test('RCBO can be linked as combined breaker and residual-current protection', () => {
+  let project = addDevice(emptyProject(), 'rcbo-2p');
+  const rcbo = project.devices[0];
+  const circuit = loadCircuit({ breakerId: rcbo.id, drId: rcbo.id });
+  project = { ...project, circuits: [circuit], devices: [{ ...rcbo, circuitId: circuit.id }] };
+  const changed = updateCircuit(project, circuit.id, { drId: rcbo.id });
+  assert.equal(changed.circuits[0].drId, rcbo.id);
+  assert.ok(validateProject(changed));
+});
+
+test('recalculating wires preserves component placement and discards manual paths', () => {
+  let project = emptyProject({ rails: 1, modulesPerRail: 6 });
+  project = addDevice(project, 'breaker-1p', { rail: 0, slot: 0 });
+  project = addDevice(project, 'breaker-1p', { rail: 0, slot: 4 });
+  project = connect(project, endpoint(project.devices[0].id, 'bottom-0'), endpoint(project.devices[1].id), options);
+  project = { ...project, wires: project.wires.map(wire => ({ ...wire, manualPath: true })) };
+  const positions = project.devices.map(device => ({ id: device.id, rail: device.rail, slot: device.slot }));
+  const rerouted = rerouteWires(project);
+  assert.deepEqual(rerouted.devices.map(device => ({ id: device.id, rail: device.rail, slot: device.slot })), positions);
+  assert.ok(rerouted.wires.every(wire => wire.manualPath === false));
+});
+
 test('routing across full rails avoids all component interiors, stays on board and is deterministic', () => {
   let project = emptyProject({ rails: 4, modulesPerRail: 12 });
   for (let rail = 0; rail < 4; rail++) {
@@ -152,15 +205,61 @@ test('parallel routes use separate corridors instead of stacking entire segments
   assert.equal(pathOverlapLength(project.wires[0].path, project.wires[1].path), 0);
 });
 
+test('smart organization groups devices by function, keeps circuit rows together and realigns comb buses', () => {
+  let mixed = emptyProject({ rails: 2, modulesPerRail: 12 });
+  for (const type of ['contactor', 'breaker-1p', 'neutral-bus', 'rcd-2p', 'spd', 'main-breaker']) mixed = addDevice(mixed, type);
+  const organized = organize(mixed);
+  const orderedTypes = organized.devices.filter(isRailMounted).sort((a, b) => a.rail - b.rail || a.slot - b.slot).map(device => device.type);
+  assert.deepEqual(orderedTypes, ['main-breaker', 'spd', 'rcd-2p', 'breaker-1p', 'contactor', 'neutral-bus']);
+  assert.ok(organized.devices.every(device => fits(organized, device)));
+
+  const compact = organize(automaticProject({ supply: 'mono', rails: 2, modulesPerRail: 8 }, ['Luz', 'Tomadas', 'Cozinha']));
+  const breakers = compact.devices.filter(device => device.type === 'breaker-1p' && device.circuitId).sort((a, b) => a.slot - b.slot);
+  assert.equal(new Set(breakers.map(device => device.rail)).size, 1, 'a circuit group that fits one rail should not be split');
+  const comb = compact.devices.find(device => device.type === 'comb-bus')!;
+  assert.equal(comb.rail, breakers[0].rail);
+  assert.equal(comb.slot, breakers[0].slot);
+  assert.equal(comb.modules, breakers.reduce((total, device) => total + device.modules, 0));
+  assert.ok(compact.wires.every(wire => pathAvoidsDevices(wire.path, compact.devices, compact)));
+  assert.ok(validateProject(compact));
+
+  const demo = organize(demoProject());
+  const neutral = demo.devices.find(device => device.type === 'neutral-bus')!;
+  const earth = demo.devices.find(device => device.type === 'earth-bus')!;
+  assert.equal(neutral.rail, 1);
+  assert.equal(neutral.slot, 0);
+  assert.equal(neutral.busTerminalSide, 'left');
+  assert.equal(earth.rail, 1);
+  assert.equal(earth.slot, demo.modulesPerRail - earth.modules);
+  assert.equal(earth.busTerminalSide, 'right');
+  assert.ok(demo.wires.every(wire => wire.path.length > 0), 'organizing must not introduce unroutable wires');
+});
+
 test('automatic proposal and demo preserve unknown electrical settings and valid links', () => {
+  assert.equal(automaticRequiredModules('mono', 10), 16);
+  assert.equal(automaticRequiredModules('bi', 10), 20);
+  assert.equal(automaticRequiredModules('tri', 10), 22);
   const demo = demoProject();
+  const notices = warnings(demo);
   assert.equal(demo.supply, 'mono');
   assert.equal(demo.voltage, 220);
   assert.equal(demo.circuits.length, 5);
   assert.equal(demo.devices.filter(device => device.type === 'comb-bus').length, 1);
   assert.ok(demo.devices.some(device => device.type === 'neutral-bus'));
   assert.ok(demo.devices.some(device => device.type === 'earth-bus'));
+  assert.equal(demo.devices.filter(device => device.type === 'conduit-entry').length, 2);
+  for (const circuit of demo.circuits) {
+    const outputWires = demo.wires.filter(wire => wire.label.startsWith(`C${circuit.number} `));
+    assert.deepEqual(outputWires.map(wire => wire.conductorType).sort(), ['earth', 'neutral', 'phase']);
+    assert.ok(outputWires.every(wire => demo.devices.find(device => device.id === wire.targetComponent)?.type === 'conduit-entry'));
+    assert.ok(outputWires.every(wire => wire.gauge === null), 'automatic outputs must not invent a conductor section');
+  }
   assert.ok(demo.wires.length > 5);
+  assert.ok(demo.wires.every(wire => wire.path.length > 0), 'automatic proposals must not contain unroutable wires');
+  assert.equal(notices.filter(notice => notice.severity === 'error').length, 0);
+  assert.equal(notices.filter(notice => notice.severity === 'warning').length, 0);
+  assert.ok(notices.every(notice => notice.severity === 'info'));
+  assert.ok(notices.filter(notice => notice.id.startsWith('load-') || notice.id.startsWith('cable-')).every(notice => notice.circuitId));
   for (let i = 0; i < demo.wires.length; i++) for (let j = i + 1; j < demo.wires.length; j++) {
     if (pathOverlapLength(demo.wires[i].path, demo.wires[j].path) === 0) continue;
     const sharedSource = demo.wires[i].sourceComponent === demo.wires[j].sourceComponent && demo.wires[i].sourceTerminal === demo.wires[j].sourceTerminal;
@@ -168,12 +267,58 @@ test('automatic proposal and demo preserve unknown electrical settings and valid
     assert.ok(sharedSource || sharedTarget, 'only the short exit of a genuinely shared terminal may overlap');
   }
   assert.ok(validateProject(demo));
+  const crowded = automaticProject({ supply: 'mono', voltage: 220, rails: 2, modulesPerRail: 12 }, Array.from({ length: 10 }, (_, index) => `Circuito ${index + 1}`));
+  const crowdedCombs = crowded.devices.filter(device => device.type === 'comb-bus').sort((a, b) => a.rail - b.rail);
+  assert.equal(crowdedCombs.length, 2, 'each contiguous breaker row needs its own comb bus');
+  for (const comb of crowdedCombs) {
+    const covered = crowded.devices.filter(device => device.type === 'breaker-1p' && device.rail === comb.rail && device.slot >= comb.slot && device.slot + device.modules <= comb.slot + comb.modules);
+    assert.ok(covered.length > 1);
+    assert.equal(comb.slot, Math.min(...covered.map(device => device.slot)));
+    assert.equal(comb.slot + comb.modules, Math.max(...covered.map(device => device.slot + device.modules)));
+    assert.ok(fits(crowded, comb));
+  }
+  const crowdedBreakerIds = new Set(crowded.circuits.map(circuit => circuit.breakerId));
+  const crowdedFeeds = crowded.wires.filter(wire => wire.conductorType === 'phase' && crowdedBreakerIds.has(wire.targetComponent));
+  assert.equal(crowdedFeeds.length, crowdedCombs.length, 'each comb bus group needs one phase feed');
+  assert.ok(crowded.wires.every(wire => wire.path.length > 0));
+  assert.ok(validateProject(crowded));
   const tri = automaticProject({ supply: 'tri', voltage: 220, rails: 3, modulesPerRail: 12 }, ['Luz', 'Tomadas', 'Motor']);
   assert.deepEqual(tri.circuits.map(circuit => circuit.phase), ['R', 'S', 'T']);
   assert.ok(tri.circuits.every(circuit => circuit.load === null && circuit.cableGauge === null));
+  const triDense = automaticProject({ supply: 'tri', voltage: 220, rails: 2, modulesPerRail: 12 }, ['Luz', 'Tomadas', 'Motor', 'Copa', 'Ar-condicionado']);
+  const triNeutral = triDense.devices.find(device => device.type === 'neutral-bus')!;
+  const triEarth = triDense.devices.find(device => device.type === 'earth-bus')!;
+  assert.deepEqual([triNeutral.rail, triNeutral.slot, triNeutral.busTerminalSide], [1, 0, 'left']);
+  assert.deepEqual([triEarth.rail, triEarth.slot, triEarth.busTerminalSide], [1, 11, 'right']);
+  assert.ok(triDense.wires.every(wire => wire.path.length > 0), 'dense three-phase proposals must preserve every routed wire');
   assert.ok(tri.devices.every(device => device.amperage === null && device.gauge === null));
   assert.ok(validateProject(tri));
+  const maximumPreset = automaticProject({ supply: 'mono', voltage: 220, rails: 4, modulesPerRail: 12 }, Array.from({ length: 40 }, (_, index) => `Circuito ${index + 1}`));
+  const maximumOutputs = maximumPreset.devices.filter(device => device.type === 'conduit-entry');
+  assert.equal(maximumOutputs.length, 5);
+  assert.equal(maximumPreset.devices.filter(device => device.type === 'neutral-bus').length, 2);
+  assert.equal(maximumPreset.devices.filter(device => device.type === 'earth-bus').length, 2);
+  assert.ok(maximumPreset.wires.every(wire => wire.path.length > 0));
+  for (let i = 0; i < maximumOutputs.length; i++) for (let j = i + 1; j < maximumOutputs.length; j++) {
+    const first = deviceRect(maximumOutputs[i], maximumPreset), second = deviceRect(maximumOutputs[j], maximumPreset);
+    assert.ok(first.x + first.width <= second.x || second.x + second.width <= first.x, 'automatic circuit outputs must not overlap');
+  }
+  assert.ok(validateProject(maximumPreset));
   assert.throws(() => automaticProject({ rails: 1, modulesPerRail: 8 }, ['Luz', 'Tomadas', 'Cozinha', 'Chuveiro']), /não comporta/);
+});
+
+test('canvas focus isolates the selected circuit without hiding shared infrastructure', () => {
+  const project = demoProject();
+  const circuit = project.circuits[0];
+  const breakerFocus = canvasFocus(project, { devices: [circuit.breakerId!], wire: null })!;
+  assert.ok(breakerFocus.deviceIds.has(circuit.breakerId!));
+  assert.deepEqual([...breakerFocus.wireIds].map(id => project.wires.find(wire => wire.id === id)!.label).filter(Boolean).sort(), ['C1 PE', 'C1 fase', 'C1 neutro']);
+  assert.equal([...breakerFocus.wireIds].filter(id => !project.wires.find(wire => wire.id === id)!.label).length, 1, 'the breaker feed remains in context');
+  const neutralWire = project.wires.find(wire => wire.label === 'C1 neutro')!;
+  assert.deepEqual(canvasFocus(project, { devices: [], wire: neutralWire.id })!.wireIds, breakerFocus.wireIds);
+  const output = project.devices.find(device => device.type === 'conduit-entry' && device.label.includes('C1'))!;
+  assert.equal(canvasFocus(project, { devices: [output.id], wire: null })!.wireIds.size, 12);
+  assert.equal(canvasFocus(project, { devices: [], wire: null }), null);
 });
 
 test('breaker identification creates and keeps a circuit without adding layout prefixes', () => {
@@ -246,7 +391,9 @@ test('buses rotate, comb bars can use either terminal side and new overlays find
   const combs = project.devices.filter(device => device.type === 'comb-bus');
   assert.equal(combs.length, 2);
   assert.notDeepEqual([combs[0].rail, combs[0].slot], [combs[1].rail, combs[1].slot]);
-  const top = deviceRect(combs[0], project);
+  assert.equal(combs[0].combSide, 'bottom');
+  project = updateDevice(project, combs[0].id, { combSide: 'top' });
+  const top = deviceRect(project.devices.find(device => device.id === combs[0].id)!, project);
   project = updateDevice(project, combs[0].id, { combSide: 'bottom' });
   const bottom = deviceRect(project.devices.find(device => device.id === combs[0].id)!, project);
   assert.ok(bottom.y > top.y);
@@ -259,13 +406,78 @@ test('manual wire paths survive routing and generic connectors and added colors 
   project = addDevice(project, 'breaker-1p', { rail: 0, slot: 5 });
   project = connect(project, endpoint(project.devices[0].id), endpoint(project.devices[1].id), { ...options, termination: 'generico' });
   const wire = project.wires[0];
-  const manualPath = [wire.path[0], { x: 180, y: 40 }, { x: 260, y: 40 }, wire.path.at(-1)!];
+  const manualPath = [wire.path[0], { x: wire.path[0].x, y: 40 }, { x: wire.path.at(-1)!.x, y: 40 }, wire.path.at(-1)!];
   project = routeWires({ ...project, wires: [{ ...wire, manualPath: true, path: manualPath }] });
   assert.deepEqual(project.wires[0].path.slice(1, -1), manualPath.slice(1, -1));
   assert.equal(project.wires[0].sourceTermination, 'generico');
   assert.ok(TERMINATION_OPTIONS.some(option => option.value === 'generico'));
   for (const color of ['Azul', 'Verde', 'Branco', 'Amarelo']) assert.ok(WIRE_COLORS.phase.some(option => option.label === color));
   assert.ok(validateProject(project));
+});
+
+test('wire shaping flexes segments, rounds bends and stays attached orthogonally', () => {
+  const path = [{ x: 0, y: 0 }, { x: 0, y: 40 }, { x: 80, y: 40 }, { x: 80, y: 100 }];
+  const orthogonal = (candidate: typeof path) => candidate.slice(1).every((point, index) => point.x === candidate[index].x || point.y === candidate[index].y);
+
+  const drawing = roundedWirePath(path);
+  assert.match(drawing, /^M 0 0/);
+  assert.match(drawing, / Q /);
+  assert.match(drawing, /L 80 100$/);
+
+  const flexed = flexWireSegment(path, 1, { x: 40, y: 64 });
+  assert.deepEqual(flexed[0], path[0]);
+  assert.deepEqual(flexed.at(-1), path.at(-1));
+  assert.ok(flexed.some(point => point.y === 64));
+  assert.ok(orthogonal(flexed));
+
+  const bent = bendWirePoint(path, 1, { x: 20, y: 28 });
+  assert.deepEqual(bent[0], path[0]);
+  assert.deepEqual(bent.at(-1), path.at(-1));
+  assert.ok(orthogonal(bent));
+  assert.ok(bent.some(point => point.x === 20 && point.y === 28), 'the bend must follow both axes of the pointer');
+
+  const snapped = snapWirePoint({ x: 37, y: 62 }, [10, 40, 90], [18, 64], 4);
+  assert.deepEqual(snapped, { point: { x: 40, y: 64 }, guide: { x: 40, y: 64 } });
+  const free = snapWirePoint({ x: 30, y: 50 }, [40], [64], 4);
+  assert.deepEqual(free, { point: { x: 30, y: 50 }, guide: { x: null, y: null } });
+
+  const dogleg = [{ x: 0, y: 0 }, { x: 0, y: 30 }, { x: 20, y: 30 }, { x: 20, y: 70 }, { x: 0, y: 70 }, { x: 0, y: 100 }];
+  const simplified = removeWireBend(dogleg, 2);
+  assert.deepEqual(simplified, [{ x: 0, y: 0 }, { x: 0, y: 100 }]);
+  assert.ok(orthogonal(simplified));
+
+  const reattached = reattachManualWirePath(path, { x: 10, y: 10 }, { x: 90, y: 110 });
+  assert.deepEqual(reattached[0], { x: 10, y: 10 });
+  assert.deepEqual(reattached.at(-1), { x: 90, y: 110 });
+  assert.ok(orthogonal(reattached));
+});
+
+test('manual routes keep their bends across repeated endpoint moves and endpoint segment edits', () => {
+  const paths = [
+    [{ x: 0, y: 0 }, { x: 0, y: 40 }, { x: 80, y: 40 }, { x: 80, y: 100 }],
+    [{ x: 0, y: 0 }, { x: 0, y: 40 }, { x: 80, y: 40 }, { x: 80, y: 100 }, { x: 140, y: 100 }],
+    [{ x: 0, y: 0 }, { x: 80, y: 0 }, { x: 80, y: 100 }],
+    [{ x: 0, y: 0 }, { x: 0, y: 100 }],
+  ];
+  for (const path of paths) {
+    const original = structuredClone(path);
+    for (let index = 0; index < path.length - 1; index++) {
+      const flexed = flexWireSegment(path, index, { x: 25, y: 65 });
+      assert.deepEqual(flexed[0], path[0]);
+      assert.deepEqual(flexed.at(-1), path.at(-1));
+      assert.ok(flexed.slice(1).every((p, i) => p.x === flexed[i].x || p.y === flexed[i].y));
+    }
+    let moved = path;
+    for (let step = 1; step <= 4; step++) {
+      const source = { x: 10 * step, y: 5 * step }, target = { x: 160 - step * 8, y: 130 + step * 6 };
+      moved = reattachManualWirePath(moved, source, target);
+      assert.deepEqual(moved[0], source);
+      assert.deepEqual(moved.at(-1), target);
+      assert.ok(moved.slice(1).every((p, i) => p.x === moved[i].x || p.y === moved[i].y));
+      assert.deepEqual(reattachManualWirePath(moved, source, target), moved);
+    }
+    assert.deepEqual(path, original);
+  }
 });
 
 test('DPS values are model controlled and tubular colors follow conductor section', () => {

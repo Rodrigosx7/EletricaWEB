@@ -28,7 +28,7 @@ export const CATALOG: CatalogItem[] = [
   { type: 'terminal-n', name: 'Borne de neutro', category: 'Distribuição', modules: 1, poles: 1, description: 'Borne genérico identificado para neutro.' },
   { type: 'terminal-pe', name: 'Borne de proteção PE', category: 'Distribuição', modules: 1, poles: 1, description: 'Borne genérico identificado para condutor de proteção.' },
   { type: 'distribution-block', name: 'Bloco distribuidor', category: 'Distribuição', modules: 3, poles: 4, description: 'Distribuição visual; capacidade a definir.' },
-  { type: 'power-entry', name: 'Entrada de energia', category: 'Infraestrutura', modules: 1, poles: 3, description: 'Entrada externa com fase, neutro e proteção PE para ligar a alimentação do quadro.', mount: 'edge' },
+  { type: 'power-entry', name: 'Entrada de energia', category: 'Infraestrutura', modules: 1, poles: 3, description: 'Representação visual do padrão de entrada e medição. Conecta a alimentação externa ao quadro por fase, neutro e PE.', mount: 'edge' },
   { type: 'conduit-entry', name: 'Eletroduto de entrada/saída', category: 'Infraestrutura', modules: 1, poles: 4, description: 'Passagem pela borda do quadro para indicar a entrada ou saída dos fios de um circuito.', mount: 'edge' },
   { type: 'contactor', name: 'Contator', category: 'Automação', modules: 3, poles: 3, description: 'Contatos de potência e terminais A1/A2 da bobina.' },
   { type: 'relay', name: 'Relé', category: 'Automação', modules: 2, poles: 1, description: 'Bobina A1/A2 e contato reversível 11/12/14.' },
@@ -62,7 +62,7 @@ export function buildTerminals(type: string, poles: number): Terminal[] {
       ? terminal(`edge-${i}`, phases === 1 ? 'L' : `L${i + 1}`, 'bottom', i)
       : i === phases ? terminal(`edge-${i}`, 'N', 'bottom', i, 'N') : terminal(`edge-${i}`, 'PE', 'bottom', i, 'PE'));
   }
-  if (type === 'conduit-entry') return Array.from({ length: poles }, (_, i) => terminal(`edge-${i}`, `Fio ${i + 1}`, 'bottom', i));
+  if (type === 'conduit-entry') return Array.from({ length: poles }, (_, i) => terminal(`edge-${i}`, `Fio ${i + 1}`, 'bottom', i, 'control'));
   if (type === 'spd') return [terminal('top-0', 'L', 'top', 0), terminal('bottom-0', 'PE', 'bottom', 0, 'PE')];
   if (type === 'power-supply') return [terminal('top-0', 'L', 'top', 0), terminal('top-1', 'N', 'top', 1, 'N'), terminal('bottom-0', '+', 'bottom', 0, 'control'), terminal('bottom-1', '−', 'bottom', 1, 'control')];
   if (type === 'din-socket') return [terminal('top-0', 'L', 'top', 0), terminal('top-1', 'N', 'top', 1, 'N'), terminal('top-2', 'PE', 'top', 2, 'PE')];
@@ -99,8 +99,9 @@ export function createDevice(type: string): Device {
     terminals: buildTerminals(type, item.poles), mount: item.mount ?? 'rail',
     edgeSide: item.mount === 'edge' ? 'top' : undefined, edgeOffset: item.mount === 'edge' ? type === 'power-entry' ? 88 : 50 : undefined,
     model: dps?.id,
+    visualModel: 'classic',
     orientation: type === 'neutral-bus' || type === 'earth-bus' ? 'vertical' : undefined,
     busTerminalSide: type === 'neutral-bus' || type === 'earth-bus' ? 'right' : undefined,
-    combSide: type === 'comb-bus' ? 'top' : undefined,
+    combSide: type === 'comb-bus' ? 'bottom' : undefined,
   };
 }

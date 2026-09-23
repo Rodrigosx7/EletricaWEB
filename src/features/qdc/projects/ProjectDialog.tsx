@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import Modal from '../../../components/ui/Modal';
 import { PRELIMINARY_NOTICE, type Project, type Supply } from '../types';
-import { automaticProject, emptyProject } from './factory';
+import { automaticProject, automaticRequiredModules, emptyProject } from './factory';
 
 const layouts: Record<string, [number, number]> = { '8': [1, 8], '12': [1, 12], '16': [1, 16], '18': [1, 18], '24': [2, 12], '36': [3, 12], '48': [4, 12] };
 export default function ProjectDialog({ automatic, onCreate, onClose }: { automatic: boolean; onCreate(project: Project): void; onClose(): void }) {
@@ -17,13 +17,19 @@ export default function ProjectDialog({ automatic, onCreate, onClose }: { automa
   const [kind, setKind] = useState('Residencial');
   const [names, setNames] = useState('Iluminação\nTomadas sala\nTomadas quartos\nCozinha\nChuveiro');
   const [error, setError] = useState('');
+  const circuitNames = names.split('\n').map(value => value.trim()).filter(Boolean);
+  const selectedLayout = layouts[capacity] ?? [rails, modules];
+  const availableModules = selectedLayout[0] * selectedLayout[1];
+  const requiredModules = automaticRequiredModules(supply, circuitNames.length);
+  const freeModules = availableModules - requiredModules;
+  const recommendedCapacity = Object.entries(layouts).find(([, layout]) => layout[0] * layout[1] >= requiredModules)?.[0];
   function create() {
     if (!name.trim()) { setError('Informe um nome para o projeto.'); return; }
     try {
       const layout = layouts[capacity] ?? [rails, modules];
       const config: Partial<Project> = { name: name.trim(), supply, voltage, rails: layout[0], modulesPerRail: layout[1], widthMm: width, heightMm: height };
       if (automatic) {
-        const list = names.split('\n').map(n => n.trim()).filter(Boolean);
+        const list = circuitNames;
         if (!list.length || list.length > 40) throw new Error('Informe de 1 a 40 circuitos, um nome por linha.');
         onCreate(automaticProject(config, list));
       } else {
@@ -47,7 +53,20 @@ export default function ProjectDialog({ automatic, onCreate, onClose }: { automa
         <label>Altura da caixa (mm)<input type="number" min={100} max={3000} value={height} onChange={e => setHeight(Math.min(3000, Math.max(100, Number(e.target.value))))} /></label>
       </div>
       <small>Dimensões da caixa são informativas. Confira o espaço útil, trilhos e acessórios no fabricante.</small>
-      {automatic && <><label>Circuitos · um por linha<textarea rows={7} maxLength={2000} value={names} onChange={e => setNames(e.target.value)} /></label><p className="ewq-notice">{PRELIMINARY_NOTICE}</p></>}
+      {automatic && <>
+        <label>Circuitos · um por linha<textarea rows={7} maxLength={2000} value={names} onChange={e => { setNames(e.target.value); setError(''); }} /></label>
+        <div className={`ewq-capacity-preview ${freeModules < 0 ? 'is-insufficient' : freeModules <= 2 ? 'is-tight' : 'is-comfortable'}`}>
+          <div className="ewq-capacity-heading"><span>Ocupação estimada</span><strong>{requiredModules} de {availableModules} módulos</strong></div>
+          <div className="ewq-capacity-track" aria-label={`${Math.min(requiredModules, availableModules)} de ${availableModules} módulos estimados`}><span style={{ width: `${Math.min(100, requiredModules / Math.max(1, availableModules) * 100)}%` }} /></div>
+          <div className="ewq-capacity-detail">
+            <span>{circuitNames.length} circuito{circuitNames.length === 1 ? '' : 's'} · {selectedLayout[0]} trilho{selectedLayout[0] === 1 ? '' : 's'}</span>
+            {freeModules >= 0 ? <span>{freeModules} módulo{freeModules === 1 ? '' : 's'} livre{freeModules === 1 ? '' : 's'}</span> : <span>Faltam {Math.abs(freeModules)} módulos</span>}
+          </div>
+          {freeModules < 0 && recommendedCapacity && <button type="button" className="ewq-capacity-action" onClick={() => { setCapacity(recommendedCapacity); setError(''); }}>Usar quadro de {recommendedCapacity} módulos</button>}
+          <small>Estimativa física dos dispositivos da proposta; barramentos pente ficam sobrepostos e não consomem módulos DIN.</small>
+        </div>
+        <p className="ewq-notice">{PRELIMINARY_NOTICE}</p>
+      </>}
       {error && <p role="alert" className="ewq-error">{error}</p>}
     </div>
   </Modal>;

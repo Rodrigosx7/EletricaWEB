@@ -1,4 +1,5 @@
 import type { Device, DeviceMount, Point, Project, TerminalSide, Wire } from '../types.ts';
+import { reattachManualWirePath } from './geometry.ts';
 
 export const MODULE = 44;
 export const RAIL = 210;
@@ -23,7 +24,7 @@ export function deviceRect(device: Device, project?: Project) {
   const mount = deviceMount(device);
   if (mount === 'overlay') return {
     x: LEFT + device.slot * MODULE + 2,
-    y: device.combSide === 'bottom' ? TOP + device.rail * RAIL + DEVICE_HEIGHT - 8 : TOP + device.rail * RAIL - 8,
+    y: (device.combSide ?? 'bottom') === 'bottom' ? TOP + device.rail * RAIL + DEVICE_HEIGHT - 8 : TOP + device.rail * RAIL - 8,
     width: Math.max(MODULE - 4, device.modules * MODULE - 4),
     height: 16,
   };
@@ -31,7 +32,7 @@ export function deviceRect(device: Device, project?: Project) {
     const size = project ? boardSize(project) : { width: LEFT * 2 + 12 * MODULE, height: TOP * 2 + DEVICE_HEIGHT };
     const isBus = device.type === 'neutral-bus' || device.type === 'earth-bus';
     const horizontal = isBus && device.orientation === 'horizontal';
-    const width = isBus ? horizontal ? 92 : 30 : device.type === 'power-entry' ? Math.max(58, device.poles * 18) : 48;
+    const width = isBus ? horizontal ? 92 : 30 : device.type === 'power-entry' ? Math.max(58, device.poles * 18) : Math.max(48, Math.min(104, device.poles * 8 + 8));
     const height = isBus ? horizontal ? 30 : 92 : 48;
     if (device.canvasPosition) return { x: device.canvasPosition.x, y: device.canvasPosition.y, width, height };
     const offset = Math.max(5, Math.min(95, device.edgeOffset ?? 50)) / 100;
@@ -139,12 +140,25 @@ function crossings(a: Point[], b: Point[]): number {
   return count;
 }
 
-function terminalExit(point: Point, side: TerminalSide, fanLane: number, depthLane: number): Point[] {
+function terminalExit(point: Point, side: TerminalSide, fanLane: number, depthLane: number, size: { width: number; height: number }, device: Device, project: Project): Point[] {
   const localLane = fanLane % 12;
   const localDepth = depthLane % 12;
   const vertical = side === 'top' || side === 'bottom';
   const direction = side === 'top' || side === 'left' ? -1 : 1;
-  const depth = (vertical ? point.y : point.x) + direction * (18 + localDepth * 4.5);
+  const axisSize = vertical ? size.height : size.width;
+  const coordinate = vertical ? point.y : point.x;
+  const desiredDepth = coordinate + direction * (18 + localDepth * 4.5);
+  // Vertical fans share the shallow top/bottom corridors; lateral buses may use the full side corridors.
+  const perimeterMargin = vertical ? 72 : 8;
+  let depth = Math.max(perimeterMargin, Math.min(axisSize - perimeterMargin, desiredDepth));
+  depth = direction < 0 ? Math.min(depth, coordinate - 8) : Math.max(depth, coordinate + 8);
+  depth = Math.max(8, Math.min(axisSize - 8, depth));
+  if (deviceMount(device) === 'edge' && !device.canvasPosition) {
+    if (side === 'top') depth = Math.max(depth, TOP + (project.rails - 1) * RAIL + DEVICE_HEIGHT + 8);
+    if (side === 'bottom') depth = Math.min(depth, TOP - 8);
+    if (side === 'left') depth = Math.max(depth, LEFT + project.modulesPerRail * MODULE + 8);
+    if (side === 'right') depth = Math.min(depth, LEFT - 8);
+  }
   if (fanLane === 0) return vertical ? [point, { x: point.x, y: depth }] : [point, { x: depth, y: point.y }];
   const fan = (localLane % 2 ? 1 : -1) * (3 + Math.floor(localLane / 2) * 2.5);
   if (vertical) {
@@ -165,13 +179,13 @@ function route(project: Project, wire: Wire, sourceLane: number, targetLane: num
   const a = sourceDevice?.terminals.find(t => t.id === wire.sourceTerminal);
   const b = targetDevice?.terminals.find(t => t.id === wire.targetTerminal);
   if (!source || !target || !a || !b || !sourceDevice || !targetDevice) return [];
-  if (wire.manualPath && wire.path.length >= 2) return compact([source, ...wire.path.slice(1, -1), target]);
+  if (wire.manualPath && wire.path.length >= 2) return reattachManualWirePath(wire.path, source, target);
+  const size = boardSize(project);
   const family = { phase: 0, neutral: 1, earth: 2, return: 3 }[wire.conductorType];
-  const sourceExit = terminalExit(source, terminalSide(sourceDevice, a.side), sourceLane, globalLane);
-  const targetExit = terminalExit(target, terminalSide(targetDevice, b.side), targetLane, globalLane + 1).reverse();
+  const sourceExit = terminalExit(source, terminalSide(sourceDevice, a.side), sourceLane, globalLane, size, sourceDevice, project);
+  const targetExit = terminalExit(target, terminalSide(targetDevice, b.side), targetLane, globalLane + 1, size, targetDevice, project).reverse();
   const from = sourceExit.at(-1)!;
   const to = targetExit[0];
-  const size = boardSize(project);
   const sideOffset = 20 + family * 7 + globalLane * 3.5;
   const left = Math.max(8, LEFT - sideOffset);
   const right = Math.min(size.width - 8, LEFT + project.modulesPerRail * MODULE + sideOffset);
@@ -191,7 +205,8 @@ function route(project: Project, wire: Wire, sourceLane: number, targetLane: num
   ];
   const candidates = joins.map(join => compact([...sourceExit, ...join.slice(1), ...targetExit.slice(1)])).filter(points => pathAvoidsDevices(points, project.devices, project));
   const distance = (points: Point[]) => points.slice(1).reduce((sum, p, i) => sum + Math.abs(p.x - points[i].x) + Math.abs(p.y - points[i].y), 0);
-  const cost = (points: Point[]) => distance(points) + points.length * 5 + occupied.reduce((sum, path) => sum + pathOverlapLength(points, path) * 2500 + crossings(points, path) * 90, 0);
+  // A crossing is visually harder to follow than a modest detour, while shared runs remain strongly discouraged.
+  const cost = (points: Point[]) => distance(points) + points.length * 5 + occupied.reduce((sum, path) => sum + pathOverlapLength(points, path) * 2500 + crossings(points, path) * 420, 0);
   candidates.sort((aPath, bPath) => cost(aPath) - cost(bPath));
   return candidates[0] ?? [];
 }

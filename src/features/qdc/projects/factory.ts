@@ -1,8 +1,23 @@
 import { quadroValido } from '../../../utils/quadros.ts';
 import { buildTerminals, createDevice } from '../electrical-components/catalog.ts';
-import { connect, firstSpace, validateProject } from '../editor/operations.ts';
-import { routeWires } from '../wiring/routing.ts';
-import type { Circuit, Device, Project, Wire } from '../types.ts';
+import { connectMany, firstSpace, fits, validateProject, type ConnectionRequest } from '../editor/operations.ts';
+import { boardSize, deviceRect, routeWires } from '../wiring/routing.ts';
+import type { Circuit, Device, Project, Supply, Wire } from '../types.ts';
+
+const BUS_TERMINALS = 24;
+const MIN_CIRCUITS_PER_OUTPUT = 4;
+const OUTPUT_GAP = 8;
+
+function busCount(fixedConnections: number, circuitCount: number): number {
+  let count = 1;
+  while (fixedConnections + circuitCount + 2 * (count - 1) > BUS_TERMINALS * count) count++;
+  return count;
+}
+
+function automaticBusCounts(supply: Supply, circuitCount: number) {
+  const phases = supply === 'tri' ? 3 : supply === 'bi' ? 2 : 1;
+  return { neutral: busCount(1, circuitCount), earth: busCount(phases + 1, circuitCount) };
+}
 
 export function emptyProject(config: Partial<Project> = {}): Project {
   const now = new Date().toISOString();
@@ -11,6 +26,14 @@ export function emptyProject(config: Partial<Project> = {}): Project {
     devices: [], wires: [], circuits: [], materials: [], createdAt: now, updatedAt: now, ...config };
   if (!validateProject(project)) throw new Error('Configuração de quadro inválida. Revise alimentação, dimensões e módulos.');
   return structuredClone(project);
+}
+
+export function automaticRequiredModules(supply: Supply, circuitCount: number): number {
+  const phases = supply === 'tri' ? 3 : supply === 'bi' ? 2 : 1;
+  const residualCurrentModules = phases > 1 ? 4 : 2;
+  const circuits = Math.max(0, circuitCount);
+  const buses = automaticBusCounts(supply, circuits);
+  return phases + phases + residualCurrentModules + buses.neutral + buses.earth + circuits;
 }
 
 function place(project: Project, device: Device): Project {
@@ -28,21 +51,40 @@ function circuit(number: number, name: string, project: Project, breaker: Device
 export function automaticProject(config: Partial<Project>, names: string[]): Project {
   if (names.length > 100) throw new Error('Use até 100 circuitos por proposta.');
   let project = emptyProject({ ...config, devices: [], wires: [], circuits: [], materials: [] });
+  const requiredModules = automaticRequiredModules(project.supply, names.length);
+  const availableModules = project.rails * project.modulesPerRail;
+  if (requiredModules > availableModules) throw new Error(`O quadro escolhido não comporta a proposta: são necessários ${requiredModules} módulos DIN e há ${availableModules}.`);
   const count = project.supply === 'tri' ? 3 : project.supply === 'bi' ? 2 : 1;
   let general = createDevice('main-breaker');
   general = { ...general, poles: count, modules: count, terminals: buildTerminals(general.type, count), label: 'Geral' };
   const dr = { ...createDevice(count > 1 ? 'rcd-4p' : 'rcd-2p'), label: 'DR · seleção a definir' };
-  const neutral = { ...createDevice('neutral-bus'), label: 'Neutro após DR' };
-  const earth = { ...createDevice('earth-bus'), label: 'Proteção PE' };
   const powerEntry = { ...createDevice('power-entry'), label: 'Entrada da rede', poles: count + 2, terminals: buildTerminals('power-entry', count + 2), edgeSide: 'top' as const, edgeOffset: 88 };
-  project.devices = [...project.devices, powerEntry];
+  const busCounts = automaticBusCounts(project.supply, names.length);
+  if (project.rails < Math.max(busCounts.neutral, busCounts.earth)) throw new Error(`Esta proposta precisa de pelo menos ${Math.max(busCounts.neutral, busCounts.earth)} trilhos para distribuir os barramentos laterais.`);
+  const makeBuses = (type: 'neutral-bus' | 'earth-bus', amount: number) => Array.from({ length: amount }, (_, index) => {
+    const poles = amount === 1 ? Math.max(8, names.length + (type === 'neutral-bus' ? 1 : count + 1)) : BUS_TERMINALS;
+    const base = createDevice(type);
+    return {
+      ...base,
+      label: type === 'neutral-bus' ? amount === 1 ? 'Neutro após DR' : `Neutro ${index + 1}` : amount === 1 ? 'Proteção PE' : `Proteção PE ${index + 1}`,
+      poles,
+      terminals: buildTerminals(type, poles),
+      rail: project.rails - 1 - index,
+      slot: type === 'neutral-bus' ? 0 : project.modulesPerRail - base.modules,
+      busTerminalSide: type === 'neutral-bus' ? 'left' as const : 'right' as const,
+    };
+  });
+  const neutralBuses = makeBuses('neutral-bus', busCounts.neutral);
+  const earthBuses = makeBuses('earth-bus', busCounts.earth);
+  project.devices = [...project.devices, powerEntry, ...neutralBuses, ...earthBuses];
+  if (![...neutralBuses, ...earthBuses].every(device => fits(project, device))) throw new Error('O quadro escolhido não comporta os barramentos de neutro e terra nas laterais dos trilhos.');
   project = place(project, general);
   const spds: Device[] = [];
   for (let i = 0; i < count; i++) {
     const spd = { ...createDevice('spd'), label: `DPS ${['R', 'S', 'T'][i]}` };
     spds.push(spd); project = place(project, spd);
   }
-  for (const device of [dr, neutral, earth]) project = place(project, device);
+  project = place(project, dr);
   for (const [index, name] of names.entries()) {
     const breaker = { ...createDevice('breaker-1p'), label: name.trim() || 'Novo circuito' };
     const phase = ['R', 'S', 'T'][index % count];
@@ -50,33 +92,116 @@ export function automaticProject(config: Partial<Project>, names: string[]): Pro
     project = place(project, { ...breaker, circuitId: entry.id });
     project.circuits = [...project.circuits, entry];
   }
-  let phaseComb: Device | null = null;
-  if (count === 1 && names.length > 1) {
-    const breakers = project.devices.filter(device => device.type === 'breaker-1p' && device.circuitId);
+  const size = boardSize(project);
+  const outputWidth = deviceRect({ ...createDevice('conduit-entry'), poles: 12 }, project).width;
+  const maxOutputGroups = Math.max(1, Math.floor((size.width - 84 + OUTPUT_GAP) / (outputWidth + OUTPUT_GAP)));
+  const circuitsPerOutput = Math.max(MIN_CIRCUITS_PER_OUTPUT, Math.ceil(project.circuits.length / maxOutputGroups));
+  const outputGroups = Array.from({ length: Math.ceil(project.circuits.length / circuitsPerOutput) }, (_, index) => project.circuits.slice(index * circuitsPerOutput, (index + 1) * circuitsPerOutput));
+  const circuitOutputs = new Map<string, { device: Device; phase: string; neutral: string; earth: string }>();
+  const outputDrafts = outputGroups.map(group => {
+    const terminals: Device['terminals'] = group.flatMap((entry, index) => [
+      { id: `c${entry.number}-l`, label: `C${entry.number} L`, side: 'bottom' as const, index: index * 3, kind: 'L' as const },
+      { id: `c${entry.number}-n`, label: `C${entry.number} N`, side: 'bottom' as const, index: index * 3 + 1, kind: 'N' as const },
+      { id: `c${entry.number}-pe`, label: `C${entry.number} PE`, side: 'bottom' as const, index: index * 3 + 2, kind: 'PE' as const },
+    ]);
+    const first = group[0].number, last = group.at(-1)!.number;
+    const breakerCenters = group.map(entry => {
+      const breaker = project.devices.find(device => device.id === entry.breakerId)!;
+      const rect = deviceRect(breaker, project);
+      return rect.x + rect.width / 2;
+    });
+    const groupCenter = breakerCenters.reduce((sum, value) => sum + value, 0) / breakerCenters.length;
+    const output: Device = {
+      ...createDevice('conduit-entry'),
+      label: first === last ? `Saída C${first}` : `Saída C${first}–C${last}`,
+      poles: terminals.length,
+      terminals,
+      edgeSide: 'bottom',
+      edgeOffset: 50,
+    };
+    return { group, output, desiredCenter: groupCenter, width: deviceRect(output, project).width, center: groupCenter };
+  });
+  const positionedOutputs = [...outputDrafts].sort((a, b) => a.desiredCenter - b.desiredCenter);
+  const minCenter = 42 + (size.width - 84) * .05;
+  const maxCenter = 42 + (size.width - 84) * .95;
+  positionedOutputs.forEach((draft, index) => {
+    const previous = positionedOutputs[index - 1];
+    const leftLimit = previous ? previous.center + previous.width / 2 + OUTPUT_GAP + draft.width / 2 : minCenter;
+    draft.center = Math.max(leftLimit, Math.min(maxCenter, draft.desiredCenter));
+  });
+  for (let index = positionedOutputs.length - 1; index >= 0; index--) {
+    const draft = positionedOutputs[index], next = positionedOutputs[index + 1];
+    const rightLimit = next ? next.center - next.width / 2 - OUTPUT_GAP - draft.width / 2 : maxCenter;
+    draft.center = Math.min(draft.center, rightLimit);
+  }
+  for (const draft of outputDrafts) {
+    const output = { ...draft.output, edgeOffset: (draft.center - 42) / (size.width - 84) * 100 };
+    project.devices = [...project.devices, output];
+    for (const entry of draft.group) circuitOutputs.set(entry.id, { device: output, phase: `c${entry.number}-l`, neutral: `c${entry.number}-n`, earth: `c${entry.number}-pe` });
+  }
+  const breakerRuns: Device[][] = [];
+  const breakers = project.devices.filter(device => device.type === 'breaker-1p' && device.circuitId).sort((a, b) => a.rail - b.rail || a.slot - b.slot);
+  for (const breaker of breakers) {
+    const run = breakerRuns.at(-1), previous = run?.at(-1);
+    if (run && previous && previous.rail === breaker.rail && previous.slot + previous.modules === breaker.slot) run.push(breaker);
+    else breakerRuns.push([breaker]);
+  }
+  if (count === 1) for (const run of breakerRuns.filter(group => group.length > 1)) {
     const comb = createDevice('comb-bus');
-    phaseComb = { ...comb, label: 'Barramento pente', poles: 1, amperage: 63, rail: breakers[0].rail, slot: breakers[0].slot, modules: breakers.length, terminals: [] };
+    const last = run.at(-1)!;
+    const phaseComb = { ...comb, label: 'Barramento pente', poles: 1, amperage: 63, rail: run[0].rail, slot: run[0].slot, modules: last.slot + last.modules - run[0].slot, combSide: 'bottom' as const, terminals: [] };
+    if (!fits(project, phaseComb)) throw new Error('Não foi possível posicionar o barramento pente dentro do trilho.');
     project.devices = [...project.devices, phaseComb];
   }
   const phaseOptions = { conductorType: 'phase' as const, color: '#20252b', gauge: null, termination: 'tubular' as const };
   const neutralOptions = { conductorType: 'neutral' as const, color: '#1686cf', gauge: null, termination: 'tubular' as const };
   const earthOptions = { conductorType: 'earth' as const, color: '#27854c', gauge: null, termination: 'tubular' as const };
   const endpoint = (device: Device, terminalId: string) => ({ componentId: device.id, terminalId });
+  const connections: ConnectionRequest[] = [];
+  const neutralCursors = neutralBuses.map(() => 0), earthCursors = earthBuses.map(() => 0);
+  const takeOnBus = (buses: Device[], cursors: number[], index: number) => {
+    const terminal = buses[index]?.terminals[cursors[index]++];
+    if (!terminal) throw new Error('Não há bornes suficientes para completar a proposta automática.');
+    return endpoint(buses[index], terminal.id);
+  };
+  const takeAvailable = (buses: Device[], cursors: number[]) => {
+    const index = cursors.findIndex((cursor, busIndex) => cursor < buses[busIndex].terminals.length);
+    if (index < 0) throw new Error('Não há bornes suficientes para completar as saídas dos circuitos.');
+    return takeOnBus(buses, cursors, index);
+  };
   for (let i = 0; i < count; i++) {
-    project = connect(project, endpoint(powerEntry, `edge-${i}`), endpoint(general, `top-${i}`), phaseOptions);
-    project = connect(project, endpoint(general, `bottom-${i}`), endpoint(dr, `top-${i}`), phaseOptions);
-    project = connect(project, endpoint(general, `bottom-${i}`), endpoint(spds[i], 'top-0'), phaseOptions);
-    project = connect(project, endpoint(spds[i], 'bottom-0'), endpoint(earth, `side-${i}`), earthOptions);
+    connections.push(
+      { source: endpoint(powerEntry, `edge-${i}`), target: endpoint(general, `top-${i}`), options: phaseOptions },
+      { source: endpoint(general, `bottom-${i}`), target: endpoint(dr, `top-${i}`), options: phaseOptions },
+      { source: endpoint(general, `bottom-${i}`), target: endpoint(spds[i], 'top-0'), options: phaseOptions },
+      { source: endpoint(spds[i], 'bottom-0'), target: takeOnBus(earthBuses, earthCursors, 0), options: earthOptions },
+    );
   }
   const neutralIndex = dr.poles - 1;
-  project = connect(project, endpoint(powerEntry, `edge-${count}`), endpoint(dr, `top-${neutralIndex}`), neutralOptions);
-  project = connect(project, endpoint(powerEntry, `edge-${count + 1}`), endpoint(earth, `side-${count}`), earthOptions);
-  project = connect(project, endpoint(dr, `bottom-${neutralIndex}`), endpoint(neutral, 'side-0'), neutralOptions);
-  for (const [index, entry] of project.circuits.entries()) {
+  connections.push(
+    { source: endpoint(powerEntry, `edge-${count}`), target: endpoint(dr, `top-${neutralIndex}`), options: neutralOptions },
+    { source: endpoint(powerEntry, `edge-${count + 1}`), target: takeOnBus(earthBuses, earthCursors, 0), options: earthOptions },
+    { source: endpoint(dr, `bottom-${neutralIndex}`), target: takeOnBus(neutralBuses, neutralCursors, 0), options: neutralOptions },
+  );
+  for (let index = 0; index < neutralBuses.length - 1; index++) connections.push({ source: takeOnBus(neutralBuses, neutralCursors, index), target: takeOnBus(neutralBuses, neutralCursors, index + 1), options: neutralOptions, label: 'Interligação N' });
+  for (let index = 0; index < earthBuses.length - 1; index++) connections.push({ source: takeOnBus(earthBuses, earthCursors, index), target: takeOnBus(earthBuses, earthCursors, index + 1), options: earthOptions, label: 'Interligação PE' });
+  const combStarts = new Set(breakerRuns.filter(run => count === 1 && run.length > 1).map(run => run[0].id));
+  const combCovered = new Set(breakerRuns.filter(run => count === 1 && run.length > 1).flatMap(run => run.map(device => device.id)));
+  for (const entry of project.circuits) {
     const device = project.devices.find(item => item.id === entry.breakerId)!;
     const phaseIndex = ['R', 'S', 'T'].indexOf(entry.phase);
-    if (!phaseComb || index === 0) project = connect(project, endpoint(dr, `bottom-${phaseIndex}`), endpoint(device, 'top-0'), phaseOptions);
+    if (!combCovered.has(device.id) || combStarts.has(device.id)) connections.push({ source: endpoint(dr, `bottom-${phaseIndex}`), target: endpoint(device, 'top-0'), options: phaseOptions });
+    const output = circuitOutputs.get(entry.id)!;
+    const circuitPhase = { ...phaseOptions, color: entry.color, gauge: entry.cableGauge };
+    const circuitNeutral = { ...neutralOptions, gauge: entry.cableGauge };
+    const circuitEarth = { ...earthOptions, gauge: entry.cableGauge };
+    connections.push(
+      { source: endpoint(device, 'bottom-0'), target: endpoint(output.device, output.phase), options: circuitPhase, label: `C${entry.number} fase` },
+      { source: takeAvailable(neutralBuses, neutralCursors), target: endpoint(output.device, output.neutral), options: circuitNeutral, label: `C${entry.number} neutro` },
+      { source: takeAvailable(earthBuses, earthCursors), target: endpoint(output.device, output.earth), options: circuitEarth, label: `C${entry.number} PE` },
+    );
   }
-  return routeWires(project);
+  return connectMany(project, connections);
 }
 
 export function demoProject(): Project {

@@ -1,13 +1,40 @@
 import { CATALOG, DPS_MODELS, buildTerminals, createDevice } from '../electrical-components/catalog.ts';
 import { boardSize, deviceMount, deviceRect, isRailMounted, routeWires } from '../wiring/routing.ts';
-import type { Circuit, Device, Project, Selection, Terminal, WireOptions, WireTermination } from '../types.ts';
+import type { Circuit, Conductor, Device, Project, Selection, Terminal, WireOptions, WireTermination } from '../types.ts';
 
-type Endpoint = { componentId: string; terminalId: string };
+export type Endpoint = { componentId: string; terminalId: string };
+export type ConnectionRequest = { source: Endpoint; target: Endpoint; options: WireOptions; label?: string };
 const isBreaker = (type: string) => type.startsWith('breaker-') || type === 'main-breaker' || type.startsWith('rcbo-') || type.startsWith('motor-breaker-');
 const isRcd = (type: string) => type.startsWith('rcd-') || type.startsWith('rcbo-');
 const isCircuitBreaker = (type: string) => isBreaker(type) && type !== 'main-breaker';
 const stamp = (project: Project) => routeWires({ ...project, updatedAt: new Date().toISOString() });
 const terminations: WireTermination[] = ['tubular', 'generico', 'pente', 'olhal', 'garfo', 'pino', 'sem-terminal'];
+
+function endpointTerminal(project: Project, endpoint: Endpoint): Terminal | undefined {
+  return project.devices.find(device => device.id === endpoint.componentId)?.terminals.find(terminal => terminal.id === endpoint.terminalId);
+}
+
+export function conductorFitsTerminal(conductor: Conductor, terminal: Terminal): boolean {
+  if (terminal.kind === 'N') return conductor === 'neutral';
+  if (terminal.kind === 'PE') return conductor === 'earth';
+  if (terminal.kind === 'L') return conductor === 'phase' || conductor === 'return';
+  return true;
+}
+
+function compatibleEndpoints(project: Project, source: Endpoint, target: Endpoint, conductor: Conductor): boolean {
+  const terminals = [endpointTerminal(project, source), endpointTerminal(project, target)];
+  return terminals.every(terminal => terminal && conductorFitsTerminal(conductor, terminal));
+}
+
+export function connectionIssue(project: Project, source: Endpoint, target: Endpoint, conductor: Conductor): string | null {
+  if (!validEndpoint(project, source) || !validEndpoint(project, target)) return 'Escolha terminais existentes para conectar.';
+  if (source.componentId === target.componentId && source.terminalId === target.terminalId) return 'Escolha outro terminal para concluir o fio.';
+  if (!compatibleEndpoints(project, source, target, conductor)) return 'O tipo de condutor não é compatível com este terminal. Use fase/retorno em L, neutro em N e proteção em PE.';
+  const duplicate = project.wires.some(wire =>
+    (wire.sourceComponent === source.componentId && wire.sourceTerminal === source.terminalId && wire.targetComponent === target.componentId && wire.targetTerminal === target.terminalId)
+    || (wire.sourceComponent === target.componentId && wire.sourceTerminal === target.terminalId && wire.targetComponent === source.componentId && wire.targetTerminal === source.terminalId));
+  return duplicate ? 'Esses terminais já estão conectados.' : null;
+}
 
 export function fits(project: Project, device: Device): boolean {
   if (!Number.isInteger(device.modules) || device.modules < 1) return false;
@@ -110,8 +137,8 @@ export function updateDevice(project: Project, id: string, patch: Partial<Device
   if (device.type === 'comb-bus') {
     if (![1, 2, 4].includes(device.poles)) throw new Error('Escolha pente unipolar, bipolar ou tetrapolar.');
     if (!Number.isInteger(device.modules) || device.modules < 2 || device.modules > 24) throw new Error('Escolha entre 2 e 24 encaixes para o pente.');
-    if (!['top', 'bottom'].includes(device.combSide ?? 'top')) throw new Error('Escolha os bornes superiores ou inferiores.');
-    device = { ...device, mount: 'overlay', combSide: device.combSide ?? 'top', terminals: [], circuitId: null, gauge: null, voltage: 0, surgeCurrent: 0 };
+    if (!['top', 'bottom'].includes(device.combSide ?? 'bottom')) throw new Error('Escolha os bornes superiores ou inferiores.');
+    device = { ...device, mount: 'overlay', combSide: device.combSide ?? 'bottom', terminals: [], circuitId: null, gauge: null, voltage: 0, surgeCurrent: 0 };
   }
   if (device.type === 'power-entry' || device.type === 'conduit-entry') {
     const minimum = device.type === 'power-entry' ? 3 : 1;
@@ -194,29 +221,107 @@ export function duplicateSelection(project: Project, ids: string[]): Project {
   return stamp({ ...project, devices: [...project.devices, ...copies], wires: [...project.wires, ...wires] });
 }
 
+export function connectMany(project: Project, requests: ConnectionRequest[]): Project {
+  let next = project;
+  for (const { source, target, options, label = '' } of requests) {
+    if (!['phase', 'neutral', 'earth', 'return'].includes(options.conductorType) || !color(options.color) || !nullablePositive(options.gauge) || !terminations.includes(options.termination) || !text(label)) throw new Error('Revise a cor, a seção e o terminal do condutor.');
+    const issue = connectionIssue(next, source, target, options.conductorType);
+    if (issue) throw new Error(issue);
+    next = { ...next, wires: [...next.wires, {
+      id: crypto.randomUUID(), sourceComponent: source.componentId, sourceTerminal: source.terminalId,
+      targetComponent: target.componentId, targetTerminal: target.terminalId,
+      conductorType: options.conductorType, color: options.color, gauge: options.gauge, label, path: [],
+      sourceTermination: options.termination, targetTermination: options.termination,
+    }] };
+  }
+  return stamp(next);
+}
+
 export function connect(project: Project, source: Endpoint, target: Endpoint, options: WireOptions): Project {
-  if (!validEndpoint(project, source) || !validEndpoint(project, target)) throw new Error('Escolha terminais existentes para conectar.');
-  if (source.componentId === target.componentId && source.terminalId === target.terminalId) throw new Error('Escolha outro terminal para concluir o fio.');
-  if (!['phase', 'neutral', 'earth', 'return'].includes(options.conductorType) || !color(options.color) || !nullablePositive(options.gauge) || !terminations.includes(options.termination)) throw new Error('Revise a cor, a seção e o terminal do condutor.');
-  if (project.wires.some(wire => (wire.sourceComponent === source.componentId && wire.sourceTerminal === source.terminalId && wire.targetComponent === target.componentId && wire.targetTerminal === target.terminalId) || (wire.sourceComponent === target.componentId && wire.sourceTerminal === target.terminalId && wire.targetComponent === source.componentId && wire.targetTerminal === source.terminalId))) throw new Error('Esses terminais já estão conectados.');
-  return stamp({ ...project, wires: [...project.wires, {
-    id: crypto.randomUUID(), sourceComponent: source.componentId, sourceTerminal: source.terminalId,
-    targetComponent: target.componentId, targetTerminal: target.terminalId,
-    conductorType: options.conductorType, color: options.color, gauge: options.gauge, label: '', path: [],
-    sourceTermination: options.termination, targetTermination: options.termination,
-  }] });
+  return connectMany(project, [{ source, target, options }]);
 }
 
 export function organize(project: Project): Project {
-  const fixed = project.devices.filter(device => !isRailMounted(device));
-  const originalOrder = project.devices.filter(isRailMounted).sort((a, b) => a.rail - b.rail || a.slot - b.slot);
-  let result = { ...project, devices: fixed };
-  for (const device of originalOrder) {
-    const place = firstSpace(result, device.modules);
-    if (!place) throw new Error('Não há espaço suficiente para organizar o quadro.');
-    result = { ...result, devices: [...result.devices, { ...device, ...place }] };
+  const edges = project.devices.filter(device => deviceMount(device) === 'edge');
+  const overlays = project.devices.filter(device => deviceMount(device) === 'overlay');
+  const railDevices = project.devices.filter(isRailMounted);
+  const peripheralBuses = railDevices.filter(device => device.type === 'neutral-bus' || device.type === 'earth-bus');
+  const originalIndex = new Map(project.devices.map((device, index) => [device.id, index]));
+  const circuitNumber = new Map(project.circuits.map(circuit => [circuit.id, circuit.number]));
+  const category = new Map(CATALOG.map(item => [item.type, item.category]));
+  const rank = (device: Device) => {
+    if (device.type === 'main-breaker' || device.type.startsWith('switch-disconnector')) return 0;
+    if (device.type === 'spd' || device.type === 'fuse-holder') return 1;
+    if (isRcd(device.type) && !device.circuitId) return 2;
+    if (['neutral-bus', 'earth-bus', 'distribution-block'].includes(device.type)) return 3;
+    if (isCircuitBreaker(device.type)) return 4;
+    if (category.get(device.type) === 'Automação') return 5;
+    if (category.get(device.type) === 'Distribuição') return 6;
+    return 7;
+  };
+  const ordered = railDevices.filter(device => !peripheralBuses.includes(device)).sort((a, b) => rank(a) - rank(b)
+    || (circuitNumber.get(a.circuitId ?? '') ?? Number.MAX_SAFE_INTEGER) - (circuitNumber.get(b.circuitId ?? '') ?? Number.MAX_SAFE_INTEGER)
+    || (originalIndex.get(a.id) ?? 0) - (originalIndex.get(b.id) ?? 0));
+  const overlayLinks = new Map(overlays.map(overlay => [overlay.id, railDevices.filter(device => isCircuitBreaker(device.type) && device.rail === overlay.rail && device.slot < overlay.slot + overlay.modules && overlay.slot < device.slot + device.modules).map(device => device.id)]));
+  let result = { ...project, devices: edges };
+  for (let index = 0; index < ordered.length;) {
+    const groupRank = rank(ordered[index]);
+    const group: Device[] = [];
+    while (index < ordered.length && rank(ordered[index]) === groupRank) group.push(ordered[index++]);
+    const groupModules = group.reduce((total, device) => total + device.modules, 0);
+    const first = firstSpace(result, group[0].modules);
+    const keepTogether = groupModules <= project.modulesPerRail && first && first.slot + groupModules > project.modulesPerRail && first.rail + 1 < project.rails;
+    let cursor = keepTogether ? { rail: first.rail + 1, slot: 0 } : null;
+    for (const device of group) {
+      const place = cursor && fits(result, { ...device, ...cursor }) ? cursor : firstSpace(result, device.modules);
+      if (!place) throw new Error('Não há espaço suficiente para organizar o quadro.');
+      result = { ...result, devices: [...result.devices, { ...device, ...place }] };
+      cursor = { rail: place.rail, slot: place.slot + device.modules };
+    }
   }
-  return stamp({ ...result, wires: result.wires.map(wire => ({ ...wire, manualPath: false })) });
+  for (const bus of peripheralBuses) {
+    const railLoads = Array.from({ length: project.rails }, (_, rail) => ({
+      rail,
+      modules: result.devices.filter(device => isRailMounted(device) && device.rail === rail).reduce((total, device) => total + device.modules, 0),
+    })).sort((a, b) => a.modules - b.modules || b.rail - a.rail);
+    const sides = bus.type === 'neutral-bus' ? (['left', 'right'] as const) : (['right', 'left'] as const);
+    const candidates = railLoads.flatMap(({ rail }) => sides.map(side => ({
+      ...bus,
+      rail,
+      slot: side === 'left' ? 0 : project.modulesPerRail - bus.modules,
+      ...(bus.orientation === 'horizontal' ? {} : { busTerminalSide: side }),
+    })));
+    const peripheral = candidates.find(candidate => fits(result, candidate));
+    const open = firstSpace(result, bus.modules);
+    const fallback = open ? {
+      ...bus,
+      ...open,
+      ...(bus.orientation === 'horizontal' ? {} : { busTerminalSide: open.slot < project.modulesPerRail / 2 ? 'left' as const : 'right' as const }),
+    } : null;
+    const place = peripheral ?? fallback;
+    if (!place) throw new Error('Não há espaço suficiente para posicionar os barramentos de neutro e terra.');
+    result = { ...result, devices: [...result.devices, place] };
+  }
+  for (const overlay of overlays) {
+    const linked = (overlayLinks.get(overlay.id) ?? []).map(id => result.devices.find(device => device.id === id)).filter((device): device is Device => !!device);
+    const sameRail = linked.length > 0 && linked.every(device => device.rail === linked[0].rail);
+    const slot = sameRail ? Math.min(...linked.map(device => device.slot)) : overlay.slot;
+    const modules = sameRail ? Math.max(...linked.map(device => device.slot + device.modules)) - slot : overlay.modules;
+    const aligned = { ...overlay, rail: sameRail ? linked[0].rail : overlay.rail, slot, modules: Math.max(2, modules) };
+    const fallback = fits(result, aligned) ? aligned : fits(result, overlay) ? overlay : (() => { const place = firstOverlaySpace(result, overlay.modules); return place ? { ...overlay, ...place } : null; })();
+    if (!fallback) throw new Error('Não há espaço suficiente para reposicionar os barramentos sobrepostos.');
+    result = { ...result, devices: [...result.devices, fallback] };
+  }
+  const organized = stamp({ ...result, wires: result.wires.map(wire => ({ ...wire, manualPath: false })) });
+  const previousPaths = new Map(project.wires.map(wire => [wire.id, wire.path.length]));
+  if (organized.wires.some(wire => !wire.path.length && (previousPaths.get(wire.id) ?? 0) > 0)) {
+    throw new Error('A organização criaria um fio sem rota livre. O quadro anterior foi preservado.');
+  }
+  return organized;
+}
+
+export function rerouteWires(project: Project): Project {
+  return stamp({ ...project, wires: project.wires.map(wire => ({ ...wire, manualPath: false })) });
 }
 
 export function updateCircuit(project: Project, id: string, patch: Partial<Circuit>): Project {
@@ -225,7 +330,7 @@ export function updateCircuit(project: Project, id: string, patch: Partial<Circu
   const circuit = { ...original, ...patch, id: original.id };
   if (!circuitShape(circuit)) throw new Error('Revise os dados do circuito. Tensão e fator de potência devem ser válidos.');
   if (circuit.breakerId && !project.devices.some(device => device.id === circuit.breakerId && isBreaker(device.type))) throw new Error('Selecione um disjuntor existente.');
-  if (circuit.drId && !project.devices.some(device => device.id === circuit.drId && device.type.startsWith('rcd-'))) throw new Error('Selecione um DR existente.');
+  if (circuit.drId && !project.devices.some(device => device.id === circuit.drId && isRcd(device.type))) throw new Error('Selecione um DR existente.');
   if (project.circuits.some(other => other.id !== id && other.number === circuit.number)) throw new Error('Já existe um circuito com esse número.');
   const circuits = project.circuits.map(entry => entry.id === id ? circuit : entry.breakerId && entry.breakerId === circuit.breakerId ? { ...entry, breakerId: null } : entry);
   const devices = project.devices.map(device => {
@@ -256,6 +361,7 @@ function deviceShape(value: unknown): value is Device {
     (value.edgeOffset !== undefined && (!nonnegative(value.edgeOffset) || value.edgeOffset > 100)) ||
     (value.canvasPosition !== undefined && (!record(value.canvasPosition) || !nonnegative(value.canvasPosition.x) || !nonnegative(value.canvasPosition.y))) ||
     (value.model !== undefined && !text(value.model)) ||
+    (value.visualModel !== undefined && !['classic', 'graphite', 'two-tone'].includes(value.visualModel as string)) ||
     (value.orientation !== undefined && !['vertical', 'horizontal'].includes(value.orientation as string)) ||
     (value.busTerminalSide !== undefined && !['top', 'bottom', 'left', 'right'].includes(value.busTerminalSide as string)) ||
     (value.combSide !== undefined && !['top', 'bottom'].includes(value.combSide as string))) return false;
@@ -302,7 +408,8 @@ export function validateProject(value: unknown): value is Project {
       (wire.targetTermination !== undefined && !terminations.includes(wire.targetTermination as WireTermination)) ||
       (wire.manualPath !== undefined && typeof wire.manualPath !== 'boolean') ||
       !wire.path.every(point => record(point) && typeof point.x === 'number' && Number.isFinite(point.x) && typeof point.y === 'number' && Number.isFinite(point.y)) ||
-      !validEndpoint(project, { componentId: wire.sourceComponent, terminalId: wire.sourceTerminal }) || !validEndpoint(project, { componentId: wire.targetComponent, terminalId: wire.targetTerminal })) return false;
+      !validEndpoint(project, { componentId: wire.sourceComponent, terminalId: wire.sourceTerminal }) || !validEndpoint(project, { componentId: wire.targetComponent, terminalId: wire.targetTerminal }) ||
+      !compatibleEndpoints(project, { componentId: wire.sourceComponent, terminalId: wire.sourceTerminal }, { componentId: wire.targetComponent, terminalId: wire.targetTerminal }, wire.conductorType as Conductor)) return false;
     const endpoints = [`${wire.sourceComponent}\0${wire.sourceTerminal}`, `${wire.targetComponent}\0${wire.targetTerminal}`];
     if (endpoints[0] === endpoints[1]) return false;
     const key = endpoints.sort().join('\u0001');

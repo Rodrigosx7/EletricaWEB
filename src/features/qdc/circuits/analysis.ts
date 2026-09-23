@@ -38,29 +38,29 @@ export function warnings(project: Project): Warning[] {
   const result: Warning[] = [];
   const available = availablePhases(project.supply);
   const connections = new Set(project.wires.flatMap(wire => [`${wire.sourceComponent}:${wire.sourceTerminal}`, `${wire.targetComponent}:${wire.targetTerminal}`]));
-  if (project.devices.filter(isRailMounted).reduce((sum, device) => sum + device.modules, 0) > project.rails * project.modulesPerRail) result.push({ id: 'capacity', message: 'Há mais módulos utilizados que disponíveis.' });
+  if (project.devices.filter(isRailMounted).reduce((sum, device) => sum + device.modules, 0) > project.rails * project.modulesPerRail) result.push({ id: 'capacity', severity: 'error', message: 'Há mais módulos utilizados que disponíveis.' });
   for (const device of project.devices) {
-    if (!fits(project, device)) result.push({ id: `position-${device.id}`, deviceId: device.id, message: `${device.label || 'Componente'}: fora do trilho ou sobreposto.` });
-    if (!device.label.trim()) result.push({ id: `label-${device.id}`, deviceId: device.id, message: 'Componente sem identificação.' });
+    if (!fits(project, device)) result.push({ id: `position-${device.id}`, severity: 'error', deviceId: device.id, message: `${device.label || 'Componente'}: fora do trilho ou sobreposto.` });
+    if (!device.label.trim()) result.push({ id: `label-${device.id}`, severity: 'warning', deviceId: device.id, message: 'Componente sem identificação.' });
     const disconnected = device.type === 'comb-bus' ? [] : device.terminals.filter(term => !connections.has(`${device.id}:${term.id}`));
-    if (disconnected.length) result.push({ id: `terminal-${device.id}`, deviceId: device.id, message: `${device.label}: ${disconnected.length} terminal(is) sem conexão no desenho. Entradas e saídas externas podem ficar abertas.` });
+    if (disconnected.length) result.push({ id: `terminal-${device.id}`, severity: 'info', deviceId: device.id, message: `${device.label}: ${disconnected.length} terminal(is) sem conexão no desenho. Entradas e saídas externas podem ficar abertas.` });
   }
   for (const wire of project.wires) {
-    if (wire.gauge === null) result.push({ id: `gauge-${wire.id}`, wireId: wire.id, message: 'Fio sem seção informada.' });
-    if (!wire.path.length) result.push({ id: `route-${wire.id}`, wireId: wire.id, message: 'Não foi possível traçar este fio. Confira os terminais e a disposição.' });
+    if (wire.gauge === null) result.push({ id: `gauge-${wire.id}`, severity: 'info', wireId: wire.id, message: 'Fio sem seção informada.' });
+    if (!wire.path.length) result.push({ id: `route-${wire.id}`, severity: 'error', wireId: wire.id, message: 'Não foi possível traçar este fio. Confira os terminais e a disposição.' });
     const endpoints = [project.devices.find(device => device.id === wire.sourceComponent)?.terminals.find(term => term.id === wire.sourceTerminal), project.devices.find(device => device.id === wire.targetComponent)?.terminals.find(term => term.id === wire.targetTerminal)];
-    if (endpoints.some(term => !term)) result.push({ id: `endpoint-${wire.id}`, wireId: wire.id, message: 'Fio vinculado a um terminal inexistente.' });
-    else if (endpoints.some(term => term?.kind === 'PE') && wire.conductorType !== 'earth') result.push({ id: `pe-${wire.id}`, wireId: wire.id, message: 'Conexão em terminal PE identificada como outro tipo de condutor. Revise a ligação.' });
-    else if (endpoints.some(term => term?.kind === 'N') && wire.conductorType !== 'neutral') result.push({ id: `neutral-${wire.id}`, wireId: wire.id, message: 'Conexão em terminal N identificada como outro tipo de condutor. Revise a ligação.' });
-    if (endpoints.some(term => term?.kind === 'N') && endpoints.some(term => term?.kind === 'PE')) result.push({ id: `npe-${wire.id}`, wireId: wire.id, message: 'Ligação entre neutro e proteção no desenho. Não execute sem verificar o esquema de aterramento e o ponto de separação.' });
-    if (wire.sourceComponent === wire.targetComponent) result.push({ id: `bypass-${wire.id}`, wireId: wire.id, message: 'Fio interliga terminais do mesmo dispositivo. Confira se há desvio de proteção.' });
+    if (endpoints.some(term => !term)) result.push({ id: `endpoint-${wire.id}`, severity: 'error', wireId: wire.id, message: 'Fio vinculado a um terminal inexistente.' });
+    else if (endpoints.some(term => term?.kind === 'PE') && wire.conductorType !== 'earth') result.push({ id: `pe-${wire.id}`, severity: 'error', wireId: wire.id, message: 'Conexão em terminal PE identificada como outro tipo de condutor. Revise a ligação.' });
+    else if (endpoints.some(term => term?.kind === 'N') && wire.conductorType !== 'neutral') result.push({ id: `neutral-${wire.id}`, severity: 'error', wireId: wire.id, message: 'Conexão em terminal N identificada como outro tipo de condutor. Revise a ligação.' });
+    if (endpoints.some(term => term?.kind === 'N') && endpoints.some(term => term?.kind === 'PE')) result.push({ id: `npe-${wire.id}`, severity: 'error', wireId: wire.id, message: 'Ligação entre neutro e proteção no desenho. Não execute sem verificar o esquema de aterramento e o ponto de separação.' });
+    if (wire.sourceComponent === wire.targetComponent) result.push({ id: `bypass-${wire.id}`, severity: 'warning', wireId: wire.id, message: 'Fio interliga terminais do mesmo dispositivo. Confira se há desvio de proteção.' });
   }
   for (const circuit of project.circuits) {
-    if (!circuit.name.trim()) result.push({ id: `circuit-name-${circuit.id}`, message: `C${circuit.number}: circuito sem identificação.` });
-    if (!circuit.breakerId) result.push({ id: `breaker-${circuit.id}`, message: `C${circuit.number}: sem disjuntor vinculado.` });
-    if (!circuit.phase || circuit.phase.split('/').some(phase => !available.includes(phase))) result.push({ id: `phase-${circuit.id}`, message: `C${circuit.number}: fase não definida ou indisponível nesta alimentação.` });
-    if (circuit.load === null) result.push({ id: `load-${circuit.id}`, message: `C${circuit.number}: informe carga para estimar corrente. O disjuntor não representa a carga.` });
-    if (circuit.cableGauge === null) result.push({ id: `cable-${circuit.id}`, message: `C${circuit.number}: seção do cabo não informada.` });
+    if (!circuit.name.trim()) result.push({ id: `circuit-name-${circuit.id}`, severity: 'warning', circuitId: circuit.id, message: `C${circuit.number}: circuito sem identificação.` });
+    if (!circuit.breakerId) result.push({ id: `breaker-${circuit.id}`, severity: 'warning', circuitId: circuit.id, message: `C${circuit.number}: sem disjuntor vinculado.` });
+    if (!circuit.phase || circuit.phase.split('/').some(phase => !available.includes(phase))) result.push({ id: `phase-${circuit.id}`, severity: 'warning', circuitId: circuit.id, message: `C${circuit.number}: fase não definida ou indisponível nesta alimentação.` });
+    if (circuit.load === null) result.push({ id: `load-${circuit.id}`, severity: 'info', circuitId: circuit.id, message: `C${circuit.number}: informe carga para estimar corrente. O disjuntor não representa a carga.` });
+    if (circuit.cableGauge === null) result.push({ id: `cable-${circuit.id}`, severity: 'info', circuitId: circuit.id, message: `C${circuit.number}: seção do cabo não informada.` });
   }
   return result;
 }

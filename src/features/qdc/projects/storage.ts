@@ -16,7 +16,7 @@ function normalizeProject(project: Project): Project {
       const busTerminalSide = allowedSides.includes(device.busTerminalSide ?? '') ? device.busTerminalSide : orientation === 'horizontal' ? 'bottom' : 'right';
       return { ...device, modules: 1, mount: device.mount ?? 'rail', orientation, busTerminalSide, color: device.type === 'neutral-bus' ? '#1686cf' : '#27854c', terminals: buildTerminals(device.type, device.poles) };
     }
-    if (device.type === 'comb-bus') return { ...device, mount: 'overlay' as const, combSide: device.combSide ?? 'top' as const, poles: [1, 2, 4].includes(device.poles) ? device.poles : 1, terminals: [] };
+    if (device.type === 'comb-bus') return { ...device, mount: 'overlay' as const, combSide: device.combSide ?? 'bottom' as const, poles: [1, 2, 4].includes(device.poles) ? device.poles : 1, terminals: [] };
     if (device.type === 'power-entry') {
       const phases = device.poles >= 3 ? Math.min(3, device.poles - 2) : Math.max(1, device.poles);
       const poles = phases + 2;

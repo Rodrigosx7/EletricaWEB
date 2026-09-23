@@ -7,6 +7,7 @@ export type DeviceMount = 'rail' | 'edge' | 'overlay';
 export type EdgeSide = 'top' | 'bottom' | 'left' | 'right';
 export type BusOrientation = 'vertical' | 'horizontal';
 export type CombSide = 'top' | 'bottom';
+export type DeviceVisualModel = 'classic' | 'graphite' | 'two-tone';
 export type WireTermination = 'tubular' | 'generico' | 'pente' | 'olhal' | 'garfo' | 'pino' | 'sem-terminal';
 export type Point = { x: number; y: number };
 export type Terminal = { id: string; label: string; side: TerminalSide; index: number; kind: 'L' | 'N' | 'PE' | 'control' };
@@ -15,7 +16,7 @@ export type Device = {
   poles: number; amperage: number | null; curve: 'B' | 'C' | 'D'; gauge: number | null;
   sensitivity: number; voltage: number; surgeCurrent: number; description: string;
   circuitId: string | null; color: string; terminals: Terminal[];
-  mount?: DeviceMount; edgeSide?: EdgeSide; edgeOffset?: number; model?: string;
+  mount?: DeviceMount; edgeSide?: EdgeSide; edgeOffset?: number; model?: string; visualModel?: DeviceVisualModel;
   canvasPosition?: Point;
   orientation?: BusOrientation; busTerminalSide?: TerminalSide; combSide?: CombSide;
 };
@@ -41,6 +42,7 @@ export type Project = {
 export type CatalogItem = { type: string; name: string; category: string; modules: number; poles: number; description: string; mount?: DeviceMount };
 export type Selection = { devices: string[]; wire: string | null };
 export type WireOptions = { conductorType: Conductor; color: string; gauge: number | null; termination: WireTermination };
-export type Warning = { id: string; message: string; deviceId?: string; wireId?: string };
+export type WarningSeverity = 'error' | 'warning' | 'info';
+export type Warning = { id: string; severity: WarningSeverity; message: string; deviceId?: string; wireId?: string; circuitId?: string };
 export type Viewport = { x: number; y: number; zoom: number };
 export const PRELIMINARY_NOTICE = 'Configuração visual preliminar. O dimensionamento, proteção, capacidade de condução, curto-circuito, DR, DPS, queda de tensão e demais critérios devem ser verificados por profissional habilitado conforme as normas aplicáveis.';

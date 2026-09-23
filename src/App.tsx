@@ -1,25 +1,12 @@
 import NovaSenha from "./pages/NovaSenha";
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import Login from "./pages/Login";
-import Dashboard from "./components/Dashboard";
 import Sidebar from "./components/Sidebar";
-import Clientes from "./components/Clientes";
-import Servicos from "./components/Servicos";
-import Produtos from "./components/Produtos";
-import Orcamentos from "./components/Orcamentos";
-import OrcamentoRapido from "./components/OrcamentoRapido";
-import MontagemQuadros from "./components/MontagemQuadros";
-import OrdensServico from "./components/OrdensServico";
-import Financeiro from "./components/Financeiro";
-import NotasFiscais from "./components/NotasFiscais";
-import Relatorios from "./components/Relatorios";
-import Calculadora from "./components/Calculadora";
 import Perfil from "./components/Perfil";
 import ConfirmDialog from "./components/ConfirmDialog";
 import Topbar from "./components/Topbar";
-import Configuracoes from "./components/Configuracoes";
 import { ToastProvider } from "./components/ui/toast";
 import { EmpresaProvider } from "./contexts/EmpresaContext";
 import {
@@ -36,6 +23,24 @@ import {
   ClipboardList,
   type LucideIcon,
 } from "lucide-react";
+
+const MontagemQuadros = lazy(() => import("./components/MontagemQuadros"));
+const Dashboard = lazy(() => import("./components/Dashboard"));
+const Clientes = lazy(() => import("./components/Clientes"));
+const Servicos = lazy(() => import("./components/Servicos"));
+const Produtos = lazy(() => import("./components/Produtos"));
+const Orcamentos = lazy(() => import("./components/Orcamentos"));
+const OrcamentoRapido = lazy(() => import("./components/OrcamentoRapido"));
+const OrdensServico = lazy(() => import("./components/OrdensServico"));
+const Financeiro = lazy(() => import("./components/Financeiro"));
+const NotasFiscais = lazy(() => import("./components/NotasFiscais"));
+const Relatorios = lazy(() => import("./components/Relatorios"));
+const Calculadora = lazy(() => import("./components/Calculadora"));
+const Configuracoes = lazy(() => import("./components/Configuracoes"));
+
+function PageLoading() {
+  return <div className="grid min-h-[420px] place-items-center rounded-xl border border-[var(--color-border)] bg-white text-sm text-[var(--color-text-muted)]" role="status" aria-live="polite">Preparando esta área…</div>;
+}
 
 export default function App() {
   return (
@@ -244,6 +249,7 @@ function AppInterno() {
         />
 
         <div className="app-content">
+        <Suspense fallback={<PageLoading />}>
 
         {/* Dashboard */}
         {pagina === "dashboard" && (
@@ -284,6 +290,8 @@ function AppInterno() {
 
         {/* Configurações */}
         {pagina === "configuracoes" && <Configuracoes />}
+
+        </Suspense>
 
         </div>
 
