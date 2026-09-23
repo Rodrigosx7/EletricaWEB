@@ -1,8 +1,9 @@
-import { useState, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from 'react';
+import { useEffect, useRef, useState, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from 'react';
 import { Cable, ChevronDown, Copy, Info, MousePointer2, Settings2, SlidersHorizontal, TriangleAlert, Trash2, X } from 'lucide-react';
 import { CATALOG, DPS_MODELS } from '../electrical-components/catalog';
+import { GENERIC_DIN_2P } from '../electrical-components/technicalCatalog';
 import { deviceRect, isRailMounted } from '../wiring/routing';
-import { ferruleColor, TERMINATION_OPTIONS, WIRE_COLORS, WIRE_GAUGES } from '../wiring/options';
+import { ferruleColor, TERMINATION_OPTIONS, wireColorSwatch, WIRE_COLORS, WIRE_GAUGES } from '../wiring/options';
 import type { Conductor, Device, DeviceVisualModel, EdgeSide, Project, Selection, Wire, WireTermination } from '../types';
 import './panels.css';
 
@@ -60,8 +61,10 @@ function SelectedActions({ onDuplicate, onDelete, plural = false }: { onDuplicat
   return <div className="ewq-selection-actions">{onDuplicate && <button type="button" onClick={onDuplicate}><Copy size={14} />Duplicar</button>}<button type="button" className="ewq-danger-button" onClick={onDelete}><Trash2 size={14} />Excluir{plural ? ' seleção' : ''}</button></div>;
 }
 
-function AdvancedSection({ children, summary = 'Posição, aparência e detalhes técnicos' }: { children: ReactNode; summary?: string }) {
-  return <details className="ewq-advanced-settings">
+function AdvancedSection({ children, summary = 'Posição, aparência e detalhes técnicos', expanded = false }: { children: ReactNode; summary?: string; expanded?: boolean }) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  useEffect(() => { if (expanded && detailsRef.current) detailsRef.current.open = true; }, [expanded]);
+  return <details ref={detailsRef} className="ewq-advanced-settings">
     <summary><span><SlidersHorizontal size={15} aria-hidden="true" /><span><strong>Mais configurações</strong><small>{summary}</small></span></span><ChevronDown size={16} aria-hidden="true" /></summary>
     <div className="ewq-field-grid">{children}</div>
   </details>;
@@ -69,19 +72,39 @@ function AdvancedSection({ children, summary = 'Posição, aparência e detalhes
 
 function VisualModelPicker({ value, onChange }: { value: DeviceVisualModel; onChange(value: DeviceVisualModel): void }) {
   return <div className="ewq-visual-model-field">
-    <span>Acabamento visual</span>
-    <div className="ewq-visual-models" role="radiogroup" aria-label="Acabamento visual do componente">
+    <span>Acabamento de todos os componentes</span>
+    <div className="ewq-visual-models" role="radiogroup" aria-label="Acabamento visual do projeto">
       {VISUAL_MODELS.map(model => <button key={model.value} type="button" role="radio" aria-checked={value === model.value} className={value === model.value ? 'is-active' : ''} onClick={() => onChange(model.value)}>
         <span className={`ewq-device-skin ewq-device-skin--${model.value}`} aria-hidden="true"><i /><b /><em /></span>
         <span><strong>{model.label}</strong><small>{model.hint}</small></span>
       </button>)}
     </div>
-    <small>Aparência ilustrativa. Não altera corrente, polos, terminais ou ligações.</small>
+    <small>Aplicado ao projeto inteiro. Não altera corrente, polos, terminais ou ligações.</small>
   </div>;
 }
 
 function ColorPalette({ conductor, value, onChange }: { conductor: Conductor; value: string; onChange(value: string): void }) {
-  return <div className="ewq-color-palette" role="radiogroup" aria-label="Cor do fio">{WIRE_COLORS[conductor].map(color => <button key={color.value} type="button" role="radio" aria-checked={value === color.value} className={value === color.value ? 'is-active' : ''} onClick={() => onChange(color.value)} title={color.label}><span style={{ background: color.value }} />{color.label}</button>)}</div>;
+  return <div className="ewq-color-palette" role="radiogroup" aria-label="Cor do fio">{WIRE_COLORS[conductor].map(color => <button key={color.value} type="button" role="radio" aria-checked={value === color.value} className={value === color.value ? 'is-active' : ''} onClick={() => onChange(color.value)} title={color.label}><span style={{ background: wireColorSwatch(color.value) }} />{color.label}</button>)}</div>;
+}
+
+export function WireDetails({ project, wire, onUpdateWire, onDelete, expanded = false }: { project: Project; wire: Wire; onUpdateWire(id: string, patch: Partial<Wire>): void; onDelete?(): void; expanded?: boolean }) {
+  return <>
+    <h3 className="ewq-properties-title"><Cable size={17} aria-hidden="true" />{wire.label || 'Ligação elétrica'}</h3>
+    <div className="ewq-wire-endpoints">{[wire.sourceComponent, wire.targetComponent].map((id, index) => { const component = project.devices.find(item => item.id === id); const terminal = component?.terminals.find(item => item.id === (index ? wire.targetTerminal : wire.sourceTerminal)); return <div key={`${id}-${index}`}><small>{index ? 'Destino' : 'Origem'}</small><strong>{component?.label ?? 'Componente removido'}</strong><span>{terminal?.label ?? 'Borne removido'}</span></div>; })}</div>
+    <div className="ewq-field-grid">
+      <Field label="Identificação" wide><DraftInput value={wire.label} maxLength={80} placeholder="Ex.: alimentação do disjuntor" onCommit={label => onUpdateWire(wire.id, { label })} /></Field>
+      <Field label="Tipo de condutor" wide><select value={wire.conductorType} onChange={event => { const conductorType = event.target.value as Conductor; onUpdateWire(wire.id, { conductorType, color: WIRE_COLORS[conductorType][0].value }); }}><option value="phase">Fase</option><option value="neutral">Neutro (N)</option><option value="earth">Proteção (PE)</option><option value="return">Retorno</option></select></Field>
+      <Field label="Bitola (mm²)"><select value={wire.gauge ?? ''} onChange={event => onUpdateWire(wire.id, { gauge: event.target.value ? Number(event.target.value) : null })}><option value="">A definir</option>{WIRE_GAUGES.map(gauge => <option key={gauge} value={gauge}>{gauge} mm²</option>)}</select></Field>
+    </div>
+    <AdvancedSection summary="Cor, terminais e comportamento do traçado" expanded={expanded}>
+      <Field label="Cor" wide><ColorPalette conductor={wire.conductorType} value={wire.color} onChange={color => onUpdateWire(wire.id, { color })} /></Field>
+      <Field label="Terminal na origem"><select value={wire.sourceTermination ?? 'tubular'} onChange={event => onUpdateWire(wire.id, { sourceTermination: event.target.value as WireTermination })}>{TERMINATION_OPTIONS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field>
+      <Field label="Terminal no destino"><select value={wire.targetTermination ?? 'tubular'} onChange={event => onUpdateWire(wire.id, { targetTermination: event.target.value as WireTermination })}>{TERMINATION_OPTIONS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field>
+      <div className="ewq-field ewq-field-wide"><span>Traçado do fio</span><div className="ewq-wire-route-actions"><span>{wire.manualPath ? 'Preservado · o roteamento automático não altera este caminho' : 'Automático · procura um caminho curto, livre e com menos cruzamentos'}</span><label className="ewq-wire-route-lock"><input type="checkbox" checked={!!wire.manualPath} onChange={event => onUpdateWire(wire.id, event.target.checked ? { manualPath: true, path: wire.path } : { manualPath: false, path: [] })} /><span>Preservar este traçado</span></label><button type="button" disabled={!wire.manualPath} onClick={() => onUpdateWire(wire.id, { manualPath: false, path: [] })}>Liberar e recalcular</button></div></div>
+    </AdvancedSection>
+    {(wire.sourceTermination ?? 'tubular') === 'tubular' || (wire.targetTermination ?? 'tubular') === 'tubular' ? <p className="ewq-field-note"><span className="ewq-ferrule-swatch" style={{ background: ferruleColor(wire.gauge).hex }} /><span>Colar do terminal tubular: {ferruleColor(wire.gauge).name}. A cor muda automaticamente conforme a bitola.</span></p> : null}
+    {onDelete && <SelectedActions onDelete={onDelete} />}
+  </>;
 }
 
 export function PropertiesPanel({ project, selection, onUpdateDevice, onUpdateWire, onDelete, onDuplicate, onUpdateProject, onClose }: PropertiesPanelProps) {
@@ -95,7 +118,6 @@ export function PropertiesPanel({ project, selection, onUpdateDevice, onUpdateWi
   const isBus = !!device && (device.type === 'neutral-bus' || device.type === 'earth-bus');
   const isComb = device?.type === 'comb-bus';
   const isEdgeEntry = device?.type === 'power-entry' || device?.type === 'conduit-entry';
-  const supportsVisualModel = !!device && (isBreaker || isRcd || device.type === 'main-breaker' || device.type.startsWith('switch-disconnector'));
   const isPlanePositioned = !!device && ['power-entry', 'conduit-entry'].includes(device.type) && !!device.canvasPosition;
   const connectedWireCount = device ? project.wires.filter(item => item.sourceComponent === device.id || item.targetComponent === device.id).length : 0;
   const linkedCircuit = device ? project.circuits.find(item => item.breakerId === device.id) : undefined;
@@ -118,26 +140,29 @@ export function PropertiesPanel({ project, selection, onUpdateDevice, onUpdateWi
         <h3 className="ewq-properties-title">{selection.devices.length} componentes</h3>
         <p className="ewq-panel-hint">Mova a seleção pelo quadro ou escolha um componente para editar.</p>
         <SelectedActions onDelete={onDelete} onDuplicate={onDuplicate} plural />
-      </> : wire ? <>
-        <h3 className="ewq-properties-title"><Cable size={17} />{wire.label || 'Ligação elétrica'}</h3>
-        <div className="ewq-wire-endpoints">{[wire.sourceComponent, wire.targetComponent].map((id, index) => { const component = project.devices.find(item => item.id === id); return <div key={`${id}-${index}`}><small>{index ? 'Destino' : 'Origem'}</small><strong>{component?.label ?? 'Componente removido'}</strong></div>; })}</div>
+      </> : wire ? <WireDetails project={project} wire={wire} onUpdateWire={onUpdateWire} onDelete={onDelete} /> : device?.type === 'breaker-2p' ? <>
+        <h3 className="ewq-properties-title">Disjuntor DIN · 2P</h3>{deviceSummary}{pendingNotice}
+        <p className="ewq-panel-hint">Protótipo vetorial com quatro bornes conectáveis. Dados ilustrativos: confira sempre a ficha técnica do produto real.</p>
         <div className="ewq-field-grid">
-          <Field label="Identificação" wide><DraftInput value={wire.label} maxLength={80} placeholder="Ex.: alimentação do disjuntor" onCommit={label => onUpdateWire(wire.id, { label })} /></Field>
-          <Field label="Tipo de condutor" wide><select value={wire.conductorType} onChange={event => { const conductorType = event.target.value as Conductor; onUpdateWire(wire.id, { conductorType, color: WIRE_COLORS[conductorType][0].value }); }}><option value="phase">Fase</option><option value="neutral">Neutro (N)</option><option value="earth">Proteção (PE)</option><option value="return">Retorno</option></select></Field>
-          <Field label="Bitola (mm²)"><select value={wire.gauge ?? ''} onChange={event => onUpdateWire(wire.id, { gauge: event.target.value ? Number(event.target.value) : null })}><option value="">A definir</option>{WIRE_GAUGES.map(gauge => <option key={gauge} value={gauge}>{gauge} mm²</option>)}</select></Field>
+          <Field label="Marca"><input value={GENERIC_DIN_2P.brand} readOnly /></Field>
+          <Field label="Modelo"><input value={GENERIC_DIN_2P.model} readOnly /></Field>
+          <Field label="Polos"><input value="2P · quatro bornes" readOnly /></Field>
+          <Field label="Corrente nominal (A)"><select value={device.amperage ?? ''} onChange={event => update({ amperage: event.target.value ? Number(event.target.value) : null })}><option value="">A definir</option>{device.amperage != null && !GENERIC_DIN_2P.availableCurrents.includes(device.amperage) && <option value={device.amperage}>{device.amperage} A · fora do preset</option>}{GENERIC_DIN_2P.availableCurrents.map(value => <option key={value} value={value}>{value} A</option>)}</select></Field>
+          <Field label="Curva de disparo"><select value={device.curve} onChange={event => update({ curve: event.target.value as Device['curve'] })}>{GENERIC_DIN_2P.availableCurves.map(value => <option key={value} value={value}>{value}</option>)}</select></Field>
+          <Field label="Capacidade de interrupção"><select value={device.breakingCapacityKa ?? ''} onChange={event => update({ breakingCapacityKa: event.target.value ? Number(event.target.value) : null })}><option value="">A definir</option>{device.breakingCapacityKa != null && !GENERIC_DIN_2P.availableBreakingCapacitiesKa.includes(device.breakingCapacityKa) && <option value={device.breakingCapacityKa}>{device.breakingCapacityKa} kA · fora do preset</option>}{GENERIC_DIN_2P.availableBreakingCapacitiesKa.map(value => <option key={value} value={value}>{value} kA</option>)}</select></Field>
+          <Field label="Tensão nominal (V)"><select value={device.voltage || ''} onChange={event => update({ voltage: event.target.value ? Number(event.target.value) : 0 })}><option value="">A definir</option>{device.voltage > 0 && !GENERIC_DIN_2P.availableVoltages.includes(device.voltage) && <option value={device.voltage}>{device.voltage} V · fora do preset</option>}{GENERIC_DIN_2P.availableVoltages.map(value => <option key={value} value={value}>{value} V</option>)}</select></Field>
+          <Field label="Tag"><input value={device.tag ?? ''} maxLength={32} placeholder="Ex.: QF01" onChange={event => update({ tag: event.target.value })} /></Field>
+          <Field label="Nome do circuito" wide><input value={device.label} maxLength={80} onChange={event => update({ label: event.target.value })} /></Field>
         </div>
-        <AdvancedSection summary="Cor, terminais e comportamento do traçado">
-          <Field label="Cor" wide><ColorPalette conductor={wire.conductorType} value={wire.color} onChange={color => onUpdateWire(wire.id, { color })} /></Field>
-          <Field label="Terminal na origem"><select value={wire.sourceTermination ?? 'tubular'} onChange={event => onUpdateWire(wire.id, { sourceTermination: event.target.value as WireTermination })}>{TERMINATION_OPTIONS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field>
-          <Field label="Terminal no destino"><select value={wire.targetTermination ?? 'tubular'} onChange={event => onUpdateWire(wire.id, { targetTermination: event.target.value as WireTermination })}>{TERMINATION_OPTIONS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field>
-          <div className="ewq-field ewq-field-wide"><span>Traçado do fio</span><div className="ewq-wire-route-actions"><span>{wire.manualPath ? 'Preservado · o roteamento automático não altera este caminho' : 'Automático · procura um caminho curto, livre e com menos cruzamentos'}</span><label className="ewq-wire-route-lock"><input type="checkbox" checked={!!wire.manualPath} onChange={event => onUpdateWire(wire.id, event.target.checked ? { manualPath: true, path: wire.path } : { manualPath: false, path: [] })} /><span>Preservar este traçado</span></label><button type="button" disabled={!wire.manualPath} onClick={() => onUpdateWire(wire.id, { manualPath: false, path: [] })}>Liberar e recalcular</button></div></div>
-        </AdvancedSection>
-        {(wire.sourceTermination ?? 'tubular') === 'tubular' || (wire.targetTermination ?? 'tubular') === 'tubular' ? <p className="ewq-field-note"><span className="ewq-ferrule-swatch" style={{ background: ferruleColor(wire.gauge).hex }} /><span>Colar do terminal tubular: {ferruleColor(wire.gauge).name}. A cor muda automaticamente conforme a bitola.</span></p> : null}
-        <SelectedActions onDelete={onDelete} />
+        <AdvancedSection summary="Seção, posição e observações">
+          <Field label="Seção associada (mm²)"><Numeric value={device.gauge} options={WIRE_GAUGES} list="ewq-device-gauges" onChange={gauge => update({ gauge })} /></Field>
+          {railPlacement}
+          <Field label="Observações" wide><DraftTextarea rows={3} maxLength={600} value={device.description} onCommit={description => update({ description })} /></Field>
+        </AdvancedSection><SelectedActions onDelete={onDelete} onDuplicate={onDuplicate} />
       </> : device?.type === 'spd' ? <>
         <h3 className="ewq-properties-title">DPS</h3>{deviceSummary}<p className="ewq-panel-hint">Escolha um modelo pré-configurado. Os valores técnicos permanecem protegidos contra alterações acidentais.</p>
-        <VisualModelPicker value={device.visualModel ?? 'classic'} onChange={visualModel => update({ visualModel })} />
         <div className="ewq-field-grid">
+          <Field label="Condutor protegido" wide><select value={device.spdInput ?? 'phase'} onChange={event => update({ spdInput: event.target.value as Device['spdInput'] })}><option value="phase">Fase · borne superior L</option><option value="neutral">Neutro · borne superior N</option></select></Field>
           <Field label="Modelo do DPS" wide><select value={device.model ?? DPS_MODELS[0].id} onChange={event => { const model = DPS_MODELS.find(item => item.id === event.target.value) ?? DPS_MODELS[0]; update({ model: model.id, voltage: model.voltage, surgeCurrent: model.surgeCurrent, description: model.description }); }}>{DPS_MODELS.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}</select></Field>
         </div>
         <AdvancedSection summary="Valores do modelo e posição no trilho">
@@ -171,13 +196,13 @@ export function PropertiesPanel({ project, selection, onUpdateDevice, onUpdateWi
         <h3 className="ewq-properties-title">{catalogItem?.name}</h3>{deviceSummary}<p className="ewq-panel-hint">Os fios podem começar ou terminar aqui para representar a passagem pela caixa.</p>
         <div className="ewq-field-grid">
           <Field label="Identificação" wide><DraftInput value={device.label} maxLength={80} onCommit={label => update({ label })} /></Field>
-          <Field label={device.type === 'power-entry' ? 'Alimentação disponível' : 'Quantidade de fios'} wide><select value={device.poles} onChange={event => update({ poles: Number(event.target.value) })}>{device.type === 'power-entry' ? <><option value="3">1 fase + neutro + terra</option><option value="4">2 fases + neutro + terra</option><option value="5">3 fases + neutro + terra</option></> : Array.from({ length: 12 }, (_, index) => index + 1).map(count => <option key={count} value={count}>{count}</option>)}</select></Field>
+          {device.type === 'power-entry' ? <Field label="Alimentação disponível" wide><input readOnly value={`${project.supply === 'mono' ? 'R' : project.supply === 'bi' ? 'R · S' : 'R · S · T'} · N · PE`} /><small>Segue automaticamente a alimentação definida no projeto.</small></Field> : device.terminals.some(term => term.id.startsWith('circuit-') || /^c\d+-(?:l|n|pe)$/.test(term.id)) ? <Field label="Fios dos circuitos" wide><input readOnly value={`${device.poles} fios · definidos pelos circuitos`} /></Field> : <Field label="Quantidade de fios" wide><select value={device.poles} onChange={event => update({ poles: Number(event.target.value) })}>{Array.from({ length: 12 }, (_, index) => index + 1).map(count => <option key={count} value={count}>{count}</option>)}</select></Field>}
+          <Field label="Orientação visual" wide><select value={device.visualRotation ?? 0} onChange={event => update({ visualRotation: Number(event.target.value) as 0 | 180 })}><option value={0}>Normal · 0°</option><option value={180}>De cabeça para baixo · 180°</option></select></Field>
         </div>
         <AdvancedSection summary="Posicionamento dentro ou na borda do quadro">{edgeEntryPlacement}</AdvancedSection>
         <SelectedActions onDelete={onDelete} onDuplicate={onDuplicate} />
       </> : device ? <>
         <h3 className="ewq-properties-title">{catalogItem?.name ?? device.type}</h3>{deviceSummary}{pendingNotice}
-        {supportsVisualModel && <VisualModelPicker value={device.visualModel ?? 'classic'} onChange={visualModel => update({ visualModel })} />}
         <div className="ewq-field-grid">
           <Field label="Identificação" wide help={isBreaker ? 'Ao confirmar, o circuito é criado ou renomeado automaticamente.' : undefined}><DraftInput value={device.label} maxLength={80} list="ewq-device-labels" onCommit={label => update({ label })} /><datalist id="ewq-device-labels"><option value="Tomadas cozinha" /><option value="Iluminação" /><option value="Chuveiro" /><option value="Ar-condicionado" /></datalist></Field>
           <Field label="Corrente nominal (A)"><Numeric value={device.amperage} options={CURRENTS} list="ewq-device-currents" onChange={amperage => update({ amperage })} /></Field>
@@ -198,6 +223,13 @@ export function PropertiesPanel({ project, selection, onUpdateDevice, onUpdateWi
         </div>
         <h3 className="ewq-properties-title">{project.name || 'Novo quadro'}</h3>
         <p className="ewq-selection-prompt"><MousePointer2 size={18} aria-hidden="true" /><span>Clique em um componente ou fio no quadro para ver suas propriedades.</span></p>
+        <details className="ewq-project-settings ewq-appearance-settings" open><summary>Aparência do projeto <ChevronDown size={16} aria-hidden="true" /></summary>
+          <VisualModelPicker value={project.visualModel ?? 'classic'} onChange={visualModel => onUpdateProject({ visualModel })} />
+          <div className="ewq-dps-visual-field"><span>Acabamento dos DPS</span><div className="ewq-dps-visuals" role="radiogroup" aria-label="Acabamento visual dos DPS">
+            <button type="button" role="radio" aria-checked={(project.dpsVisual ?? 'standard') === 'standard'} className={(project.dpsVisual ?? 'standard') === 'standard' ? 'is-active' : ''} onClick={() => onUpdateProject({ dpsVisual: 'standard' })}><i className="is-standard" aria-hidden="true" /><span><strong>Padrão</strong><small>Frente clara</small></span></button>
+            <button type="button" role="radio" aria-checked={project.dpsVisual === 'red'} className={project.dpsVisual === 'red' ? 'is-active' : ''} onClick={() => onUpdateProject({ dpsVisual: 'red' })}><i className="is-red" aria-hidden="true" /><span><strong>Vermelho</strong><small>Frente destacada</small></span></button>
+          </div><small>Aplica a escolha a todos os DPS deste projeto.</small></div>
+        </details>
         {(() => { const used = project.devices.filter(isRailMounted).reduce((total, item) => total + item.modules, 0); const total = project.rails * project.modulesPerRail; return <div className="ewq-capacity-card"><span>Ocupação dos trilhos<strong>{Math.round(used / total * 100)}%</strong></span><progress value={used} max={total} aria-label="Módulos ocupados" /><span>{used} ocupados <span>{Math.max(0, total - used)} disponíveis</span></span></div>; })()}
         <details className="ewq-project-settings" open><summary>Dados e dimensões <ChevronDown size={16} aria-hidden="true" /></summary>
         <div className="ewq-field-grid">

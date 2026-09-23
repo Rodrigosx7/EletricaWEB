@@ -1,7 +1,7 @@
 import { validateProject } from '../editor/operations.ts';
 import { routeWires } from '../wiring/routing.ts';
 import { migrateLegacy } from './factory.ts';
-import { DPS_MODELS, buildTerminals } from '../electrical-components/catalog.ts';
+import { DPS_MODELS, buildSpdTerminals, buildTerminals } from '../electrical-components/catalog.ts';
 import type { Project } from '../types.ts';
 
 type StoragePort = Pick<Storage, 'getItem' | 'setItem'>;
@@ -9,6 +9,13 @@ export type ProjectLibrary = { projects: Project[]; activeId: string | null; err
 const key = (userId: string) => `eletricaweb-qdc-v2:${userId}`;
 
 function normalizeProject(project: Project): Project {
+  const neutralDpsIds = new Set(project.wires
+    .filter(wire => wire.conductorType === 'neutral')
+    .flatMap(wire => [
+      wire.sourceTerminal === 'top-0' ? wire.sourceComponent : '',
+      wire.targetTerminal === 'top-0' ? wire.targetComponent : '',
+    ])
+    .filter(Boolean));
   const devices = project.devices.map(device => {
     if (device.type === 'neutral-bus' || device.type === 'earth-bus') {
       const orientation = device.orientation ?? 'vertical';
@@ -25,7 +32,11 @@ function normalizeProject(project: Project): Project {
     }
     if (device.type === 'spd') {
       const model = DPS_MODELS.find(item => item.id === device.model) ?? DPS_MODELS[0];
-      return { ...device, model: model.id, label: 'DPS', voltage: model.voltage, surgeCurrent: model.surgeCurrent, description: model.description, poles: 1, modules: 1, terminals: buildTerminals('spd', 1) };
+      // Older editor builds allowed a neutral conductor on the generic top DPS
+      // terminal. Preserve that intent by migrating that DPS to its explicit N
+      // configuration instead of rejecting the whole saved project.
+      const spdInput = device.spdInput ?? (neutralDpsIds.has(device.id) ? 'neutral' : 'phase');
+      return { ...device, spdInput, model: model.id, label: 'DPS', voltage: model.voltage, surgeCurrent: model.surgeCurrent, description: model.description, poles: 1, modules: 1, terminals: buildSpdTerminals(spdInput) };
     }
     return { ...device, mount: device.mount ?? 'rail' as const };
   });
@@ -40,8 +51,16 @@ function normalizeProject(project: Project): Project {
       sourceTermination: wire.sourceTermination ?? 'tubular' as const,
       targetTermination: wire.targetTermination ?? 'tubular' as const,
     };
+  }).filter(wire => {
+    const source = byId.get(wire.sourceComponent)?.terminals.find(terminal => terminal.id === wire.sourceTerminal);
+    const target = byId.get(wire.targetComponent)?.terminals.find(terminal => terminal.id === wire.targetTerminal);
+    const accepts = (kind: 'L' | 'N' | 'PE' | 'control') => kind === 'control'
+      || (kind === 'N' && wire.conductorType === 'neutral')
+      || (kind === 'PE' && wire.conductorType === 'earth')
+      || (kind === 'L' && (wire.conductorType === 'phase' || wire.conductorType === 'return'));
+    return !!source && !!target && accepts(source.kind) && accepts(target.kind);
   });
-  return routeWires({ ...project, devices, wires });
+  return routeWires({ ...project, visualModel: project.visualModel ?? 'classic', dpsVisual: project.dpsVisual ?? 'standard', devices, wires });
 }
 
 /** Versioned adapter. Legacy data is read only and remains available for recovery. */
@@ -50,8 +69,17 @@ export function loadProjects(storage: StoragePort, userId: string): ProjectLibra
     const raw = storage.getItem(key(userId));
     if (raw !== null) {
       const value = JSON.parse(raw);
-      if (value?.version !== 2 || !Array.isArray(value.projects) || !value.projects.every(validateProject) || new Set(value.projects.map((p: Project) => p.id)).size !== value.projects.length) throw new Error('Invalid storage');
-      return { projects: value.projects.map(normalizeProject), activeId: typeof value.activeId === 'string' ? value.activeId : null, error: '', migrated: false };
+      if (value?.version !== 2 || !Array.isArray(value.projects)) throw new Error('Invalid storage');
+      // The v2 format has evolved while the editor was being developed. Normalize
+      // each saved project before strict validation so older, valid snapshots do
+      // not become inaccessible merely because a derived field or terminal layout
+      // changed. The original localStorage value is never overwritten here.
+      const projects: Project[] = (value.projects as unknown[]).map((project: unknown) => normalizeProject(project as Project));
+      if (!projects.every(validateProject) || new Set(projects.map(project => project.id)).size !== projects.length) throw new Error('Invalid storage');
+      const requestedActiveId = typeof value.activeId === 'string' ? value.activeId : null;
+      const activeId = projects.some(project => project.id === requestedActiveId) ? requestedActiveId : projects[0]?.id ?? null;
+      const repairedConnections = projects.some((project, index) => project.wires.length !== value.projects[index]?.wires?.length);
+      return { projects, activeId, error: '', migrated: repairedConnections };
     }
     const legacy = storage.getItem(`portal-quadros-v1:${userId}`);
     if (!legacy) return { projects: [], activeId: null, error: '', migrated: false };

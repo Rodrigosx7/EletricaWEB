@@ -1,7 +1,7 @@
-type Props = { width: number; height: number; reserveTerminalArea?: boolean };
+type Props = { width: number; height: number; phases?: number; reserveTerminalArea?: boolean };
 
 /** Compact, manufacturer-neutral meter box. Board terminals and wires are drawn separately. */
-export default function ServiceEntranceArtwork({ width: w, height: h, reserveTerminalArea = false }: Props) {
+export default function ServiceEntranceArtwork({ width: w, height: h, phases = 1, reserveTerminalArea = false }: Props) {
   // In the board, terminal screws occupy the lower half of this 48px edge device.
   const availableBottom = reserveTerminalArea ? h - 24 : h - 4;
   const cabinetWidth = Math.min(30, w * .46);
@@ -28,5 +28,10 @@ export default function ServiceEntranceArtwork({ width: w, height: h, reserveTer
     <path d={`M${meterX - meterRadius * .48} ${meterY + meterRadius * .2} H${meterX + meterRadius * .48}`} stroke="#516d76" strokeWidth="1.1" strokeLinecap="round" />
     <path d={`M${cabinetX + 3} ${cabinetY + cabinetHeight * .78} H${cabinetX + cabinetWidth - 3}`} stroke="#aabbbd" strokeWidth=".8" />
     <circle cx={cabinetX + cabinetWidth - 4.5} cy={cabinetY + cabinetHeight * .88} r="1" fill="#b66853" />
+    {reserveTerminalArea && <g>{Array.from({ length: Math.min(3, Math.max(1, phases)) }, (_, index) => {
+      const labels = ['R', 'S', 'T'];
+      const x = cabinetX + 5 + index * 7;
+      return <text key={labels[index]} x={x} y={cabinetY + 8} textAnchor="middle" fill="#344d57" fontSize="5.2" fontWeight="800">{labels[index]}</text>;
+    })}</g>}
   </g>;
 }

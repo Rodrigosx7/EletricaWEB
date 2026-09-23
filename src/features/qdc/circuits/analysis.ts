@@ -38,11 +38,25 @@ export function warnings(project: Project): Warning[] {
   const result: Warning[] = [];
   const available = availablePhases(project.supply);
   const connections = new Set(project.wires.flatMap(wire => [`${wire.sourceComponent}:${wire.sourceTerminal}`, `${wire.targetComponent}:${wire.targetTerminal}`]));
+  const effectiveConnections = new Set(connections);
+  for (const comb of project.devices.filter(device => device.type === 'comb-bus')) {
+    const side = comb.combSide ?? 'bottom';
+    const groups = new Map<string, string[]>();
+    for (const device of project.devices.filter(device => isRailMounted(device) && device.rail === comb.rail && device.slot < comb.slot + comb.modules && comb.slot < device.slot + device.modules)) {
+      for (const terminal of device.terminals.filter(terminal => terminal.side === side)) {
+        const lane = (device.slot - comb.slot + terminal.index) % comb.poles;
+        const group = `${terminal.kind}:${lane}`;
+        groups.set(group, [...(groups.get(group) ?? []), `${device.id}:${terminal.id}`]);
+      }
+    }
+    for (const covered of groups.values()) if (covered.some(endpoint => connections.has(endpoint))) covered.forEach(endpoint => effectiveConnections.add(endpoint));
+  }
+  const allowsUnusedTerminals = new Set(['comb-bus', 'neutral-bus', 'earth-bus', 'power-entry', 'conduit-entry', 'distribution-block']);
   if (project.devices.filter(isRailMounted).reduce((sum, device) => sum + device.modules, 0) > project.rails * project.modulesPerRail) result.push({ id: 'capacity', severity: 'error', message: 'Há mais módulos utilizados que disponíveis.' });
   for (const device of project.devices) {
     if (!fits(project, device)) result.push({ id: `position-${device.id}`, severity: 'error', deviceId: device.id, message: `${device.label || 'Componente'}: fora do trilho ou sobreposto.` });
     if (!device.label.trim()) result.push({ id: `label-${device.id}`, severity: 'warning', deviceId: device.id, message: 'Componente sem identificação.' });
-    const disconnected = device.type === 'comb-bus' ? [] : device.terminals.filter(term => !connections.has(`${device.id}:${term.id}`));
+    const disconnected = allowsUnusedTerminals.has(device.type) ? [] : device.terminals.filter(term => !effectiveConnections.has(`${device.id}:${term.id}`));
     if (disconnected.length) result.push({ id: `terminal-${device.id}`, severity: 'info', deviceId: device.id, message: `${device.label}: ${disconnected.length} terminal(is) sem conexão no desenho. Entradas e saídas externas podem ficar abertas.` });
   }
   for (const wire of project.wires) {

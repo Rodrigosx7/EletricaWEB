@@ -1,4 +1,5 @@
-import type { CatalogItem, Device, Terminal } from '../types.ts';
+import type { CatalogItem, Device, DpsInput, Terminal } from '../types.ts';
+import { breaker2pTerminals, GENERIC_DIN_2P } from './technicalCatalog.ts';
 
 export const DPS_MODELS = [
   { id: 'classe-ii-20ka-275v', name: 'Classe II · 20 kA · 275 V', surgeCurrent: 20, voltage: 275, description: 'DPS Classe II, corrente máxima de descarga de 20 kA e tensão máxima de operação contínua de 275 V.' },
@@ -51,6 +52,7 @@ const terminal = (id: string, label: string, side: Terminal['side'], index: numb
 
 /** Pinagens genéricas editáveis pelo projeto; não representam um modelo de fabricante. */
 export function buildTerminals(type: string, poles: number): Terminal[] {
+  if (type === 'breaker-2p' && poles === 2) return breaker2pTerminals();
   if (type === 'comb-bus') return [];
   if (type === 'neutral-bus' || type === 'earth-bus') {
     const kind = type === 'neutral-bus' ? 'N' : 'PE';
@@ -59,7 +61,7 @@ export function buildTerminals(type: string, poles: number): Terminal[] {
   if (type === 'power-entry') {
     const count = Math.max(3, poles), phases = count - 2;
     return Array.from({ length: count }, (_, i) => i < phases
-      ? terminal(`edge-${i}`, phases === 1 ? 'L' : `L${i + 1}`, 'bottom', i)
+      ? terminal(`edge-${i}`, ['R', 'S', 'T'][i], 'bottom', i)
       : i === phases ? terminal(`edge-${i}`, 'N', 'bottom', i, 'N') : terminal(`edge-${i}`, 'PE', 'bottom', i, 'PE'));
   }
   if (type === 'conduit-entry') return Array.from({ length: poles }, (_, i) => terminal(`edge-${i}`, `Fio ${i + 1}`, 'bottom', i, 'control'));
@@ -87,6 +89,13 @@ export function buildTerminals(type: string, poles: number): Terminal[] {
   return terms;
 }
 
+export function buildSpdTerminals(input: DpsInput = 'phase'): Terminal[] {
+  return [
+    terminal('top-0', input === 'neutral' ? 'N' : 'L', 'top', 0, input === 'neutral' ? 'N' : 'L'),
+    terminal('bottom-0', 'PE', 'bottom', 0, 'PE'),
+  ];
+}
+
 export function createDevice(type: string): Device {
   const item = CATALOG.find(entry => entry.type === type);
   if (!item) throw new Error('Componente não encontrado no catálogo.');
@@ -99,6 +108,11 @@ export function createDevice(type: string): Device {
     terminals: buildTerminals(type, item.poles), mount: item.mount ?? 'rail',
     edgeSide: item.mount === 'edge' ? 'top' : undefined, edgeOffset: item.mount === 'edge' ? type === 'power-entry' ? 88 : 50 : undefined,
     model: dps?.id,
+    technicalModelId: type === 'breaker-2p' ? GENERIC_DIN_2P.id : undefined,
+    visualVariant: type === 'breaker-2p' ? GENERIC_DIN_2P.visualVariant : undefined,
+    breakingCapacityKa: type === 'breaker-2p' ? null : undefined,
+    tag: type === 'breaker-2p' ? '' : undefined,
+    spdInput: type === 'spd' ? 'phase' : undefined,
     visualModel: 'classic',
     orientation: type === 'neutral-bus' || type === 'earth-bus' ? 'vertical' : undefined,
     busTerminalSide: type === 'neutral-bus' || type === 'earth-bus' ? 'right' : undefined,

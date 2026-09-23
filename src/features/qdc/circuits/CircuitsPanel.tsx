@@ -1,4 +1,4 @@
-import { ChevronDown, CircuitBoard, Crosshair, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, CircuitBoard, Crosshair, Plus, Route, Trash2 } from 'lucide-react';
 import { circuitCurrent, phaseBalance } from './analysis';
 import type { Circuit, Device, Project } from '../types';
 import '../components/panels.css';
@@ -6,8 +6,9 @@ import '../components/panels.css';
 export type CircuitsPanelProps = {
   project: Project;
   onUpdateCircuit(id: string, patch: Partial<Circuit>): void;
-  onAddCircuit(): void; onDeleteCircuit(id: string): void;
+  onAddCircuit(): void; onPrepareOutputs(): void; onDeleteCircuit(id: string): void;
   onSelectDevice(id: string): void;
+  onMapCircuit(id: string): void;
   onUpdateDevice(id: string, patch: Partial<Device>): void;
 };
 
@@ -34,16 +35,18 @@ function draftKey(input: HTMLInputElement | HTMLTextAreaElement, key: string, cu
   else if (key === 'Enter' && (!multiline || modified)) input.blur();
 }
 
-export function CircuitsPanel({ project, onUpdateCircuit, onAddCircuit, onDeleteCircuit, onSelectDevice, onUpdateDevice }: CircuitsPanelProps) {
+export function CircuitsPanel({ project, onUpdateCircuit, onAddCircuit, onPrepareOutputs, onDeleteCircuit, onSelectDevice, onMapCircuit, onUpdateDevice }: CircuitsPanelProps) {
   const breakers = project.devices.filter(device => device.type.startsWith('breaker-') || device.type === 'main-breaker' || device.type.startsWith('rcbo-') || device.type.startsWith('motor-breaker-'));
   const rcds = project.devices.filter(device => device.type.startsWith('rcd-') || device.type.startsWith('rcbo-'));
   const phases = project.supply === 'mono' ? ['R'] : project.supply === 'bi' ? ['R', 'S', 'R/S'] : ['R', 'S', 'T', 'R/S', 'S/T', 'R/T', 'R/S/T'];
   const balance = phaseBalance(project);
   const largestPhase = Math.max(1, ...balance.map(item => item.current));
+  const missingOutputs = project.circuits.filter(circuit => !project.devices.some(device => device.type === 'conduit-entry' && device.terminals.some(term =>
+    term.id.startsWith(`circuit-${circuit.id}-`) || term.id === `c${circuit.number}-l`))).length;
   return <section className="ewq-circuits" aria-label="Circuitos e distribuição de cargas">
     <details open className="ewq-circuits-disclosure">
       <summary className="ewq-circuits-heading"><span><CircuitBoard size={17} aria-hidden="true" /><strong>Circuitos</strong><span className="ewq-count">{project.circuits.length}</span></span><span className="ewq-circuits-disclosure-hint">Cargas e proteção <ChevronDown size={16} aria-hidden="true" /></span></summary>
-      <div className="ewq-circuit-toolbar"><p>Vincule cada circuito ao disjuntor do quadro.</p><button type="button" onClick={onAddCircuit}><Plus size={14} aria-hidden="true" />Adicionar circuito</button></div>
+      <div className="ewq-circuit-toolbar"><p>Vincule cada circuito ao disjuntor. As saídas ficam livres no eletroduto para ligação manual.</p>{missingOutputs > 0 && <button type="button" onClick={onPrepareOutputs}>Preparar {missingOutputs} saída{missingOutputs === 1 ? '' : 's'}</button>}<button type="button" onClick={onAddCircuit}><Plus size={14} aria-hidden="true" />Adicionar circuito</button></div>
       {!project.circuits.length ? <div className="ewq-circuits-empty"><CircuitBoard size={25} aria-hidden="true" /><div><strong>Organize os circuitos da instalação</strong><p>Adicione iluminação, tomadas e cargas específicas para identificá-las no quadro.</p></div><button type="button" onClick={onAddCircuit}><Plus size={15} aria-hidden="true" />Primeiro circuito</button></div> : <>
         <div className="ewq-circuit-table-scroll" tabIndex={0} role="region" aria-label="Tabela de circuitos; em telas largas, role horizontalmente para ver todos os campos">
           <table className="ewq-circuit-table"><thead><tr><th scope="col">Circuito</th><th scope="col">Fases</th><th scope="col">Tensão</th><th scope="col">Carga / FP</th><th scope="col">Corrente da carga</th><th scope="col">Disjuntor / nominal / polos</th><th scope="col">Condutor</th><th scope="col">DR vinculado</th><th scope="col">Observações</th><th scope="col"><span className="ewq-visually-hidden">Ações</span></th></tr></thead>
@@ -62,7 +65,7 @@ export function CircuitsPanel({ project, onUpdateCircuit, onAddCircuit, onDelete
                 <td data-label="Condutor"><div className="ewq-input-unit"><input key={`gauge-${circuit.cableGauge ?? 'empty'}`} type="number" min={0.01} step="any" list="ewq-circuit-gauges" defaultValue={circuit.cableGauge ?? ''} placeholder="Definir" aria-label={`${label}: seção do condutor em milímetros quadrados`} onBlur={event => commitNumberDraft(event.currentTarget, circuit.cableGauge, { min: 0.01, nullable: true }, cableGauge => update({ cableGauge }))} onKeyDown={event => draftKey(event.currentTarget, event.key, circuit.cableGauge)} /><span>mm²</span></div></td>
                 <td data-label="DR"><select value={circuit.drId ?? ''} aria-label={`${label}: DR vinculado`} onChange={event => update({ drId: event.target.value || null })}><option value="">Não definido</option>{rcds.map(device => <option key={device.id} value={device.id}>{device.label} · T{device.rail + 1}/{device.slot + 1}</option>)}</select></td>
                 <td data-label="Observações"><textarea key={`notes-${circuit.notes}`} rows={2} maxLength={600} defaultValue={circuit.notes} aria-label={`${label}: observações`} placeholder="Ambiente, carga, referência…" onBlur={event => event.currentTarget.value !== circuit.notes && update({ notes: event.currentTarget.value })} onKeyDown={event => draftKey(event.currentTarget, event.key, circuit.notes, true, event.ctrlKey || event.metaKey)} /></td>
-                <td data-label="Ações"><div className="ewq-row-actions"><button type="button" disabled={!breaker} onClick={() => breaker && onSelectDevice(breaker.id)} aria-label={`Localizar disjuntor do ${label.toLowerCase()}`} title="Selecionar disjuntor no quadro"><Crosshair size={15} aria-hidden="true" /></button><button type="button" className="ewq-danger-button" onClick={() => onDeleteCircuit(circuit.id)} aria-label={`Excluir ${label.toLowerCase()}`} title="Excluir circuito"><Trash2 size={14} aria-hidden="true" /></button></div></td>
+                <td data-label="Ações"><div className="ewq-row-actions"><button type="button" onClick={() => onMapCircuit(circuit.id)} aria-label={`Ver mapa de conexões do ${label.toLowerCase()}`} title="Destacar trajeto desenhado"><Route size={15} aria-hidden="true" /></button><button type="button" disabled={!breaker} onClick={() => breaker && onSelectDevice(breaker.id)} aria-label={`Localizar disjuntor do ${label.toLowerCase()}`} title="Selecionar disjuntor no quadro"><Crosshair size={15} aria-hidden="true" /></button><button type="button" className="ewq-danger-button" onClick={() => onDeleteCircuit(circuit.id)} aria-label={`Excluir ${label.toLowerCase()}`} title="Excluir circuito"><Trash2 size={14} aria-hidden="true" /></button></div></td>
               </tr>;
             })}</tbody>
           </table>

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
@@ -10,13 +10,14 @@ type ModalProps = {
   wide?: boolean;
   children: ReactNode;
   footer?: ReactNode;
+  initialFocusRef?: RefObject<HTMLElement | null>;
 };
 
 // Only the topmost dialog owns focus. Nested confirmations preserve their parent.
 const openDialogs: symbol[] = [];
 let originalOverflow = "";
 
-export default function Modal({ title, description, onClose, busy = false, wide = false, children, footer }: ModalProps) {
+export default function Modal({ title, description, onClose, busy = false, wide = false, children, footer, initialFocusRef }: ModalProps) {
   const id = useId();
   const panel = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
@@ -34,7 +35,7 @@ export default function Modal({ title, description, onClose, busy = false, wide 
     const focusable = () => Array.from(panel.current?.querySelectorAll<HTMLElement>(
       'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex="0"]'
     ) || []).filter((el) => el.getClientRects().length > 0);
-    (focusable()[0] || panel.current)?.focus();
+    (initialFocusRef?.current || focusable()[0] || panel.current)?.focus();
     function onKey(e: KeyboardEvent) {
       if (openDialogs.at(-1) !== key) return;
       if (e.key === "Escape" && !busyRef.current) {
@@ -54,7 +55,7 @@ export default function Modal({ title, description, onClose, busy = false, wide 
       if (!openDialogs.length) document.body.style.overflow = originalOverflow;
       if (previous?.isConnected) previous.focus({ preventScroll: true });
     };
-  }, []);
+  }, [initialFocusRef]);
 
   return createPortal(
     <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>

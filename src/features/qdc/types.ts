@@ -8,15 +8,19 @@ export type EdgeSide = 'top' | 'bottom' | 'left' | 'right';
 export type BusOrientation = 'vertical' | 'horizontal';
 export type CombSide = 'top' | 'bottom';
 export type DeviceVisualModel = 'classic' | 'graphite' | 'two-tone';
+export type DpsInput = 'phase' | 'neutral';
+export type DpsVisual = 'standard' | 'red';
 export type WireTermination = 'tubular' | 'generico' | 'pente' | 'olhal' | 'garfo' | 'pino' | 'sem-terminal';
 export type Point = { x: number; y: number };
-export type Terminal = { id: string; label: string; side: TerminalSide; index: number; kind: 'L' | 'N' | 'PE' | 'control' };
+export type Terminal = { id: string; label: string; side: TerminalSide; index: number; kind: 'L' | 'N' | 'PE' | 'control'; pole?: number; position?: Point };
 export type Device = {
   id: string; type: string; label: string; rail: number; slot: number; modules: number;
   poles: number; amperage: number | null; curve: 'B' | 'C' | 'D'; gauge: number | null;
   sensitivity: number; voltage: number; surgeCurrent: number; description: string;
   circuitId: string | null; color: string; terminals: Terminal[];
   mount?: DeviceMount; edgeSide?: EdgeSide; edgeOffset?: number; model?: string; visualModel?: DeviceVisualModel;
+  technicalModelId?: string; visualVariant?: string; breakingCapacityKa?: number | null; tag?: string;
+  spdInput?: DpsInput; visualRotation?: 0 | 180;
   canvasPosition?: Point;
   orientation?: BusOrientation; busTerminalSide?: TerminalSide; combSide?: CombSide;
 };
@@ -36,6 +40,7 @@ export type Material = { id: string; name: string; specification: string; quanti
 export type Project = {
   version: 2; id: string; name: string; client: string; supply: Supply; voltage: number;
   rails: number; modulesPerRail: number; widthMm: number; heightMm: number;
+  visualModel: DeviceVisualModel; dpsVisual: DpsVisual;
   devices: Device[]; wires: Wire[]; circuits: Circuit[]; materials: Material[];
   createdAt: string; updatedAt: string;
 };

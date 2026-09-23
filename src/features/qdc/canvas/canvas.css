@@ -34,6 +34,9 @@
 .qdc-terminal { outline: none; }
 .qdc-terminal.is-connectable { cursor: crosshair; }
 .qdc-terminal.is-connectable:hover .qdc-terminal-target, .qdc-terminal:focus-visible .qdc-terminal-target { fill: #f3ce2866; stroke: #9c8216; stroke-width: 1.5; }
+.qdc-pending-lead { outline: none; }
+.qdc-pending-lead.is-connectable { cursor: crosshair; }
+.qdc-pending-lead.is-connectable:hover circle, .qdc-pending-lead:focus-visible circle { fill: #fff7cf; stroke-width: 3; }
 .qdc-terminal.is-magnetic .qdc-terminal-target { fill: #fff; stroke-width: 2.4; }
 .qdc-terminal.is-magnetic.is-valid .qdc-terminal-target { fill: #dff5e8; stroke: #237348; }
 .qdc-terminal.is-magnetic.is-invalid .qdc-terminal-target { fill: #fff0ef; stroke: #aa3730; }

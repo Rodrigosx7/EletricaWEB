@@ -77,6 +77,19 @@
 .ewq-device-skin--two-tone i { background: #c9d0ce; box-shadow: 0 24px 0 #222d31; }
 .ewq-device-skin--two-tone b { background: linear-gradient(#45565c,#15252b); }
 .ewq-device-skin--two-tone em { background: #287ea2; }
+.ewq-appearance-settings { margin-top: 16px; }
+.ewq-appearance-settings .ewq-visual-model-field { margin-top: 12px; }
+.ewq-dps-visual-field { display: flex; flex-direction: column; gap: 7px; margin-top: 16px; color: #40545f; font-size: 12px; font-weight: 600; }
+.ewq-dps-visual-field > small { color: #75858e; font-size: 10.5px; font-weight: 400; line-height: 1.45; }
+.ewq-dps-visuals { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.ewq-dps-visuals > button { display: flex; align-items: center; gap: 9px; min-height: 52px; padding: 7px 9px; border: 1px solid #d9e2e8; border-radius: 9px; color: #425966; background: #fff; cursor: pointer; text-align: left; }
+.ewq-dps-visuals > button:hover { border-color: #9eb9c9; background: #f8fbfc; }
+.ewq-dps-visuals > button.is-active { border-color: #397995; background: #f1f8fb; box-shadow: 0 0 0 2px rgb(57 121 149 / 13%); }
+.ewq-dps-visuals i { display: block; width: 21px; height: 34px; border: 1px solid #8e9b9d; border-radius: 3px; background: linear-gradient(135deg,#eef1e9,#cbd2c6); box-shadow: 1px 2px 3px rgb(30 45 52 / 16%); flex: 0 0 auto; }
+.ewq-dps-visuals i.is-red { border-color: #7e2925; background: linear-gradient(135deg,#df5147,#a82825); }
+.ewq-dps-visuals > button > span { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.ewq-dps-visuals strong { font-size: 10.5px; }
+.ewq-dps-visuals small { color: #7b8b93; font-size: 9px; font-weight: 400; }
 .ewq-panel .ewq-field-note { display: flex; align-items: flex-start; gap: 7px; color: #657780; font-size: 12px; line-height: 1.65; margin-top: 16px; }
 .ewq-field-note svg { margin-top: 3px; flex-shrink: 0; }
 .ewq-selection-actions { display: flex; gap: 8px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--ewq-panel-border); flex-wrap: wrap; }

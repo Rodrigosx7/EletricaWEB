@@ -1,5 +1,7 @@
 import type { Conductor, WireTermination } from '../types';
 
+export const GREEN_YELLOW_WIRE = '#24a15c';
+
 export const WIRE_GAUGES = [.5, .75, 1, 1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240];
 
 export const WIRE_COLORS: Record<Conductor, { value: string; label: string }[]> = {
@@ -14,7 +16,7 @@ export const WIRE_COLORS: Record<Conductor, { value: string; label: string }[]> 
     { value: '#e4c62b', label: 'Amarelo' },
   ],
   neutral: [{ value: '#38a8e8', label: 'Azul-claro' }, { value: '#2478b9', label: 'Azul' }],
-  earth: [{ value: '#24a15c', label: 'Verde/amarelo' }, { value: '#24915c', label: 'Verde' }],
+  earth: [{ value: GREEN_YELLOW_WIRE, label: 'Verde/amarelo' }, { value: '#168447', label: 'Verde sólido' }],
   return: [
     { value: '#dc4037', label: 'Vermelho' },
     { value: '#e98a28', label: 'Laranja' },
@@ -26,6 +28,14 @@ export const WIRE_COLORS: Record<Conductor, { value: string; label: string }[]> 
     { value: '#e4c62b', label: 'Amarelo' },
   ],
 };
+
+export function wireColorSwatch(value: string): string {
+  return value.toLowerCase() === GREEN_YELLOW_WIRE ? 'repeating-linear-gradient(135deg, #249655 0 6px, #f0d53d 6px 12px)' : value;
+}
+
+export function isGreenYellowWire(value: string): boolean {
+  return value.toLowerCase() === GREEN_YELLOW_WIRE;
+}
 
 export const TERMINATION_OPTIONS: { value: WireTermination; label: string }[] = [
   { value: 'tubular', label: 'Tubular' },

@@ -23,6 +23,7 @@ export function emptyProject(config: Partial<Project> = {}): Project {
   const now = new Date().toISOString();
   const project: Project = { version: 2, id: crypto.randomUUID(), name: 'Novo QDC', client: '', supply: 'mono', voltage: 127,
     rails: 2, modulesPerRail: 12, widthMm: 360, heightMm: 420,
+    visualModel: 'classic', dpsVisual: 'standard',
     devices: [], wires: [], circuits: [], materials: [], createdAt: now, updatedAt: now, ...config };
   if (!validateProject(project)) throw new Error('Configuração de quadro inválida. Revise alimentação, dimensões e módulos.');
   return structuredClone(project);

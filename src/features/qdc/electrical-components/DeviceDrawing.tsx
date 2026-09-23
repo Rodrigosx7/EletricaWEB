@@ -1,19 +1,20 @@
 import { memo } from 'react';
-import type { Device, ViewMode } from '../types';
+import type { Device, DeviceVisualModel, DpsVisual, ViewMode } from '../types';
 import ServiceEntranceArtwork from './ServiceEntranceArtwork';
+import GenericMCB2P from './visuals/GenericMCB2P';
 
-type Props = { device: Device; width: number; height: number; mode: ViewMode };
+type Props = { device: Device; width: number; height: number; mode: ViewMode; visualModel?: DeviceVisualModel; dpsVisual?: DpsVisual };
 const INK = '#273238';
 
 /** Manufacturer-neutral DIN device artwork. Terminals are drawn by the canvas. */
-function DeviceDrawing({ device: d, width: w, height: h, mode }: Props) {
+function DeviceDrawing({ device: d, width: w, height: h, mode, visualModel: projectVisualModel, dpsVisual = 'standard' }: Props) {
   const rcd = d.type.startsWith('rcd') || d.type.startsWith('rcbo');
   const breaker = d.type.includes('breaker');
   const switching = breaker || rcd || d.type.startsWith('switch-disconnector');
   const bus = d.type.endsWith('-bus');
   const terminal = d.type.includes('terminal');
   const compact = w < 65;
-  const visualModel = d.visualModel ?? 'classic';
+  const visualModel = projectVisualModel ?? d.visualModel ?? 'classic';
   const visual = visualModel === 'graphite' ? {
     shell: ['#667176', '#343d41', '#1e282d', '#11191d'], border: '#10191d', highlight: '#899397', side: '#0c1418',
     well: '#151e22', wellBorder: '#080e11', screw: '#aeb7b8', face: '#293337', faceBorder: '#111b1f', ink: '#f3f5f3', muted: '#b9c3c4', accent: '#d88a31',
@@ -45,7 +46,7 @@ function DeviceDrawing({ device: d, width: w, height: h, mode }: Props) {
         : <circle key={index} cx={w / 2} cy={10 + (index + .5) * (h - 20) / count} r="2.3" fill="#efe2b8" stroke="#675c42" />)}
     </g>;
   }
-  if (d.type === 'power-entry') return <ServiceEntranceArtwork width={w} height={h} reserveTerminalArea />;
+  if (d.type === 'power-entry') return <ServiceEntranceArtwork width={w} height={h} phases={Math.max(1, d.poles - 2)} reserveTerminalArea />;
   if (d.type === 'conduit-entry') {
     const tag = d.label.match(/C\d+(?:\s*[–-]\s*C?\d+)?/i)?.[0]?.replace(/\s/g, '') ?? 'SAÍDA';
     const radius = Math.min(18, Math.min(w, h) / 2 - 5);
@@ -83,6 +84,7 @@ function DeviceDrawing({ device: d, width: w, height: h, mode }: Props) {
     <text x={w / 2} y={h / 2 - 4} textAnchor="middle" fill="#74838c" fontSize="11" fontWeight="700">{caption}</text>
     {!breaker && <text x={w / 2} y={h / 2 + 14} textAnchor="middle" fill="#74838c" fontSize="10">{amp}</text>}
   </g>;
+  if (d.type === 'breaker-2p' && (!d.visualVariant || d.visualVariant === 'generic-din-2p')) return <GenericMCB2P device={d} width={w} height={h} finish={visualModel} />;
   if (bus) {
     const earth = d.type === 'earth-bus';
     const comb = d.type === 'comb-bus';
@@ -157,11 +159,11 @@ function DeviceDrawing({ device: d, width: w, height: h, mode }: Props) {
       {d.poles > 1 && <path d={`M12 82 H${w - 12}`} stroke="#182a32" strokeWidth="5" />}
       <text x={w / 2} y="103" textAnchor="middle" fill={visual.muted} fontSize="6.5" fontWeight="650">{rcd ? 'Δ' : '6000'}  ~</text>
     </> : d.type === 'spd' ? <>
-      <rect x="6" y="28" width={w - 12} height="67" rx="2" fill="#d4dacb" stroke="#a3ac98" />
-      <text x={w / 2} y="41" textAnchor="middle" fill={INK} fontSize="10" fontWeight="800">DPS</text>
-      <path d={`M${w / 2 + 4} 47 l-8 11 h7 l-7 11 13-14 h-7 Z`} fill="#465743" />
-      <text x={w / 2} y="78" textAnchor="middle" fill="#465743" fontSize="7">{d.voltage > 0 ? `${d.voltage} V` : '— V'}</text>
-      <text x={w / 2} y="88" textAnchor="middle" fill="#465743" fontSize="7">{d.surgeCurrent > 0 ? `${d.surgeCurrent} kA` : '— kA'}</text>
+      <rect x="6" y="28" width={w - 12} height="67" rx="2" fill={dpsVisual === 'red' ? '#c63d36' : '#d4dacb'} stroke={dpsVisual === 'red' ? '#7f2825' : '#a3ac98'} />
+      <text x={w / 2} y="41" textAnchor="middle" fill={dpsVisual === 'red' ? '#fff' : INK} fontSize="10" fontWeight="800">DPS</text>
+      <path d={`M${w / 2 + 4} 47 l-8 11 h7 l-7 11 13-14 h-7 Z`} fill={dpsVisual === 'red' ? '#f5d64c' : '#465743'} />
+      <text x={w / 2} y="78" textAnchor="middle" fill={dpsVisual === 'red' ? '#fff7ed' : '#465743'} fontSize="7">{d.voltage > 0 ? `${d.voltage} V` : '— V'}</text>
+      <text x={w / 2} y="88" textAnchor="middle" fill={dpsVisual === 'red' ? '#fff7ed' : '#465743'} fontSize="7">{d.surgeCurrent > 0 ? `${d.surgeCurrent} kA` : '— kA'}</text>
       <rect x={w / 2 - 8} y="99" width="16" height="8" rx="1" fill="#388f5e" stroke="#23713f" />
     </> : d.type === 'fuse-holder' ? <>
       <rect x="7" y="29" width={w - 14} height="69" rx="4" fill="#d9ddda" stroke="#929d9d" />

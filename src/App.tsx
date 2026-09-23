@@ -204,9 +204,9 @@ function AppInterno() {
   // Sistema
   return (
     <EmpresaProvider usuario={usuario}>
-      <div className="app-shell min-h-screen">
+      <div className={`app-shell min-h-screen${pagina === "quadros" ? " qdc-app-shell" : ""}`}>
       <a href="#conteudo" className="skip-link">Ir para o conteúdo</a>
-      <Sidebar
+      {pagina !== "quadros" && <Sidebar
         pagina={pagina}
         setPagina={navegar}
         aoAbrirPerfil={() => setPerfilAberto(true)}
@@ -216,7 +216,7 @@ function AppInterno() {
         aoFechar={() => setMenuAberto(false)}
         recolhida={sidebarRecolhida}
         aoAlternarRecolhida={() => setSidebarRecolhida((atual) => !atual)}
-      />
+      />}
 
       {perfilAberto && usuario && (
         <Perfil
@@ -238,17 +238,17 @@ function AppInterno() {
       />
 
       <main id="conteudo" tabIndex={-1}
-        className={`min-h-screen bg-[var(--color-bg-page)] transition-[margin] duration-200 ${
+        className={pagina === "quadros" ? "qdc-app-main" : `min-h-screen bg-[var(--color-bg-page)] transition-[margin] duration-200 ${
           sidebarRecolhida ? "lg:ml-[4.5rem]" : "lg:ml-60"
         }`}
       >
-        <Topbar
+        {pagina !== "quadros" && <Topbar
           titulo={info.titulo}
           icone={info.icone}
           aoAbrirMenu={() => setMenuAberto(true)}
-        />
+        />}
 
-        <div className="app-content">
+        <div className={`app-content${pagina === "quadros" ? " qdc-app-content" : ""}`}>
         <Suspense fallback={<PageLoading />}>
 
         {/* Dashboard */}
@@ -269,7 +269,7 @@ function AppInterno() {
 
         {/* Orçamento Rápido */}
         {pagina === "orcamentoRapido" && <OrcamentoRapido />}
-        {pagina === "quadros" && <MontagemQuadros key={usuario.id} usuarioId={usuario.id} aoAlterar={setQuadroAlterado} />}
+        {pagina === "quadros" && <MontagemQuadros key={usuario.id} usuarioId={usuario.id} aoAlterar={setQuadroAlterado} aoSair={() => navegar("dashboard")} />}
 
         {/* Ordens de Serviço */}
         {pagina === "ordens-servico" && <OrdensServico />}

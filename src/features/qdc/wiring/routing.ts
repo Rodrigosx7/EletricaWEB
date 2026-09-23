@@ -80,6 +80,10 @@ export function terminalPoint(project: Project, componentId: string, terminalId:
   const peers = device.terminals.filter(t => terminalSide(device, t.side) === side).sort((a, b) => a.index - b.index);
   const index = peers.findIndex(t => t.id === terminal.id);
   const rect = deviceRect(device, project);
+  if (terminal.position && deviceMount(device) === 'rail') return {
+    x: rect.x + rect.width * terminal.position.x,
+    y: rect.y + rect.height * terminal.position.y,
+  };
   if (side === 'left' || side === 'right') return { x: rect.x + (side === 'right' ? rect.width : 0), y: rect.y + rect.height * (index + .5) / peers.length };
   return { x: rect.x + rect.width * (index + .5) / peers.length, y: rect.y + (side === 'bottom' ? rect.height : 0) };
 }
@@ -181,17 +185,18 @@ function route(project: Project, wire: Wire, sourceLane: number, targetLane: num
   if (!source || !target || !a || !b || !sourceDevice || !targetDevice) return [];
   if (wire.manualPath && wire.path.length >= 2) return reattachManualWirePath(wire.path, source, target);
   const size = boardSize(project);
+  const lane = globalLane % 12;
   const family = { phase: 0, neutral: 1, earth: 2, return: 3 }[wire.conductorType];
-  const sourceExit = terminalExit(source, terminalSide(sourceDevice, a.side), sourceLane, globalLane, size, sourceDevice, project);
-  const targetExit = terminalExit(target, terminalSide(targetDevice, b.side), targetLane, globalLane + 1, size, targetDevice, project).reverse();
+  const sourceExit = terminalExit(source, terminalSide(sourceDevice, a.side), sourceLane, lane, size, sourceDevice, project);
+  const targetExit = terminalExit(target, terminalSide(targetDevice, b.side), targetLane, lane + 1, size, targetDevice, project).reverse();
   const from = sourceExit.at(-1)!;
   const to = targetExit[0];
-  const sideOffset = 20 + family * 7 + globalLane * 3.5;
+  const sideOffset = 20 + family * 7 + lane * 3.5;
   const left = Math.max(8, LEFT - sideOffset);
   const right = Math.min(size.width - 8, LEFT + project.modulesPerRail * MODULE + sideOffset);
-  const topLane = Math.max(8, TOP - 28 - globalLane * 4);
-  const bottomLane = Math.min(size.height - 8, TOP + (project.rails - 1) * RAIL + DEVICE_HEIGHT + 28 + globalLane * 4);
-  const middleX = Math.round((from.x + to.x) / 2 + (globalLane % 2 ? 1 : -1) * (12 + globalLane * 2));
+  const topLane = Math.max(8, TOP - 28 - lane * 4);
+  const bottomLane = Math.min(size.height - 8, TOP + (project.rails - 1) * RAIL + DEVICE_HEIGHT + 28 + lane * 4);
+  const middleX = Math.round((from.x + to.x) / 2 + (lane % 2 ? 1 : -1) * (12 + lane * 2));
   const xLanes = [middleX, left, right, ...Array.from({ length: 6 }, (_, index) => {
     const distance = 16 + Math.floor(index / 2) * 18;
     return Math.max(8, Math.min(size.width - 8, middleX + (index % 2 ? distance : -distance)));
@@ -205,10 +210,14 @@ function route(project: Project, wire: Wire, sourceLane: number, targetLane: num
   ];
   const candidates = joins.map(join => compact([...sourceExit, ...join.slice(1), ...targetExit.slice(1)])).filter(points => pathAvoidsDevices(points, project.devices, project));
   const distance = (points: Point[]) => points.slice(1).reduce((sum, p, i) => sum + Math.abs(p.x - points[i].x) + Math.abs(p.y - points[i].y), 0);
-  // A crossing is visually harder to follow than a modest detour, while shared runs remain strongly discouraged.
-  const cost = (points: Point[]) => distance(points) + points.length * 5 + occupied.reduce((sum, path) => sum + pathOverlapLength(points, path) * 2500 + crossings(points, path) * 420, 0);
-  candidates.sort((aPath, bPath) => cost(aPath) - cost(bPath));
-  return candidates[0] ?? [];
+  // Avoid visually absurd detours around the whole cabinet just to save a
+  // crossing. First keep routes near the shortest valid path, then separate
+  // overlapping conductors within that useful range.
+  const shortest = Math.min(...candidates.map(distance));
+  const useful = candidates.filter(points => distance(points) <= shortest * 1.35 + 48);
+  const cost = (points: Point[]) => distance(points) + points.length * 6 + occupied.reduce((sum, path) => sum + pathOverlapLength(points, path) * 2500 + crossings(points, path) * 420, 0);
+  useful.sort((aPath, bPath) => cost(aPath) - cost(bPath));
+  return useful[0] ?? [];
 }
 
 /** Stable ordering keeps conductor families grouped while occupied-path scoring separates parallel runs. */

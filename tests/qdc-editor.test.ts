@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CATALOG, createDevice } from '../src/features/qdc/electrical-components/catalog.ts';
-import { addDevice, connect, connectionIssue, deleteSelection, duplicateSelection, firstSpace, fits, moveDeviceOnPlane, moveDevices, organize, rerouteWires, updateCircuit, updateDevice, validateProject } from '../src/features/qdc/editor/operations.ts';
+import { CATALOG, buildSpdTerminals, buildTerminals, createDevice } from '../src/features/qdc/electrical-components/catalog.ts';
+import { addDevice, connect, connectionIssue, deleteSelection, duplicateSelection, firstSpace, fits, moveDeviceOnPlane, moveDevices, organize, prepareCircuitOutputs, removeCircuitOutput, rerouteWires, updateCircuit, updateDevice, validateProject } from '../src/features/qdc/editor/operations.ts';
 import { circuitCurrent, materialList, phaseBalance, warnings } from '../src/features/qdc/circuits/analysis.ts';
 import { automaticProject, automaticRequiredModules, demoProject, emptyProject, migrateLegacy } from '../src/features/qdc/projects/factory.ts';
-import { parseProjectFile } from '../src/features/qdc/projects/storage.ts';
+import { loadProjects, parseProjectFile } from '../src/features/qdc/projects/storage.ts';
 import { boardSize, deviceRect, isRailMounted, pathAvoidsDevices, pathOverlapLength, routeWires, terminalPoint } from '../src/features/qdc/wiring/routing.ts';
 import { bendWirePoint, flexWireSegment, reattachManualWirePath, removeWireBend, roundedWirePath, snapWirePoint } from '../src/features/qdc/wiring/geometry.ts';
 import { ferruleColor, TERMINATION_OPTIONS, WIRE_COLORS } from '../src/features/qdc/wiring/options.ts';
@@ -41,6 +41,107 @@ test('visual device models change only appearance and reject unknown imported va
   assert.deepEqual(changed.terminals, original.terminals);
   assert.ok(validateProject(project));
   assert.equal(validateProject({ ...project, devices: [{ ...changed, visualModel: 'fabricante-inventado' }] }), false);
+});
+
+test('project appearance, supply phase labels and neutral DPS are persisted and validated', () => {
+  const project = emptyProject({ visualModel: 'graphite', dpsVisual: 'red' });
+  assert.equal(project.visualModel, 'graphite');
+  assert.equal(project.dpsVisual, 'red');
+  assert.deepEqual(buildTerminals('power-entry', 3).map(terminal => terminal.label), ['R', 'N', 'PE']);
+  assert.deepEqual(buildTerminals('power-entry', 4).map(terminal => terminal.label), ['R', 'S', 'N', 'PE']);
+  assert.deepEqual(buildTerminals('power-entry', 5).map(terminal => terminal.label), ['R', 'S', 'T', 'N', 'PE']);
+  assert.equal(buildSpdTerminals('neutral')[0].kind, 'N');
+  let withDps = addDevice(project, 'spd');
+  withDps = updateDevice(withDps, withDps.devices[0].id, { spdInput: 'neutral', visualRotation: 180 });
+  assert.equal(withDps.devices[0].terminals[0].label, 'N');
+  assert.equal(withDps.devices[0].visualRotation, 180);
+  assert.ok(validateProject(withDps));
+  assert.equal(validateProject({ ...withDps, dpsVisual: 'fluorescent' }), false);
+});
+
+test('stored v2 projects are normalized before strict validation', () => {
+  let project = addDevice(emptyProject(), 'power-entry');
+  project = addDevice(project, 'spd', { rail: 0, slot: 0 });
+  project = {
+    ...project,
+    wires: [{
+      id: 'legacy-neutral-dps', sourceComponent: project.devices[0].id, sourceTerminal: 'edge-1',
+      targetComponent: project.devices[1].id, targetTerminal: 'top-0', conductorType: 'neutral',
+      color: '#1686cf', gauge: 2.5, label: 'N', path: [],
+    }, {
+      id: 'legacy-invalid-dps', sourceComponent: project.devices[0].id, sourceTerminal: 'edge-2',
+      targetComponent: project.devices[1].id, targetTerminal: 'top-0', conductorType: 'earth',
+      color: '#24a15c', gauge: 2.5, label: 'PE inválido', path: [],
+    }],
+  };
+  const legacy = {
+    ...project,
+    visualModel: undefined,
+    dpsVisual: undefined,
+    devices: project.devices.map(device => device.type === 'power-entry'
+      ? { ...device, label: 'Entrada da rede', edgeOffset: 16, canvasPosition: undefined, terminals: device.terminals.map(terminal => ({ ...terminal, label: terminal.kind === 'L' ? 'L1' : terminal.label })) }
+      : device.type === 'spd' ? { ...device, spdInput: undefined } : device),
+  };
+  const storage = {
+    getItem: (key: string) => key.startsWith('eletricaweb-qdc-v2:') ? JSON.stringify({ version: 2, activeId: project.id, projects: [legacy] }) : null,
+    setItem: () => undefined,
+  };
+  const loaded = loadProjects(storage, 'user');
+  assert.equal(loaded.error, '');
+  assert.equal(loaded.migrated, true);
+  assert.deepEqual(loaded.projects[0].wires.map(wire => wire.id), ['legacy-neutral-dps']);
+  assert.equal(loaded.projects[0].visualModel, 'classic');
+  assert.equal(loaded.projects[0].dpsVisual, 'standard');
+  assert.equal(loaded.projects[0].devices[0].edgeOffset, 88);
+  assert.deepEqual(loaded.projects[0].devices[0].terminals.map(terminal => terminal.label), ['R', 'N', 'PE']);
+  assert.equal(loaded.projects[0].devices[1].spdInput, 'neutral');
+  assert.equal(loaded.projects[0].devices[1].terminals[0].kind, 'N');
+});
+
+test('spare bus and conduit terminals stay quiet while a fed comb covers matching terminals', () => {
+  let project = emptyProject({ rails: 2, modulesPerRail: 8 });
+  project = addDevice(project, 'spd', { rail: 0, slot: 0 });
+  project = addDevice(project, 'spd', { rail: 0, slot: 1 });
+  project = addDevice(project, 'comb-bus', { rail: 0, slot: 0 });
+  project = updateDevice(project, project.devices.at(-1)!.id, { modules: 2, poles: 1, combSide: 'bottom' });
+  project = addDevice(project, 'earth-bus', { rail: 1, slot: 0 });
+  project = addDevice(project, 'conduit-entry');
+  project = connect(project, endpoint(project.devices[0].id, 'bottom-0'), endpoint(project.devices[3].id, 'side-0'), { ...options, conductorType: 'earth', color: '#24a15c' });
+  const notices = warnings(project);
+  assert.equal(notices.some(notice => notice.id === `terminal-${project.devices[3].id}`), false);
+  assert.equal(notices.some(notice => notice.id === `terminal-${project.devices[4].id}`), false);
+  assert.match(notices.find(notice => notice.id === `terminal-${project.devices[1].id}`)?.message ?? '', /1 terminal/);
+});
+
+test('comb electrical coverage does not turn a phase terminal into PE', () => {
+  let project = emptyProject({ rails: 2, modulesPerRail: 8 });
+  project = addDevice(project, 'spd', { rail: 0, slot: 0 });
+  project = addDevice(project, 'breaker-1p', { rail: 0, slot: 1 });
+  project = addDevice(project, 'comb-bus', { rail: 0, slot: 0 });
+  project = updateDevice(project, project.devices[2].id, { poles: 1, modules: 2, combSide: 'bottom' });
+  project = addDevice(project, 'earth-bus', { rail: 1, slot: 0 });
+  project = connect(project, endpoint(project.devices[0].id, 'bottom-0'), endpoint(project.devices[3].id, 'side-0'), { ...options, conductorType: 'earth', color: '#24a15c' });
+  assert.match(warnings(project).find(notice => notice.id === `terminal-${project.devices[1].id}`)?.message ?? '', /2 terminal/);
+});
+
+test('manual circuits prepare separate conduit leads without inventing electrical connections', () => {
+  const circuits = Array.from({ length: 5 }, (_, index) => loadCircuit({ id: `manual-${index}`, number: index + 1, name: `Circuito ${index + 1}` }));
+  const base = emptyProject({ circuits });
+  const prepared = prepareCircuitOutputs(base);
+  const outputs = prepared.devices.filter(device => device.type === 'conduit-entry');
+  assert.equal(outputs.length, 5);
+  assert.deepEqual(outputs.map(device => device.terminals.length), [3, 3, 3, 3, 3]);
+  assert.equal(prepared.wires.length, 0);
+  for (const circuit of circuits) assert.ok(outputs.some(device => device.terminals.some(term => term.id === `circuit-${circuit.id}-l`)));
+  assert.ok(validateProject(prepared));
+  const rotated = updateDevice(prepared, outputs[0].id, { visualRotation: 180, label: 'Saída pela lateral' });
+  assert.deepEqual(rotated.devices.find(device => device.id === outputs[0].id)?.terminals, outputs[0].terminals);
+  assert.throws(() => updateDevice(prepared, outputs[0].id, { poles: 4 }), /definidos pelos circuitos/);
+  const again = prepareCircuitOutputs(prepared);
+  assert.equal(again.devices.length, prepared.devices.length);
+  const removed = removeCircuitOutput({ ...prepared, circuits: circuits.slice(1) }, circuits[0].id);
+  assert.ok(removed.devices.every(device => device.terminals.every(term => !term.id.startsWith(`circuit-${circuits[0].id}-`))));
+  assert.ok(validateProject(removed));
 });
 
 test('collision rejection preserves input and checks board bounds', () => {
@@ -233,6 +334,10 @@ test('smart organization groups devices by function, keeps circuit rows together
   assert.equal(earth.slot, demo.modulesPerRail - earth.modules);
   assert.equal(earth.busTerminalSide, 'right');
   assert.ok(demo.wires.every(wire => wire.path.length > 0), 'organizing must not introduce unroutable wires');
+  const manuallyRouted = demoProject();
+  manuallyRouted.wires[0].manualPath = true;
+  const preserved = organize(manuallyRouted);
+  assert.equal(preserved.wires[0].manualPath, true, 'an unobstructed manual route should survive organization');
 });
 
 test('automatic proposal and demo preserve unknown electrical settings and valid links', () => {
@@ -329,9 +434,12 @@ test('breaker identification creates and keeps a circuit without adding layout p
   assert.equal(project.circuits[0].name, 'Tomadas cozinha');
   assert.equal(project.circuits[0].breakerId, breaker.id);
   assert.equal(project.devices[0].label, 'Tomadas cozinha');
+  assert.ok(project.devices.some(device => device.terminals.some(term => term.id === `circuit-${project.circuits[0].id}-l`)));
+  assert.equal(project.wires.length, 0, 'the outgoing conductors remain available for manual connection');
   project = updateDevice(project, breaker.id, { label: 'Forno elétrico' });
   assert.equal(project.circuits.length, 1);
   assert.equal(project.circuits[0].name, 'Forno elétrico');
+  assert.equal(project.devices.filter(device => device.terminals.some(term => term.id === `circuit-${project.circuits[0].id}-l`)).length, 1);
   assert.ok(validateProject(project));
 });
 

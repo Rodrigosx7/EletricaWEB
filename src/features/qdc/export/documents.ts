@@ -29,6 +29,8 @@ export async function boardImage(project: Project, includeNotice = false): Promi
   svg.style.cssText = 'background:#eef0ee;font-family:Arial,sans-serif';
   svg.querySelector('[data-qdc-viewport]')?.removeAttribute('transform');
   svg.querySelectorAll('[data-qdc-editor-only]').forEach(el => el.remove());
+  // Layer visibility is an editing aid; exported documents always include the complete project.
+  svg.querySelectorAll<SVGGElement>('[data-qdc-layer]').forEach(layer => layer.style.removeProperty('display'));
   const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml;charset=utf-8' }));
   try {
     const img = new Image();
@@ -180,24 +182,45 @@ export async function exportPNG(project: Project) {
   const url = await boardImage(project, true);
   const a = document.createElement('a'); a.href = url; a.download = `${filename(project.name)}.png`; a.click();
 }
-export async function exportPDF(project: Project, labelsOnly = false) {
+export async function buildPDF(project: Project, labelsOnly = false) {
   const [{ jsPDF }, { default: autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
   const doc = new jsPDF({ orientation: labelsOnly ? 'portrait' : 'landscape', unit: 'mm', format: 'a4' });
   const w = doc.internal.pageSize.getWidth(), h = doc.internal.pageSize.getHeight();
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(17); doc.text('ELETRICAWEB / MONTADOR DE QDC', 14, 18);
-  doc.setFontSize(12); doc.text(project.name.slice(0, 90), 14, 27);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
   if (labelsOnly) {
-    doc.text('Etiquetas de identificação · imprimir em tamanho real (100%)', 14, 34);
-    let x = 14, y = 44;
+    const drawLabelHeader = () => {
+      doc.setFillColor(25, 48, 62); doc.rect(0, 0, w, 7, 'F');
+      doc.setFillColor(231, 185, 52); doc.rect(14, 14, 3, 17, 'F');
+      doc.setTextColor(29, 48, 60); doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text('ETIQUETAS DO QUADRO', 21, 20);
+      doc.setFontSize(10); doc.text(doc.splitTextToSize(project.name, w - 37)[0] ?? '', 21, 26);
+      doc.setTextColor(91, 111, 123); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+      doc.text(doc.splitTextToSize(`${project.client ? `${project.client}  ·  ` : ''}${project.circuits.length} circuitos  ·  imprimir em tamanho real (100%)`, w - 37)[0] ?? '', 21, 31);
+      doc.setDrawColor(213, 222, 228); doc.line(14, 36, w - 14, 36);
+    };
+    const rgb = (hex: string): [number, number, number] => {
+      const value = /^#[0-9a-f]{6}$/i.test(hex) ? hex.slice(1) : 'e4bd32';
+      return [Number.parseInt(value.slice(0, 2), 16), Number.parseInt(value.slice(2, 4), 16), Number.parseInt(value.slice(4, 6), 16)];
+    };
+    drawLabelHeader();
+    let x = 14, y = 43;
     for (const circuit of project.circuits) {
-      if (y + 22 > h - 15) { doc.addPage(); y = 15; }
-      doc.setDrawColor(150); doc.roundedRect(x, y, 58, 22, 1, 1);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.text(`C${circuit.number}`, x + 4, y + 8);
-      doc.setFontSize(8); doc.text(doc.splitTextToSize(circuit.name.toUpperCase(), 50).slice(0, 2), x + 4, y + 14);
-      x += 62; if (x + 58 > w - 14) { x = 14; y += 26; }
+      if (y + 25 > h - 14) { doc.addPage(); drawLabelHeader(); x = 14; y = 43; }
+      const breaker = project.devices.find(device => device.id === circuit.breakerId);
+      const accent = rgb(circuit.color);
+      doc.setFillColor(247, 249, 250); doc.setDrawColor(146, 160, 169); doc.roundedRect(x, y, 58, 24, 1.5, 1.5, 'FD');
+      doc.setFillColor(...accent); doc.roundedRect(x, y, 58, 3.2, 1.5, 1.5, 'F'); doc.rect(x, y + 1.6, 58, 1.6, 'F');
+      doc.setFillColor(34, 54, 66); doc.roundedRect(x + 3.2, y + 6, 11, 11, 1.2, 1.2, 'F');
+      doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(circuit.number > 99 ? 8 : 10.5); doc.text(`C${circuit.number}`, x + 8.7, y + 12.8, { align: 'center' });
+      doc.setTextColor(30, 48, 59); doc.setFontSize(8.2); const name = doc.splitTextToSize(circuit.name.toUpperCase(), 38).slice(0, 2); doc.text(name, x + 17, y + 8.5);
+      const details = [circuit.phase || 'FASE —', breaker?.amperage ? `${breaker.amperage} A` : 'CORRENTE —', circuit.cableGauge ? `${circuit.cableGauge} mm²` : 'CABO —'];
+      doc.setTextColor(88, 106, 116); doc.setFont('helvetica', 'normal'); doc.setFontSize(5.8);
+      doc.text(doc.splitTextToSize(details.join('  ·  '), 38).slice(0, 2), x + 17, y + 17);
+      doc.setDrawColor(185, 194, 200); doc.setLineWidth(.2); doc.line(x - 2, y, x, y); doc.line(x, y - 2, x, y); doc.line(x + 58, y - 2, x + 58, y); doc.line(x + 58, y, x + 60, y);
+      x += 62; if (x + 58 > w - 14) { x = 14; y += 29; }
     }
   } else {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(17); doc.text('ELETRICAWEB / MONTADOR DE QDC', 14, 18);
+    doc.setFontSize(12); doc.text(project.name.slice(0, 90), 14, 27);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
     const presentation = await presentationImage(project);
     doc.addImage(presentation, 'PNG', 0, 0, w, h);
     doc.addPage(); doc.setFontSize(14); doc.text('Circuitos e materiais · proposta visual', 14, 18);
@@ -208,5 +231,10 @@ export async function exportPDF(project: Project, labelsOnly = false) {
     doc.addPage(); doc.setFontSize(14); doc.text('Lista de materiais', 14, 18);
     autoTable(doc, { startY: 24, head: [['Material', 'Especificação', 'Quantidade', 'Unidade']], body: materialList(project).map(m => [m.name, m.specification, m.quantity, m.unit]), styles: { fontSize: 8 }, headStyles: { fillColor: [27, 41, 47] } });
   }
+  return doc;
+}
+
+export async function exportPDF(project: Project, labelsOnly = false) {
+  const doc = await buildPDF(project, labelsOnly);
   doc.save(`${filename(project.name)}${labelsOnly ? '-etiquetas' : ''}.pdf`);
 }
