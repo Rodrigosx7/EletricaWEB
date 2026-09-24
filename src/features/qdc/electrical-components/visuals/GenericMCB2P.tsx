@@ -2,7 +2,7 @@ import { useId } from 'react';
 import type { Device, DeviceVisualModel } from '../../types';
 
 /** Front-facing, editable vector artwork. The canvas owns the actual terminal hit targets. */
-export default function GenericMCB2P({ device, width, height, finish }: { device: Device; width: number; height: number; finish: DeviceVisualModel }) {
+export default function GenericMCB2P({ device, width, height, finish }: { device: Pick<Device, 'amperage' | 'curve' | 'breakingCapacityKa' | 'voltage' | 'tag'>; width: number; height: number; finish: DeviceVisualModel }) {
   const prefix = useId().replace(/:/g, '');
   const shell = `${prefix}-shell`, metal = `${prefix}-metal`, lever = `${prefix}-lever`;
   const dark = finish === 'graphite';

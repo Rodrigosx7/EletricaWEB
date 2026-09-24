@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Boxes, Cable, ChevronDown, CircuitBoard, Clock3, Plus, Search, ShieldCheck, SlidersHorizontal, Star, X, Zap } from 'lucide-react';
 import { CATALOG } from '../electrical-components/catalog';
 import ServiceEntranceArtwork from '../electrical-components/ServiceEntranceArtwork';
+import GenericMCB2P from '../electrical-components/visuals/GenericMCB2P';
 import type { CatalogItem } from '../types';
 import './panels.css';
 
@@ -10,6 +11,7 @@ type Collection = 'essentials' | 'favorites' | 'recent' | 'all';
 type LibraryPreferences = { favorites: string[]; recent: string[] };
 
 const ESSENTIALS = ['breaker-1p', 'breaker-2p', 'main-breaker', 'rcd-2p', 'spd', 'neutral-bus', 'earth-bus', 'comb-bus', 'power-entry', 'conduit-entry'];
+const MCB_PREVIEW = { amperage: 63, curve: 'C' as const, breakingCapacityKa: 6, voltage: 400, tag: 'QF01' };
 
 const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 const categoryIcons = { Proteção: ShieldCheck, Distribuição: Cable, Infraestrutura: CircuitBoard, Automação: SlidersHorizontal, Outros: Boxes };
@@ -34,6 +36,7 @@ function loadPreferences(storageKey: string): LibraryPreferences {
 
 /** Decorative catalogue illustration. Device dimensions are defined by the editor catalogue. */
 function CatalogThumbnail({ item }: { item: CatalogItem }) {
+  if (item.type === 'breaker-2p') return <GenericMCB2P device={MCB_PREVIEW} width={72} height={108} finish="classic" />;
   if (item.type === 'power-entry') return <svg viewBox="0 0 64 64" className="ewq-catalog-thumb" aria-hidden="true" focusable="false"><ServiceEntranceArtwork width={64} height={64} /></svg>;
   const key = normalize(`${item.type} ${item.name}`);
   const isSurge = key.includes('dps');
@@ -72,6 +75,7 @@ export function ComponentLibrary({ onAdd, onClose, storageKey = 'qdc-component-l
   const [query, setQuery] = useState('');
   const [collection, setCollection] = useState<Collection>('essentials');
   const [categoryFilter, setCategoryFilter] = useState('Todas');
+  const [showBreakerPreview, setShowBreakerPreview] = useState(false);
   const [preferences, setPreferences] = useState(() => loadPreferences(storageKey));
   const searching = !!query.trim();
   const filtered = CATALOG.filter(item => searching
@@ -99,9 +103,11 @@ export function ComponentLibrary({ onAdd, onClose, storageKey = 'qdc-component-l
   }
   function catalogButton(item: CatalogItem) {
     const favorite = preferences.favorites.includes(item.type);
-    return <div key={item.type} className="ewq-catalog-item" draggable onDragStart={event => { event.dataTransfer.setData('application/qdc-device', item.type); event.dataTransfer.effectAllowed = 'copy'; }} onDragEnd={event => { if (event.dataTransfer.dropEffect === 'copy') rememberRecent(item.type); }} title={item.description}>
-      <button type="button" className="ewq-catalog-main" onClick={() => addItem(item.type)} aria-label={`Adicionar ${item.name}`}><span className="ewq-catalog-art"><CatalogThumbnail item={item} /></span><span className="ewq-catalog-copy"><strong>{item.name}</strong><span>{catalogMeta(item)}</span></span><span className="ewq-catalog-add"><Plus size={15} aria-hidden="true" /></span></button>
+    const featured = item.type === 'breaker-2p';
+    return <div key={item.type} className={`ewq-catalog-item${featured ? ' ewq-catalog-feature' : ''}`} draggable onDragStart={event => { event.dataTransfer.setData('application/qdc-device', item.type); event.dataTransfer.effectAllowed = 'copy'; }} onDragEnd={event => { if (event.dataTransfer.dropEffect === 'copy') rememberRecent(item.type); }} title={item.description}>
+      <button type="button" className="ewq-catalog-main" onClick={() => addItem(item.type)} aria-label={`Adicionar ${item.name}`}><span className="ewq-catalog-art"><CatalogThumbnail item={item} /></span><span className="ewq-catalog-copy"><strong>{item.name}</strong><span>{catalogMeta(item)}</span>{featured && <span className="ewq-catalog-feature-label">Novo visual vetorial 2P</span>}</span><span className="ewq-catalog-add"><Plus size={15} aria-hidden="true" /></span></button>
       <button type="button" className="ewq-catalog-favorite" aria-label={favorite ? `Remover ${item.name} dos favoritos` : `Adicionar ${item.name} aos favoritos`} aria-pressed={favorite} onClick={() => toggleFavorite(item.type)}><Star size={15} aria-hidden="true" fill={favorite ? 'currentColor' : 'none'} /></button>
+      {featured && <><button type="button" className="ewq-catalog-preview-toggle" aria-expanded={showBreakerPreview} aria-controls={showBreakerPreview ? 'ewq-breaker-preview' : undefined} onClick={() => setShowBreakerPreview(value => !value)}>{showBreakerPreview ? 'Ocultar prévia' : 'Ver prévia ampliada'}</button>{showBreakerPreview && <div id="ewq-breaker-preview" className="ewq-catalog-preview" role="group" aria-label="Prévia do disjuntor bipolar"><GenericMCB2P device={MCB_PREVIEW} width={126} height={189} finish="classic" /><p>Exemplo ilustrativo: C63 · 6 kA · 400 V · 2P. No quadro, os textos acompanham as propriedades e os quatro bornes aceitam fios.</p></div>}</>}
     </div>;
   }
   return <aside className="ewq-panel ewq-library" aria-label="Biblioteca de componentes">

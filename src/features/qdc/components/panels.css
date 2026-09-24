@@ -106,6 +106,16 @@
 .ewq-collection-switch button[aria-pressed=true] { background: #fff; color: #174662; border-color: #cbdce6; box-shadow: 0 2px 5px #18354a12; font-weight: 800; }
 .ewq-collection-switch button > span { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding-inline: 4px; border-radius: 9px; background: #dfe8ef; color: #496578; font-size: 10px; font-variant-numeric: tabular-nums; }
 .ewq-catalog-art { display: grid; place-items: center; width: 42px; height: 52px; background: #f0f5f8; border-radius: 7px; flex-shrink: 0; }
+.ewq-library .ewq-catalog-feature { flex-direction: column; border-color: #a8c4d3; background: #f8fbfc; }
+.ewq-catalog-feature .ewq-catalog-main { min-height: 124px; }
+.ewq-catalog-feature .ewq-catalog-art { width: 78px; height: 114px; background: #eaf0f3; }
+.ewq-catalog-feature .ewq-catalog-art > svg { width: 72px; height: 108px; }
+.ewq-catalog-copy > .ewq-catalog-feature-label { display: inline-flex; align-self: flex-start; padding: 3px 6px; border-radius: 4px; background: #dceef3; color: #225d73; font-size: 10px; font-weight: 700; white-space: normal; }
+.ewq-library .ewq-catalog-preview-toggle { align-self: flex-start; min-height: 30px; margin: 0 8px 8px; padding: 4px 6px; border: 0; border-radius: 5px; color: #1e627f; background: transparent; font-size: 11px; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
+.ewq-catalog-preview-toggle:hover { background: #e4f1f6; }
+.ewq-catalog-preview { display: grid; justify-items: center; gap: 8px; margin: 0 8px 9px; padding: 12px 10px; border: 1px solid #c6dae4; border-radius: 8px; background: #eef5f7; }
+.ewq-catalog-preview > svg { width: 126px; height: 189px; }
+.ewq-library .ewq-catalog-preview p { max-width: 25ch; color: #476174; text-align: center; font-size: 11px; line-height: 1.45; }
 .ewq-library .ewq-library-instruction { font-size: 12px; margin: 0 16px 12px; color: #657b8b; }
 .ewq-category-filter { display: block; margin: 0 14px 12px; }
 .ewq-panel .ewq-category-filter select { width: 100%; min-height: 36px; padding: 7px; border: 1px solid #dce4eb; border-radius: 6px; background: #fff; font-size: 12px; color: #425e74; }
