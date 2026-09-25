@@ -1,5 +1,6 @@
 import { CATALOG, DPS_MODELS, buildSpdTerminals, buildTerminals, createDevice } from '../electrical-components/catalog.ts';
-import { GENERIC_DIN_2P, technicalModel } from '../electrical-components/technicalCatalog.ts';
+import { breakerTechnicalModel, technicalModel, TECHNICAL_MODELS } from '../electrical-components/technicalCatalog.ts';
+import { suggestedCircuitVoltage } from '../circuits/circuitDraft.ts';
 import { boardSize, deviceMount, deviceRect, isRailMounted, pathAvoidsDevices, routeWires } from '../wiring/routing.ts';
 import type { Circuit, Conductor, Device, Project, Selection, Terminal, WireOptions, WireTermination } from '../types.ts';
 
@@ -22,6 +23,18 @@ export function conductorFitsTerminal(conductor: Conductor, terminal: Terminal):
   return true;
 }
 
+export function circuitGauge(circuit: Circuit, kind: Terminal['kind']): number | null {
+  return kind === 'N' ? circuit.neutralGauge === undefined ? circuit.cableGauge : circuit.neutralGauge
+    : kind === 'PE' ? circuit.earthGauge === undefined ? circuit.cableGauge : circuit.earthGauge : circuit.cableGauge;
+}
+
+export function circuitWireColor(circuit: Circuit, terminal: Terminal): string {
+  if (terminal.kind === 'N') return circuit.neutralColor ?? '#1686cf';
+  if (terminal.kind === 'PE') return circuit.earthColor ?? '#27854c';
+  if (terminal.kind === 'L') return circuit.phaseColors?.[(terminal.pole ?? 1) - 1] ?? circuit.color;
+  return circuit.color;
+}
+
 function compatibleEndpoints(project: Project, source: Endpoint, target: Endpoint, conductor: Conductor): boolean {
   const terminals = [endpointTerminal(project, source), endpointTerminal(project, target)];
   return terminals.every(terminal => terminal && conductorFitsTerminal(conductor, terminal));
@@ -31,6 +44,25 @@ export function connectionIssue(project: Project, source: Endpoint, target: Endp
   if (!validEndpoint(project, source) || !validEndpoint(project, target)) return 'Escolha terminais existentes para conectar.';
   if (source.componentId === target.componentId && source.terminalId === target.terminalId) return 'Escolha outro terminal para concluir o fio.';
   if (!compatibleEndpoints(project, source, target, conductor)) return 'O tipo de condutor não é compatível com este terminal. Use fase/retorno em L, neutro em N e proteção em PE.';
+  const output = [source, target].find(endpoint => project.devices.find(device => device.id === endpoint.componentId)?.type === 'conduit-entry' && circuitForOutputTerminal(project, endpoint.terminalId));
+  if (output) {
+    if (project.wires.some(wire => wire.sourceComponent === output.componentId && wire.sourceTerminal === output.terminalId || wire.targetComponent === output.componentId && wire.targetTerminal === output.terminalId)) return 'Esta ponta do circuito já está conectada. Remova a ligação anterior para mudar o destino.';
+    const circuit = circuitForOutputTerminal(project, output.terminalId)!;
+    const outputTerminal = endpointTerminal(project, output)!;
+    const destination = output === source ? target : source;
+    const device = project.devices.find(item => item.id === destination.componentId);
+    const terminal = endpointTerminal(project, destination)!;
+    if (device?.type === 'conduit-entry') return 'Não ligue duas saídas de circuito entre si. Escolha um borne de componente compatível.';
+    if (outputTerminal.kind === 'L' && device && isCircuitBreaker(device.type)) {
+      const phases = circuit.phase.split('/').filter(Boolean).length;
+      const phasePoles = device.terminals.filter(item => item.side === 'bottom' && item.kind === 'L').length;
+      if (phasePoles !== phases) return `C${circuit.number} tem ${phases} fase(s); escolha um disjuntor com ${phases} polo(s) de fase e acionamento conjunto.`;
+      if ((terminal.direction ?? (terminal.side === 'bottom' ? 'output' : 'input')) !== 'output') return 'Conecte a saída do circuito ao borne de saída do disjuntor.';
+      if ((outputTerminal.pole ?? 1) !== (terminal.pole ?? terminal.index + 1)) return `${outputTerminal.label} deve ir ao polo ${outputTerminal.pole ?? 1} do mesmo disjuntor.`;
+      if (circuit.breakerId && circuit.breakerId !== device.id) return `C${circuit.number} já está vinculado a outro disjuntor.`;
+      if (device.circuitId && device.circuitId !== circuit.id) return `${device.label} já atende outro circuito.`;
+    }
+  }
   const duplicate = project.wires.some(wire =>
     (wire.sourceComponent === source.componentId && wire.sourceTerminal === source.terminalId && wire.targetComponent === target.componentId && wire.targetTerminal === target.terminalId)
     || (wire.sourceComponent === target.componentId && wire.sourceTerminal === target.terminalId && wire.targetComponent === source.componentId && wire.targetTerminal === source.terminalId));
@@ -75,7 +107,9 @@ function firstOverlaySpace(project: Project, modules: number): { rail: number; s
 }
 
 export function addDevice(project: Project, type: string, position?: { rail: number; slot: number }): Project {
-  const device = createDevice(type);
+  const base = createDevice(type);
+  const phases = project.supply === 'tri' ? 3 : project.supply === 'bi' ? 2 : 1;
+  const device = type === 'power-entry' ? { ...base, poles: phases + 2, terminals: buildTerminals(type, phases + 2) } : base;
   if (deviceMount(device) === 'edge') {
     const count = project.devices.filter(item => deviceMount(item) === 'edge' && (item.edgeSide ?? 'top') === (device.edgeSide ?? 'top')).length;
     const placed = { ...device, ...(position ?? {}), edgeOffset: type === 'power-entry' ? 88 : Math.min(90, 15 + count * 15) };
@@ -137,10 +171,11 @@ export function updateDevice(project: Project, id: string, patch: Partial<Device
     device = { ...device, modules: 1, orientation: device.orientation ?? 'vertical', busTerminalSide, amperage: null, gauge: null, voltage: 0, surgeCurrent: 0, circuitId: null, description: '', color: device.type === 'neutral-bus' ? '#1686cf' : '#27854c', terminals: buildTerminals(device.type, device.poles) };
   }
   if (device.type === 'comb-bus') {
-    if (![1, 2, 4].includes(device.poles)) throw new Error('Escolha pente unipolar, bipolar ou tetrapolar.');
+    if (![1, 2, 3, 4].includes(device.poles)) throw new Error('Escolha pente monofásico, bifásico ou trifásico.');
     if (!Number.isInteger(device.modules) || device.modules < 2 || device.modules > 24) throw new Error('Escolha entre 2 e 24 encaixes para o pente.');
     if (!['top', 'bottom'].includes(device.combSide ?? 'bottom')) throw new Error('Escolha os bornes superiores ou inferiores.');
-    device = { ...device, mount: 'overlay', combSide: device.combSide ?? 'bottom', terminals: [], circuitId: null, gauge: null, voltage: 0, surgeCurrent: 0 };
+    if (![0, 1, 2].includes(device.combPhaseStart ?? 0)) throw new Error('Escolha a primeira fase do pente.');
+    device = { ...device, mount: 'overlay', combSide: device.combSide ?? 'bottom', combPhaseStart: device.combPhaseStart ?? 0, terminals: [], circuitId: null, gauge: null, voltage: 0, surgeCurrent: 0 };
   }
   if (device.type === 'power-entry' || device.type === 'conduit-entry') {
     const minimum = device.type === 'power-entry' ? 3 : 1;
@@ -164,20 +199,29 @@ export function updateDevice(project: Project, id: string, patch: Partial<Device
     }
     if (device.type !== 'comb-bus') device.terminals = buildTerminals(device.type, device.poles);
   }
-  if (device.type === 'breaker-2p') {
-    device = { ...device, technicalModelId: GENERIC_DIN_2P.id, visualVariant: GENERIC_DIN_2P.visualVariant, terminals: buildTerminals('breaker-2p', 2) };
-  } else if (original.type === 'breaker-2p') {
+  const mcbModel = breakerTechnicalModel(device.type);
+  if (mcbModel) {
+    device = { ...device, technicalModelId: mcbModel.id, visualVariant: mcbModel.visualVariant, terminals: buildTerminals(device.type, device.poles) };
+  } else if (breakerTechnicalModel(original.type)) {
     device = { ...device, technicalModelId: undefined, visualVariant: undefined, breakingCapacityKa: undefined, tag: undefined };
   }
+  const presetRenamed = device.type !== original.type && original.label === CATALOG.find(item => item.type === original.type)?.name;
+  if (presetRenamed) device.label = CATALOG.find(item => item.type === device.type)?.name ?? device.label;
+  const labelChanged = patch.label !== undefined || presetRenamed;
   if (!fits(project, device)) throw new Error('A alteração não cabe neste espaço do trilho.');
   if (!deviceShape(device)) throw new Error('Revise as características do componente: valores numéricos e identificação.');
   if (device.circuitId && (!isBreaker(device.type) || !project.circuits.some(circuit => circuit.id === device.circuitId))) throw new Error('Vincule um circuito existente a um disjuntor.');
+  if (device.circuitId && isCircuitBreaker(device.type)) {
+    const circuit = project.circuits.find(entry => entry.id === device.circuitId)!;
+    const phasePoles = device.terminals.filter(term => term.side === 'bottom' && term.kind === 'L').length;
+    if (phasePoles !== circuit.phase.split('/').filter(Boolean).length) throw new Error('Desvincule o circuito antes de alterar a quantidade de polos de fase do disjuntor.');
+  }
   let circuits = [...project.circuits];
-  if (isCircuitBreaker(device.type) && patch.label !== undefined && device.label.trim()) {
+  if (isCircuitBreaker(device.type) && labelChanged && device.label.trim()) {
     let linked = circuits.find(circuit => circuit.id === device.circuitId);
     if (!linked) {
       const nextNumber = Math.max(0, ...circuits.map(circuit => circuit.number)) + 1;
-      linked = { id: crypto.randomUUID(), number: nextNumber, name: device.label.trim(), phase: project.supply === 'tri' ? 'R' : 'R', breakerId: id, cableGauge: device.gauge, load: null, loadUnit: 'W', voltage: project.voltage, powerFactor: 1, drId: null, notes: '', color: device.color };
+      linked = { id: crypto.randomUUID(), number: nextNumber, name: device.label.trim(), phase: 'R', breakerId: id, cableGauge: device.gauge, hasNeutral: true, hasEarth: true, ampacity: null, load: null, loadUnit: 'W', voltage: suggestedCircuitVoltage(project.supply, 'R', project.voltage), powerFactor: 1, drId: null, notes: '', color: device.color };
       circuits = [...circuits, linked];
       device = { ...device, circuitId: linked.id };
     }
@@ -187,24 +231,42 @@ export function updateDevice(project: Project, id: string, patch: Partial<Device
   circuits = circuits.map(circuit => {
     if (circuit.id === device.circuitId) return {
       ...circuit, breakerId: id, cableGauge: device.gauge,
-      name: patch.label !== undefined ? device.label.replace(/^C\d+\s*[·–—-]?\s*/, '') : circuit.name,
+      name: labelChanged ? device.label.replace(/^C\d+\s*[·–—-]?\s*/, '') : circuit.name,
       color: patch.color !== undefined ? device.color : circuit.color,
     };
     return circuit.breakerId === id ? { ...circuit, breakerId: null } : circuit;
   });
   const changedKinds = new Set(original.terminals.filter(term => device.terminals.find(next => next.id === term.id)?.kind !== term.kind).map(term => term.id));
-  const wires = project.wires.filter(wire => !(wire.sourceComponent === id && changedKinds.has(wire.sourceTerminal)) && !(wire.targetComponent === id && changedKinds.has(wire.targetTerminal)));
+  const wires = project.wires.filter(wire => !(wire.sourceComponent === id && changedKinds.has(wire.sourceTerminal)) && !(wire.targetComponent === id && changedKinds.has(wire.targetTerminal))).map(wire => {
+    if (!device.circuitId || patch.gauge === undefined) return wire;
+    const output = [{ componentId: wire.sourceComponent, terminalId: wire.sourceTerminal }, { componentId: wire.targetComponent, terminalId: wire.targetTerminal }]
+      .find(endpoint => project.devices.find(entry => entry.id === endpoint.componentId)?.type === 'conduit-entry' && circuitForOutputTerminal(project, endpoint.terminalId)?.id === device.circuitId && endpointTerminal(project, endpoint)?.kind === 'L');
+    return output ? { ...wire, gauge: device.gauge } : wire;
+  });
   const updated = cleanWires({ ...project, devices, circuits, wires });
   return stamp(circuits.length > project.circuits.length ? prepareCircuitOutputs(updated) : updated);
 }
 
 export function deleteSelection(project: Project, selection: Selection): Project {
   const removed = new Set(selection.devices);
+  const removedWires = project.wires.filter(wire => wire.id === selection.wire || removed.has(wire.sourceComponent) || removed.has(wire.targetComponent));
+  const removedWireIds = new Set(removedWires.map(wire => wire.id));
+  const wires = project.wires.filter(wire => !removedWireIds.has(wire.id));
+  const removedPhaseLink = (circuit: Circuit, wire: Project['wires'][number]) => {
+    const endpoints = [{ componentId: wire.sourceComponent, terminalId: wire.sourceTerminal }, { componentId: wire.targetComponent, terminalId: wire.targetTerminal }];
+    return endpoints.some((endpoint, index) => project.devices.find(device => device.id === endpoint.componentId)?.type === 'conduit-entry'
+      && circuitForOutputTerminal(project, endpoint.terminalId)?.id === circuit.id && endpointTerminal(project, endpoint)?.kind === 'L'
+      && endpoints[1 - index].componentId === circuit.breakerId);
+  };
+  const unlinked = new Set(project.circuits.filter(circuit => circuit.breakerId && !removed.has(circuit.breakerId)
+    && removedWires.some(wire => removedPhaseLink(circuit, wire))
+    && !wires.some(wire => removedPhaseLink(circuit, wire))).map(circuit => circuit.id));
   return stamp({ ...project,
-    devices: project.devices.filter(device => !removed.has(device.id)),
-    wires: project.wires.filter(wire => wire.id !== selection.wire && !removed.has(wire.sourceComponent) && !removed.has(wire.targetComponent)),
+    devices: project.devices.filter(device => !removed.has(device.id)).map(device => device.circuitId && unlinked.has(device.circuitId)
+      ? { ...device, circuitId: null, label: CATALOG.find(item => item.type === device.type)?.name ?? device.label } : device),
+    wires,
     circuits: project.circuits.map(circuit => ({ ...circuit,
-      breakerId: circuit.breakerId && removed.has(circuit.breakerId) ? null : circuit.breakerId,
+      breakerId: circuit.breakerId && (removed.has(circuit.breakerId) || unlinked.has(circuit.id)) ? null : circuit.breakerId,
       drId: circuit.drId && removed.has(circuit.drId) ? null : circuit.drId,
     })),
   });
@@ -248,7 +310,18 @@ export function connectMany(project: Project, requests: ConnectionRequest[]): Pr
 }
 
 export function connect(project: Project, source: Endpoint, target: Endpoint, options: WireOptions): Project {
-  return connectMany(project, [{ source, target, options }]);
+  const output = [source, target].find(endpoint => project.devices.find(device => device.id === endpoint.componentId)?.type === 'conduit-entry');
+  const breakerEndpoint = output === source ? target : source;
+  const breaker = project.devices.find(device => device.id === breakerEndpoint.componentId);
+  const outputTerminal = output && endpointTerminal(project, output);
+  const circuit = output && outputTerminal?.kind === 'L' ? circuitForOutputTerminal(project, output.terminalId) : undefined;
+  if (circuit && breaker && isCircuitBreaker(breaker.type)) {
+    if (circuit.breakerId && circuit.breakerId !== breaker.id) throw new Error(`C${circuit.number} já está vinculado a outro disjuntor. Desvincule-o antes de trocar.`);
+    if (breaker.circuitId && breaker.circuitId !== circuit.id) throw new Error(`${breaker.label} já está vinculado a outro circuito.`);
+  }
+  const connected = connectMany(project, [{ source, target, options }]);
+  return circuit && breaker && isCircuitBreaker(breaker.type) && !circuit.breakerId
+    ? updateCircuit(connected, circuit.id, { breakerId: breaker.id }) : connected;
 }
 
 export function organize(project: Project): Project {
@@ -353,13 +426,14 @@ export function circuitForOutputTerminal(project: Project, terminalId: string): 
 /** Prepare external circuit conductors without connecting them to a breaker or bus. */
 export function prepareCircuitOutputs(project: Project): Project {
   let devices = project.devices;
-  const hasOutput = (circuit: Circuit) => devices.some(device => device.type === 'conduit-entry' && device.terminals.some(term =>
-    term.id.startsWith(circuitOutputPrefix(circuit.id)) || term.id === `c${circuit.number}-l`));
-  const outputTerminals = (circuit: Circuit, index: number): Terminal[] => [
-    { id: `${circuitOutputPrefix(circuit.id)}l`, label: `C${circuit.number} L`, side: 'bottom', index, kind: 'L' },
-    { id: `${circuitOutputPrefix(circuit.id)}n`, label: `C${circuit.number} N`, side: 'bottom', index: index + 1, kind: 'N' },
-    { id: `${circuitOutputPrefix(circuit.id)}pe`, label: `C${circuit.number} PE`, side: 'bottom', index: index + 2, kind: 'PE' },
-  ];
+  let wires = project.wires;
+  const outputTerminals = (circuit: Circuit): Terminal[] => {
+    const phases = circuit.phase.split('/').filter(Boolean);
+    const draft: Omit<Terminal, 'index'>[] = phases.map((phase, index) => ({ id: `${circuitOutputPrefix(circuit.id)}${index ? `l${index + 1}` : 'l'}`, label: `C${circuit.number} L${index + 1} (${phase})`, side: 'bottom', kind: 'L', pole: index + 1 }));
+    if (circuit.hasNeutral !== false) draft.push({ id: `${circuitOutputPrefix(circuit.id)}n`, label: `C${circuit.number} N`, side: 'bottom', kind: 'N' });
+    if (circuit.hasEarth !== false) draft.push({ id: `${circuitOutputPrefix(circuit.id)}pe`, label: `C${circuit.number} PE`, side: 'bottom', kind: 'PE' });
+    return draft.map((terminal, index) => ({ ...terminal, index }));
+  };
   const clearPosition = (candidate: Device, exceptId?: string) => {
     const rect = deviceRect(candidate, project);
     const size = boardSize(project);
@@ -371,9 +445,21 @@ export function prepareCircuitOutputs(project: Project): Project {
     });
   };
   for (const circuit of [...project.circuits].sort((a, b) => a.number - b.number)) {
-    if (hasOutput(circuit)) continue;
-    const base: Device = { ...createDevice('conduit-entry'), label: `Saída C${circuit.number}`, poles: 3,
-      terminals: outputTerminals(circuit, 0), edgeSide: 'bottom', edgeOffset: 50 };
+    const existing = devices.find(device => device.type === 'conduit-entry' && device.terminals.some(term => term.id.startsWith(circuitOutputPrefix(circuit.id))));
+    const oldGrouped = devices.some(device => device.type === 'conduit-entry' && device.terminals.some(term => term.id === `c${circuit.number}-l`));
+    if (oldGrouped) continue; // Preserve the grouped outputs of older automatic proposals.
+    const terminals = outputTerminals(circuit);
+    if (!terminals.length) throw new Error(`C${circuit.number}: escolha pelo menos um condutor.`);
+    const base: Device = existing ? { ...existing, label: `Saída C${circuit.number}`, poles: terminals.length, terminals } : { ...createDevice('conduit-entry'), label: `Saída C${circuit.number}`, poles: terminals.length,
+      terminals, edgeSide: 'bottom', edgeOffset: 50 };
+    if (existing) {
+      const retained = new Set(terminals.map(terminal => terminal.id));
+      wires = wires.filter(wire => !((wire.sourceComponent === existing.id && !retained.has(wire.sourceTerminal)) || (wire.targetComponent === existing.id && !retained.has(wire.targetTerminal))));
+      const placement = clearPosition(base, existing.id) ? base : (['bottom', 'top', 'left', 'right'] as const).flatMap(edgeSide => Array.from({ length: 45 }, (_, index) => ({ ...base, edgeSide, edgeOffset: 6 + index * 2 }))).find(candidate => clearPosition(candidate, existing.id));
+      if (!placement) throw new Error(`C${circuit.number}: não há espaço na borda para ${terminals.length} condutores.`);
+      devices = devices.map(device => device.id === existing.id ? placement : device);
+      continue;
+    }
     const breaker = devices.find(device => device.id === circuit.breakerId);
     const breakerCenter = breaker ? (() => { const rect = deviceRect(breaker, project); return rect.x + rect.width / 2; })() : boardSize(project).width / 2;
     const desiredOffset = Math.max(6, Math.min(94, (breakerCenter - 42) / (boardSize(project).width - 84) * 100));
@@ -383,17 +469,20 @@ export function prepareCircuitOutputs(project: Project): Project {
     if (!placement) throw new Error('Não há espaço livre na borda para a saída deste circuito. Mova um eletroduto ou amplie o quadro.');
     devices = [...devices, placement];
   }
-  return routeWires({ ...project, devices });
+  return routeWires({ ...project, devices, wires });
 }
 
-export function removeCircuitOutput(project: Project, circuitId: string): Project {
+export function removeCircuitOutput(project: Project, circuitId: string, legacyNumber?: number): Project {
   const prefix = circuitOutputPrefix(circuitId);
+  const belongs = (terminal: Terminal) => terminal.id.startsWith(prefix) || legacyNumber !== undefined && [`c${legacyNumber}-l`, `c${legacyNumber}-n`, `c${legacyNumber}-pe`].includes(terminal.id);
   const removedTerminals = new Set(project.devices.flatMap(device => device.type === 'conduit-entry'
-    ? device.terminals.filter(term => term.id.startsWith(prefix)).map(term => `${device.id}:${term.id}`) : []));
+    ? device.terminals.filter(belongs).map(term => `${device.id}:${term.id}`) : []));
   const devices = project.devices.flatMap(device => {
-    if (device.type !== 'conduit-entry' || !device.terminals.some(term => term.id.startsWith(prefix))) return [device];
-    const terminals = device.terminals.filter(term => !term.id.startsWith(prefix)).map((term, index) => ({ ...term, index }));
-    return terminals.length ? [{ ...device, poles: terminals.length, terminals }] : [];
+    if (device.type !== 'conduit-entry' || !device.terminals.some(belongs)) return [device];
+    const terminals = device.terminals.filter(term => !belongs(term)).map((term, index) => ({ ...term, index }));
+    const numbers = terminals.map(term => Number(term.label.match(/^C(\d+)/)?.[1])).filter(Number.isFinite);
+    const label = numbers.length ? `Saída C${Math.min(...numbers)}${Math.min(...numbers) === Math.max(...numbers) ? '' : `–C${Math.max(...numbers)}`}` : device.label;
+    return terminals.length ? [{ ...device, label, poles: terminals.length, terminals }] : [];
   });
   const wires = project.wires.filter(wire => !removedTerminals.has(`${wire.sourceComponent}:${wire.sourceTerminal}`)
     && !removedTerminals.has(`${wire.targetComponent}:${wire.targetTerminal}`));
@@ -403,17 +492,60 @@ export function removeCircuitOutput(project: Project, circuitId: string): Projec
 export function updateCircuit(project: Project, id: string, patch: Partial<Circuit>): Project {
   const original = project.circuits.find(circuit => circuit.id === id);
   if (!original) throw new Error('Circuito não encontrado.');
-  const circuit = { ...original, ...patch, id: original.id };
+  let circuit = { ...original, ...patch, id: original.id };
+  if (patch.phase !== undefined && patch.phase !== original.phase && patch.breakerId === undefined && circuit.breakerId) {
+    const previousBreaker = project.devices.find(device => device.id === circuit.breakerId);
+    const phasePoles = previousBreaker?.terminals.filter(term => term.side === 'bottom' && term.kind === 'L').length ?? 0;
+    if (phasePoles !== circuit.phase.split('/').filter(Boolean).length) circuit = { ...circuit, breakerId: null };
+  }
   if (!circuitShape(circuit)) throw new Error('Revise os dados do circuito. Tensão e fator de potência devem ser válidos.');
-  if (circuit.breakerId && !project.devices.some(device => device.id === circuit.breakerId && isBreaker(device.type))) throw new Error('Selecione um disjuntor existente.');
+  const selectedBreaker = circuit.breakerId ? project.devices.find(device => device.id === circuit.breakerId && isCircuitBreaker(device.type)) : undefined;
+  if (circuit.breakerId && !selectedBreaker) throw new Error('Selecione um disjuntor de circuito existente.');
+  if (selectedBreaker && patch.breakerId !== undefined && selectedBreaker.terminals.filter(term => term.side === 'bottom' && term.kind === 'L').length !== circuit.phase.split('/').filter(Boolean).length) throw new Error('Escolha um disjuntor multipolar compatível com as fases do circuito.');
+  if (selectedBreaker && project.circuits.some(other => other.id !== id && other.breakerId === selectedBreaker.id)) throw new Error('Este disjuntor já está vinculado a outro circuito.');
+  if (patch.breakerId !== undefined && patch.breakerId !== original.breakerId && original.breakerId && patch.phase === undefined) {
+    const belongs = (componentId: string, terminalId: string) => project.devices.find(device => device.id === componentId)?.type === 'conduit-entry' && circuitForOutputTerminal(project, terminalId)?.id === id;
+    if (project.wires.some(wire => wire.sourceComponent === original.breakerId && belongs(wire.targetComponent, wire.targetTerminal) || wire.targetComponent === original.breakerId && belongs(wire.sourceComponent, wire.sourceTerminal))) throw new Error('Remova as ligações entre este circuito e o disjuntor anterior antes de trocar o vínculo.');
+  }
   if (circuit.drId && !project.devices.some(device => device.id === circuit.drId && isRcd(device.type))) throw new Error('Selecione um DR existente.');
   if (project.circuits.some(other => other.id !== id && other.number === circuit.number)) throw new Error('Já existe um circuito com esse número.');
-  const circuits = project.circuits.map(entry => entry.id === id ? circuit : entry.breakerId && entry.breakerId === circuit.breakerId ? { ...entry, breakerId: null } : entry);
-  const devices = project.devices.map(device => {
+  const circuits = project.circuits.map(entry => entry.id === id ? circuit : entry);
+  const topologyChanged = circuit.phase !== original.phase || circuit.number !== original.number
+    || (circuit.hasNeutral !== false) !== (original.hasNeutral !== false)
+    || (circuit.hasEarth !== false) !== (original.hasEarth !== false);
+  const legacyIds = new Set([`c${original.number}-l`, `c${original.number}-n`, `c${original.number}-pe`]);
+  const legacyOutput = topologyChanged && project.devices.some(device => device.type === 'conduit-entry' && device.terminals.some(term => legacyIds.has(term.id)));
+  let devices = project.devices.map(device => {
     if (device.id === circuit.breakerId) return { ...device, circuitId: id, label: circuit.name, gauge: circuit.cableGauge, color: circuit.color };
-    return device.circuitId === id ? { ...device, circuitId: null } : device;
+    return device.circuitId === id ? { ...device, circuitId: null, label: CATALOG.find(item => item.type === device.type)?.name ?? device.label } : device;
   });
-  return stamp(prepareCircuitOutputs({ ...project, circuits, devices }));
+  let wires = project.wires;
+  if (legacyOutput) {
+    const removed = new Set<string>();
+    devices = devices.flatMap(device => {
+      if (device.type !== 'conduit-entry' || !device.terminals.some(term => legacyIds.has(term.id))) return [device];
+      device.terminals.filter(term => legacyIds.has(term.id)).forEach(term => removed.add(`${device.id}:${term.id}`));
+      const terminals = device.terminals.filter(term => !legacyIds.has(term.id)).map((term, index) => ({ ...term, index }));
+      const numbers = terminals.map(term => Number(term.label.match(/^C(\d+)/)?.[1])).filter(Number.isFinite);
+      const label = numbers.length ? `Saída C${Math.min(...numbers)}${Math.min(...numbers) === Math.max(...numbers) ? '' : `–C${Math.max(...numbers)}`}` : device.label;
+      return terminals.length ? [{ ...device, label, poles: terminals.length, terminals }] : [];
+    });
+    wires = wires.filter(wire => !removed.has(`${wire.sourceComponent}:${wire.sourceTerminal}`) && !removed.has(`${wire.targetComponent}:${wire.targetTerminal}`));
+  } else if (circuit.phase !== original.phase) {
+    const phaseTerminals = new Set(project.devices.flatMap(device => device.type === 'conduit-entry' ? device.terminals.filter(term => term.id.startsWith(circuitOutputPrefix(id)) && term.kind === 'L').map(term => `${device.id}:${term.id}`) : []));
+    wires = wires.filter(wire => !phaseTerminals.has(`${wire.sourceComponent}:${wire.sourceTerminal}`) && !phaseTerminals.has(`${wire.targetComponent}:${wire.targetTerminal}`));
+  }
+  wires = wires.map(wire => {
+    const outputTerminal = [
+      { componentId: wire.sourceComponent, terminalId: wire.sourceTerminal },
+      { componentId: wire.targetComponent, terminalId: wire.targetTerminal },
+    ].find(endpoint => project.devices.find(device => device.id === endpoint.componentId)?.type === 'conduit-entry' && (endpoint.terminalId.startsWith(circuitOutputPrefix(id)) || legacyIds.has(endpoint.terminalId)));
+    if (!outputTerminal) return wire;
+    const kind = endpointTerminal(project, outputTerminal)?.kind;
+    if (!kind) return wire;
+    return { ...wire, gauge: circuitGauge(circuit, kind), color: circuitWireColor(circuit, endpointTerminal(project, outputTerminal)!) };
+  });
+  return stamp(prepareCircuitOutputs({ ...project, circuits, devices, wires }));
 }
 
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -438,7 +570,7 @@ function deviceShape(value: unknown): value is Device {
     (value.canvasPosition !== undefined && (!record(value.canvasPosition) || !nonnegative(value.canvasPosition.x) || !nonnegative(value.canvasPosition.y))) ||
     (value.model !== undefined && !text(value.model)) ||
     (value.technicalModelId !== undefined && (!text(value.technicalModelId) || !technicalModel(value.technicalModelId))) ||
-    (value.visualVariant !== undefined && value.visualVariant !== GENERIC_DIN_2P.visualVariant) ||
+    (value.visualVariant !== undefined && !TECHNICAL_MODELS.some(model => model.visualVariant === value.visualVariant)) ||
     (value.breakingCapacityKa !== undefined && !nullablePositive(value.breakingCapacityKa)) ||
     (value.tag !== undefined && (!text(value.tag) || value.tag.length > 32)) ||
     (value.visualModel !== undefined && !['classic', 'graphite', 'two-tone'].includes(value.visualModel as string)) ||
@@ -446,12 +578,14 @@ function deviceShape(value: unknown): value is Device {
     (value.visualRotation !== undefined && ![0, 180].includes(value.visualRotation as number)) ||
     (value.orientation !== undefined && !['vertical', 'horizontal'].includes(value.orientation as string)) ||
     (value.busTerminalSide !== undefined && !['top', 'bottom', 'left', 'right'].includes(value.busTerminalSide as string)) ||
-    (value.combSide !== undefined && !['top', 'bottom'].includes(value.combSide as string))) return false;
+    (value.combSide !== undefined && !['top', 'bottom'].includes(value.combSide as string)) ||
+    (value.combPhaseStart !== undefined && ![0, 1, 2].includes(value.combPhaseStart as number))) return false;
   const ids = new Set<string>();
   const indices = new Set<string>();
   if (!value.terminals.length) return value.type === 'comb-bus';
   return value.terminals.every(term => {
     if (!record(term) || !identifier(term.id) || ids.has(term.id) || !text(term.label) || !['top', 'bottom', 'left', 'right'].includes(term.side as string) || !integer(term.index, 0, 31) || !['L', 'N', 'PE', 'control'].includes(term.kind as string) ||
+      (term.direction !== undefined && !['input', 'output', 'bidirectional'].includes(term.direction as string)) ||
       (term.pole !== undefined && !integer(term.pole, 1, 24)) ||
       (term.position !== undefined && (!record(term.position) || !nonnegative(term.position.x) || term.position.x > 1 || !nonnegative(term.position.y) || term.position.y > 1))) return false;
     const location = `${term.side}-${term.index}`;
@@ -465,7 +599,15 @@ function circuitShape(value: unknown): value is Circuit {
     text(value.phase) && ['', 'R', 'S', 'T', 'R/S', 'R/T', 'S/T', 'R/S/T'].includes(value.phase) &&
     nullableId(value.breakerId) && nullablePositive(value.cableGauge) && (value.load === null || nonnegative(value.load)) &&
     ['W', 'A'].includes(value.loadUnit as string) && positive(value.voltage) && positive(value.powerFactor) && value.powerFactor <= 1 &&
-    nullableId(value.drId) && text(value.notes) && color(value.color);
+    nullableId(value.drId) && text(value.notes) && color(value.color) &&
+    (value.hasNeutral === undefined || typeof value.hasNeutral === 'boolean') &&
+    (value.hasEarth === undefined || typeof value.hasEarth === 'boolean') &&
+    (value.ampacity === undefined || nullablePositive(value.ampacity)) &&
+    (value.neutralGauge === undefined || nullablePositive(value.neutralGauge)) &&
+    (value.earthGauge === undefined || nullablePositive(value.earthGauge)) &&
+    (value.phaseColors === undefined || Array.isArray(value.phaseColors) && value.phaseColors.length >= 1 && value.phaseColors.length <= 3 && value.phaseColors.every(color)) &&
+    (value.neutralColor === undefined || color(value.neutralColor)) &&
+    (value.earthColor === undefined || color(value.earthColor));
 }
 
 /** JSON import is untrusted. Validate every nested collection before exposing it to the editor. */

@@ -12,7 +12,7 @@ export type DpsInput = 'phase' | 'neutral';
 export type DpsVisual = 'standard' | 'red';
 export type WireTermination = 'tubular' | 'generico' | 'pente' | 'olhal' | 'garfo' | 'pino' | 'sem-terminal';
 export type Point = { x: number; y: number };
-export type Terminal = { id: string; label: string; side: TerminalSide; index: number; kind: 'L' | 'N' | 'PE' | 'control'; pole?: number; position?: Point };
+export type Terminal = { id: string; label: string; side: TerminalSide; index: number; kind: 'L' | 'N' | 'PE' | 'control'; direction?: 'input' | 'output' | 'bidirectional'; pole?: number; position?: Point };
 export type Device = {
   id: string; type: string; label: string; rail: number; slot: number; modules: number;
   poles: number; amperage: number | null; curve: 'B' | 'C' | 'D'; gauge: number | null;
@@ -23,6 +23,7 @@ export type Device = {
   spdInput?: DpsInput; visualRotation?: 0 | 180;
   canvasPosition?: Point;
   orientation?: BusOrientation; busTerminalSide?: TerminalSide; combSide?: CombSide;
+  combPhaseStart?: 0 | 1 | 2;
 };
 export type Wire = {
   id: string; sourceComponent: string; sourceTerminal: string;
@@ -35,6 +36,9 @@ export type Circuit = {
   id: string; number: number; name: string; phase: string; breakerId: string | null;
   cableGauge: number | null; load: number | null; loadUnit: 'W' | 'A'; voltage: number;
   powerFactor: number; drId: string | null; notes: string; color: string;
+  hasNeutral?: boolean; hasEarth?: boolean; ampacity?: number | null;
+  neutralGauge?: number | null; earthGauge?: number | null;
+  phaseColors?: string[]; neutralColor?: string; earthColor?: string;
 };
 export type Material = { id: string; name: string; specification: string; quantity: number; unit: string };
 export type Project = {

@@ -14,24 +14,39 @@ export type TechnicalModel = {
   availableVoltages: readonly number[];
 };
 
-export const GENERIC_DIN_2P: TechnicalModel = {
-  id: 'generic-din-2p', type: 'breaker-2p', brand: 'Genérico', model: 'DIN 2P', visualVariant: 'generic-din-2p',
-  availablePoles: [2], availableCurrents: [6, 10, 16, 20, 25, 32, 40, 50, 63],
-  availableCurves: ['B', 'C', 'D'], availableBreakingCapacitiesKa: [3, 4.5, 6],
-  availableVoltages: [220, 230, 380, 400],
+const COMMON_MCB = {
+  brand: 'Genérico',
+  availableCurrents: [6, 10, 16, 20, 25, 32, 40, 50, 63],
+  availableCurves: ['B', 'C', 'D'] as const,
+  availableBreakingCapacitiesKa: [3, 4.5, 6],
 };
 
-export const TECHNICAL_MODELS: readonly TechnicalModel[] = [GENERIC_DIN_2P];
+export const GENERIC_DIN_1P: TechnicalModel = {
+  ...COMMON_MCB, id: 'generic-din-1p', type: 'breaker-1p', model: 'DIN 1P', visualVariant: 'generic-din-1p',
+  availablePoles: [1], availableVoltages: [127, 220, 230],
+};
+export const GENERIC_DIN_2P: TechnicalModel = {
+  ...COMMON_MCB, id: 'generic-din-2p', type: 'breaker-2p', model: 'DIN 2P', visualVariant: 'generic-din-2p',
+  availablePoles: [2], availableVoltages: [220, 230, 380, 400],
+};
+export const GENERIC_DIN_3P: TechnicalModel = {
+  ...COMMON_MCB, id: 'generic-din-3p', type: 'breaker-3p', model: 'DIN 3P', visualVariant: 'generic-din-3p',
+  availablePoles: [3], availableVoltages: [220, 380, 400],
+};
+
+export const TECHNICAL_MODELS: readonly TechnicalModel[] = [GENERIC_DIN_1P, GENERIC_DIN_2P, GENERIC_DIN_3P];
+
+export function breakerTechnicalModel(type: string): TechnicalModel | undefined {
+  return TECHNICAL_MODELS.find(item => item.type === type);
+}
 
 export function technicalModel(id?: string): TechnicalModel | undefined {
   return TECHNICAL_MODELS.find(item => item.id === id);
 }
 
-export function breaker2pTerminals(): Terminal[] {
-  return [
-    { id: 'top-0', label: '1', side: 'top', index: 0, kind: 'L', pole: 1, position: { x: .25, y: 0 } },
-    { id: 'top-1', label: '3', side: 'top', index: 1, kind: 'L', pole: 2, position: { x: .75, y: 0 } },
-    { id: 'bottom-0', label: '2', side: 'bottom', index: 0, kind: 'L', pole: 1, position: { x: .25, y: 1 } },
-    { id: 'bottom-1', label: '4', side: 'bottom', index: 1, kind: 'L', pole: 2, position: { x: .75, y: 1 } },
-  ];
+export function breakerTerminals(poles: 1 | 2 | 3): Terminal[] {
+  return Array.from({ length: poles }, (_, index) => [
+    { id: `top-${index}`, label: String(2 * index + 1), side: 'top' as const, index, kind: 'L' as const, direction: 'input' as const, pole: index + 1, position: { x: (index + .5) / poles, y: 0 } },
+    { id: `bottom-${index}`, label: String(2 * index + 2), side: 'bottom' as const, index, kind: 'L' as const, direction: 'output' as const, pole: index + 1, position: { x: (index + .5) / poles, y: 1 } },
+  ]).flat();
 }

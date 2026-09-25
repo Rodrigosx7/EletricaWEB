@@ -91,7 +91,7 @@ test('stored v2 projects are normalized before strict validation', () => {
   assert.equal(loaded.migrated, true);
   assert.deepEqual(loaded.projects[0].wires.map(wire => wire.id), ['legacy-neutral-dps']);
   assert.equal(loaded.projects[0].visualModel, 'classic');
-  assert.equal(loaded.projects[0].dpsVisual, 'standard');
+  assert.equal(loaded.projects[0].dpsVisual, 'red');
   assert.equal(loaded.projects[0].devices[0].edgeOffset, 88);
   assert.deepEqual(loaded.projects[0].devices[0].terminals.map(terminal => terminal.label), ['R', 'N', 'PE']);
   assert.equal(loaded.projects[0].devices[1].spdInput, 'neutral');
@@ -110,7 +110,7 @@ test('spare bus and conduit terminals stay quiet while a fed comb covers matchin
   const notices = warnings(project);
   assert.equal(notices.some(notice => notice.id === `terminal-${project.devices[3].id}`), false);
   assert.equal(notices.some(notice => notice.id === `terminal-${project.devices[4].id}`), false);
-  assert.match(notices.find(notice => notice.id === `terminal-${project.devices[1].id}`)?.message ?? '', /1 terminal/);
+  assert.match(notices.find(notice => notice.id === `terminal-${project.devices[1].id}`)?.message ?? '', /2 terminal/);
 });
 
 test('comb electrical coverage does not turn a phase terminal into PE', () => {
@@ -213,14 +213,14 @@ test('pole changes rebuild terminals, clean removed and relabeled-neutral endpoi
 test('circuit and device edits maintain one reciprocal breaker assignment and cable section', () => {
   const initial = demoProject();
   const [first, second] = initial.circuits;
-  const changed = updateCircuit(initial, first.id, { name: 'Oficina', cableGauge: 4, color: '#ff0000', breakerId: second.breakerId });
-  assert.equal(changed.circuits[1].breakerId, null);
-  assert.equal(changed.devices.find(device => device.id === first.breakerId)?.circuitId, null);
-  assert.equal(changed.devices.find(device => device.id === second.breakerId)?.label, 'Oficina');
-  const changedAgain = updateDevice(changed, second.breakerId!, { circuitId: second.id, gauge: 6, label: 'Ar condicionado' });
-  assert.equal(changedAgain.circuits[0].breakerId, null);
-  assert.equal(changedAgain.circuits[1].cableGauge, 6);
-  assert.equal(changedAgain.circuits[1].name, 'Ar condicionado');
+  assert.throws(() => updateCircuit(initial, first.id, { breakerId: second.breakerId }), /já está vinculado/);
+  const changed = updateCircuit(initial, first.id, { name: 'Oficina', cableGauge: 4, color: '#ff0000' });
+  assert.equal(changed.circuits[0].breakerId, first.breakerId);
+  assert.equal(changed.circuits[1].breakerId, second.breakerId);
+  const changedAgain = updateDevice(changed, first.breakerId!, { gauge: 6, label: 'Ar condicionado' });
+  assert.equal(changedAgain.circuits[0].cableGauge, 6);
+  assert.equal(changedAgain.circuits[0].name, 'Ar condicionado');
+  assert.equal(changedAgain.wires.find(wire => wire.label === 'C1 fase')?.gauge, 6);
   assert.ok(validateProject(changedAgain));
 });
 
@@ -656,7 +656,7 @@ test('phase indicators use active input power and per-line current, never breake
   const single = loadCircuit({ load: 1270, voltage: 127 });
   assert.equal(circuitCurrent(single), 10);
   assert.equal(circuitCurrent({ ...single, powerFactor: 0.5 }), 20);
-  const two = loadCircuit({ id: 'c2', number: 2, phase: 'R/S', load: 2200, voltage: 220 });
+  const two = loadCircuit({ id: 'c2', number: 2, phase: 'R/S', hasNeutral: false, load: 2200, voltage: 220 });
   assert.equal(circuitCurrent(two), 10);
   const three = loadCircuit({ id: 'c3', number: 3, phase: 'R/S/T', load: Math.sqrt(3) * 380 * 10 * 0.8, voltage: 380, powerFactor: 0.8 });
   assert.ok(Math.abs(circuitCurrent(three)! - 10) < 1e-9);

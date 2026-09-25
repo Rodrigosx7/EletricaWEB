@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent, SyntheticEvent as ReactSyntheticEvent } from 'react';
 import { Crosshair, Hand, MousePointer2, Move, ZoomIn, ZoomOut } from 'lucide-react';
 import DeviceDrawing from '../electrical-components/DeviceDrawing';
@@ -6,7 +6,7 @@ import { CATALOG } from '../electrical-components/catalog';
 import { bendWirePoint, flexWireSegment, removeWireBend, roundedWirePath, snapWirePoint } from '../wiring/geometry';
 import { boardSize, deviceMount, deviceRect, isRailMounted, terminalPoint, terminalSide, MODULE, RAIL, LEFT, TOP, DEVICE_HEIGHT } from '../wiring/routing';
 import { ferruleColor, isGreenYellowWire } from '../wiring/options';
-import { circuitForOutputTerminal, connectionIssue, type Endpoint } from '../editor/operations';
+import { circuitForOutputTerminal, circuitWireColor, connectionIssue, type Endpoint } from '../editor/operations';
 import { canvasFocus, type CanvasFocus } from './focus';
 import { canEditLayer, type EditorLayers } from '../editor/layers';
 import type { Device, Point, Project, Selection, Tool, ViewMode, Viewport, Wire, WireOptions, WireTermination } from '../types';
@@ -20,6 +20,7 @@ export type BoardCanvasProps = {
   onMovePlane(id: string, position: Point, preview?: boolean): void;
   onAdd(type: string, position: { rail: number; slot: number }): void;
   onTerminal(componentId: string, terminalId: string): void;
+  onConnect(source: Endpoint, target: Endpoint): void;
   onWirePath(wireId: string, path: Point[]): void;
   wireStart: { componentId: string; terminalId: string } | null;
   wireOptions: WireOptions;
@@ -32,6 +33,7 @@ type MovePreview = { ids: string[]; rail: number; slot: number; valid: boolean; 
 type DropPreview = { type: string; rail: number; slot: number; modules: number; valid: boolean };
 type WirePointGesture = { pointerId: number; wireId: string; kind: 'point' | 'segment'; index: number; origin: Point; anchor: Point; basePath: Point[]; path: Point[]; moved: boolean };
 type SnapTarget = Endpoint & { point: Point; label: string; issue: string | null };
+type LeadGesture = { pointerId: number; source: Endpoint; tip: Point; clientX: number; clientY: number; moved: boolean };
 const clampZoom = (value: number) => Math.max(0.3, Math.min(3, value));
 const pathData = (points: Point[]) => points.map((point, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`).join(' ');
 const EDGE_LABELS = { top: 'superior', bottom: 'inferior', left: 'esquerda', right: 'direita' } as const;
@@ -168,20 +170,26 @@ function WireEndpoint({ point, toward, wire, count, termination }: { point: Poin
   </g>;
 }
 
-function BoardCanvas({ project, selection, layers, tool, mode, viewport, highlightedConnections, movePreview, onViewport, onSelect, onMove, onMovePlane, onAdd, onTerminal, onWirePath, wireStart, wireOptions, onContextMenu, onMessage }: BoardCanvasProps) {
+function BoardCanvas({ project, selection, layers, tool, mode, viewport, highlightedConnections, movePreview, onViewport, onSelect, onMove, onMovePlane, onAdd, onTerminal, onConnect, onWirePath, wireStart, wireOptions, onContextMenu, onMessage }: BoardCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null), cameraRef = useRef<SVGGElement>(null);
   const gesture = useRef<Gesture | null>(null), spaceDown = useRef(false);
   const wirePointGesture = useRef<WirePointGesture | null>(null);
+  const leadGesture = useRef<LeadGesture | null>(null);
   const [moving, setMoving] = useState<MovePreview | null>(null);
   const [drop, setDrop] = useState<DropPreview | null>(null);
   const [marquee, setMarquee] = useState<{ start: Point; end: Point } | null>(null);
   const [cursor, setCursor] = useState<Point | null>(null);
+  const [leadTip, setLeadTip] = useState<Point | null>(null);
   const [snapTarget, setSnapTarget] = useState<SnapTarget | null>(null);
   const [panning, setPanning] = useState(false);
   const [wirePreview, setWirePreview] = useState<{ wireId: string; path: Point[] } | null>(null);
   const [wireGuide, setWireGuide] = useState<{ x: number | null; y: number | null } | null>(null);
   const [canvasScale, setCanvasScale] = useState(1);
   const size = boardSize(project);
+  const snapPoints = useMemo(() => project.devices.flatMap(device => device.terminals.flatMap(terminal => {
+    const point = terminalPoint(project, device.id, terminal.id);
+    return point ? [{ device, terminal, point }] : [];
+  })), [project]);
   const canEditComponents = canEditLayer(layers, 'components');
   const canEditWires = canEditLayer(layers, 'wires');
   const handleScale = 1 / Math.max(.2, canvasScale * viewport.zoom);
@@ -209,28 +217,31 @@ function BoardCanvas({ project, selection, layers, tool, mode, viewport, highlig
   function cancelGesture() {
     const active = gesture.current;
     const wireActive = wirePointGesture.current;
+    const leadActive = leadGesture.current;
     gesture.current = null; wirePointGesture.current = null;
     if (active && svgRef.current?.hasPointerCapture(active.pointerId)) svgRef.current.releasePointerCapture(active.pointerId);
     if (wireActive && svgRef.current?.hasPointerCapture(wireActive.pointerId)) svgRef.current.releasePointerCapture(wireActive.pointerId);
+    if (leadActive && svgRef.current?.hasPointerCapture(leadActive.pointerId)) svgRef.current.releasePointerCapture(leadActive.pointerId);
+    leadGesture.current = null; setCursor(null); setLeadTip(null);
     gesture.current = null; setMoving(null); setMarquee(null); setPanning(false); setDrop(null);
     wirePointGesture.current = null; setWirePreview(null); setWireGuide(null); setSnapTarget(null);
   }
 
-  function updateWireSnap(point: Point) {
-    if (!wireStart) { setSnapTarget(null); return; }
+  function updateWireSnap(point: Point, source: Endpoint | null = wireStart, conductor: WireOptions['conductorType'] = wireOptions.conductorType): SnapTarget | null {
+    if (!source) { setSnapTarget(null); return null; }
     const radius = 26 * handleScale;
     let nearest: SnapTarget | null = null;
     let nearestDistance = radius;
-    for (const device of project.devices) for (const terminal of device.terminals) {
-      const terminalPosition = terminalPoint(project, device.id, terminal.id);
-      if (!terminalPosition) continue;
+    for (const { device, terminal, point: terminalPosition } of snapPoints) {
       const distance = Math.hypot(terminalPosition.x - point.x, terminalPosition.y - point.y);
       if (distance > nearestDistance) continue;
       const endpoint = { componentId: device.id, terminalId: terminal.id };
+      if (endpoint.componentId === source.componentId && endpoint.terminalId === source.terminalId) continue;
       nearestDistance = distance;
-      nearest = { ...endpoint, point: terminalPosition, label: `${device.label} · ${terminal.label}`, issue: connectionIssue(project, wireStart, endpoint, wireOptions.conductorType) };
+      nearest = { ...endpoint, point: terminalPosition, label: `${device.label} · ${terminal.label}`, issue: connectionIssue(project, source, endpoint, conductor) };
     }
     setSnapTarget(current => current?.componentId === nearest?.componentId && current?.terminalId === nearest?.terminalId && current?.issue === nearest?.issue ? current : nearest);
+    return nearest;
   }
 
   function beginWireEdit(event: ReactPointerEvent<SVGGElement>, wire: Wire, kind: WirePointGesture['kind'], index: number) {
@@ -371,6 +382,14 @@ function BoardCanvas({ project, selection, layers, tool, mode, viewport, highlig
 
   function movePointer(event: ReactPointerEvent<SVGSVGElement>) {
     const point = clientPoint(event.clientX, event.clientY), active = gesture.current;
+    const lead = leadGesture.current;
+    if (lead && lead.pointerId === event.pointerId) {
+      lead.moved ||= Math.hypot(event.clientX - lead.clientX, event.clientY - lead.clientY) > 4;
+      setCursor(point);
+      const terminal = project.devices.find(device => device.id === lead.source.componentId)?.terminals.find(item => item.id === lead.source.terminalId);
+      updateWireSnap(point, lead.source, terminal?.kind === 'N' ? 'neutral' : terminal?.kind === 'PE' ? 'earth' : 'phase');
+      return;
+    }
     if (tool === 'wire' && wireStart) { setCursor(point); updateWireSnap(point); }
     const wireActive = wirePointGesture.current;
     if (wireActive && wireActive.pointerId === event.pointerId) {
@@ -432,6 +451,16 @@ function BoardCanvas({ project, selection, layers, tool, mode, viewport, highlig
   }
 
   function endPointer(event: ReactPointerEvent<SVGSVGElement>) {
+    const lead = leadGesture.current;
+    if (lead && lead.pointerId === event.pointerId) {
+      const terminal = project.devices.find(device => device.id === lead.source.componentId)?.terminals.find(item => item.id === lead.source.terminalId);
+      const target = lead.moved ? updateWireSnap(clientPoint(event.clientX, event.clientY), lead.source, terminal?.kind === 'N' ? 'neutral' : terminal?.kind === 'PE' ? 'earth' : 'phase') : null;
+      if (target?.issue) onMessage(`${target.label}: ${target.issue}`);
+      else if (target) onConnect(lead.source, { componentId: target.componentId, terminalId: target.terminalId });
+      else if (!lead.moved && tool === 'wire') onTerminal(lead.source.componentId, lead.source.terminalId);
+      else if (lead.moved) onMessage('Solte a ponta sobre um borne compatível. Nenhuma ligação foi criada.');
+      cancelGesture(); return;
+    }
     const wireActive = wirePointGesture.current;
     if (wireActive && wireActive.pointerId === event.pointerId) {
       if (wireActive.moved) onWirePath(wireActive.wireId, wireActive.path);
@@ -480,15 +509,16 @@ function BoardCanvas({ project, selection, layers, tool, mode, viewport, highlig
     onViewport({ zoom, x: center.x - (center.x - viewport.x) * zoom / viewport.zoom, y: center.y - (center.y - viewport.y) * zoom / viewport.zoom });
   }
 
-  const startPoint = wireStart ? terminalPoint(project, wireStart.componentId, wireStart.terminalId) : null;
+  const startPoint = leadTip ?? (wireStart ? terminalPoint(project, wireStart.componentId, wireStart.terminalId) : null);
   const previewTarget = snapTarget?.point ?? cursor;
   const previewPath = startPoint && previewTarget ? roundedWirePath(startPoint.x === previewTarget.x || startPoint.y === previewTarget.y ? [startPoint, previewTarget] : [startPoint, { x: startPoint.x, y: previewTarget.y }, previewTarget], 9) : '';
   const activeDevices = new Set(selection.devices);
-  const visibleWires = project.wires.map(wire => wirePreview?.wireId === wire.id ? { ...wire, path: wirePreview.path } : wire);
+  const visibleWires = useMemo(() => project.wires.map(wire => wirePreview?.wireId === wire.id ? { ...wire, path: wirePreview.path } : wire), [project.wires, wirePreview]);
   const selectedWire = visibleWires.find(wire => wire.id === selection.wire);
-  const focus = highlightedConnections ?? canvasFocus(project, selection);
-  const endpointMarkers = new Map<string, { point: Point; toward: Point; wire: Wire; wireIds: string[]; count: number; termination: WireTermination }>();
-  for (const wire of project.wires) {
+  const focus = useMemo(() => highlightedConnections ?? canvasFocus(project, selection), [highlightedConnections, project, selection]);
+  const endpointMarkers = useMemo(() => {
+    const markers = new Map<string, { point: Point; toward: Point; wire: Wire; wireIds: string[]; count: number; termination: WireTermination }>();
+    for (const wire of project.wires) {
     const endpoints = [
       { componentId: wire.sourceComponent, terminalId: wire.sourceTerminal, termination: wire.sourceTermination ?? 'tubular' as const, toward: wire.path[1] },
       { componentId: wire.targetComponent, terminalId: wire.targetTerminal, termination: wire.targetTermination ?? 'tubular' as const, toward: wire.path.at(-2) },
@@ -496,12 +526,16 @@ function BoardCanvas({ project, selection, layers, tool, mode, viewport, highlig
     for (const { componentId, terminalId, termination, toward } of endpoints) {
       const key = `${componentId}:${terminalId}`, point = terminalPoint(project, componentId, terminalId);
       if (!point) continue;
-      const current = endpointMarkers.get(key);
+      const current = markers.get(key);
       if (current) { current.count++; current.wireIds.push(wire.id); }
-      else endpointMarkers.set(key, { point, toward: toward ?? point, wire, wireIds: [wire.id], count: 1, termination });
+      else markers.set(key, { point, toward: toward ?? point, wire, wireIds: [wire.id], count: 1, termination });
     }
-  }
-  const pendingLeads = project.devices.filter(device => device.type === 'conduit-entry').flatMap(device => device.terminals.flatMap(terminal => {
+    }
+    return markers;
+  }, [project]);
+  const pendingLeads = useMemo(() => project.devices.filter(device => device.type === 'conduit-entry').flatMap(device => device.terminals.flatMap(terminal => {
+    const circuit = circuitForOutputTerminal(project, terminal.id);
+    if (!circuit) return [];
     const key = `${device.id}:${terminal.id}`;
     if (endpointMarkers.has(key)) return [];
     const point = terminalPoint(project, device.id, terminal.id);
@@ -509,17 +543,17 @@ function BoardCanvas({ project, selection, layers, tool, mode, viewport, highlig
     const side = terminalSide(device, terminal.side);
     const length = 34;
     const end = side === 'top' ? { x: point.x, y: point.y - length } : side === 'bottom' ? { x: point.x, y: point.y + length } : side === 'left' ? { x: point.x - length, y: point.y } : { x: point.x + length, y: point.y };
-    const color = terminal.kind === 'N' ? '#38a8e8' : terminal.kind === 'PE' ? '#24a15c' : circuitForOutputTerminal(project, terminal.id)?.color ?? '#dc4037';
+    const color = circuitWireColor(circuit, terminal);
     return [{ device, terminal, point, end, color }];
-  }));
+  })), [project, endpointMarkers]);
   const focusText = focus && focus.wireIds.size > 1 ? `${focus.wireIds.size} conexões relacionadas em destaque · ` : '';
-  const hint = tool === 'wire' ? wireStart ? snapTarget ? snapTarget.issue ? `${snapTarget.label}: ${snapTarget.issue}` : `${snapTarget.label}: clique para conectar` : 'Aproxime o ponteiro de um terminal · Esc cancela' : 'Clique em um terminal para começar a conexão' : tool === 'pan' ? 'Arraste a área de trabalho para navegar' : selectedWire ? `${focusText}Arraste as alças · Shift ajusta fino · Alt ignora o ímã · Duplo clique remove uma dobra` : selection.devices.length ? `${focusText}Arraste, use as setas ou escolha um espaço livre · Shift adiciona à seleção` : layers.focus === 'wires' ? 'Camada de fios ativa · selecione um fio ou use Passar fios' : !canEditComponents ? 'Camada de componentes bloqueada ou oculta · ajuste em Camadas' : 'Arraste um componente para o trilho · Shift para seleção múltipla';
+  const hint = leadTip ? snapTarget ? snapTarget.issue ? `${snapTarget.label}: ${snapTarget.issue}` : `${snapTarget.label}: solte para conectar` : 'Arraste a ponta até um borne compatível · Esc cancela' : tool === 'wire' ? wireStart ? snapTarget ? snapTarget.issue ? `${snapTarget.label}: ${snapTarget.issue}` : `${snapTarget.label}: clique para conectar` : 'Aproxime o ponteiro de um terminal · Esc cancela' : 'Clique em um terminal para começar a conexão' : tool === 'pan' ? 'Arraste a área de trabalho para navegar' : selectedWire ? `${focusText}Arraste as alças · Shift ajusta fino · Alt ignora o ímã · Duplo clique remove uma dobra` : selection.devices.length ? `${focusText}Arraste, use as setas ou escolha um espaço livre · Shift adiciona à seleção` : layers.focus === 'wires' ? 'Camada de fios ativa · selecione um fio ou use Passar fios' : !canEditComponents ? 'Camada de componentes bloqueada ou oculta · ajuste em Camadas' : 'Arraste a ponta livre do circuito até um borne · ou selecione um componente';
 
   return <section className={`qdc-canvas-shell qdc-canvas-${tool} qdc-mode-${mode}${panning ? ' is-panning' : ''}`} aria-label="Editor visual do quadro de distribuição" inert={Boolean(movePreview)}>
     <div className="qdc-canvas-stage">
       <svg ref={svgRef} data-qdc-export="true" xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${size.width} ${size.height}`} role="group" aria-label={`${project.name}. ${project.devices.length} dispositivos, ${project.wires.length} fios.`} tabIndex={0} className="qdc-board-svg" style={{ fontFamily: 'Arial, Helvetica, sans-serif', userSelect: 'none', touchAction: 'none' }}
         onPointerDown={event => { if (event.button === 1 || tool === 'pan' || spaceDown.current) begin(event, 'pan'); else if (tool === 'wire' && canEditWires && wireStart && snapTarget && event.button === 0) { event.preventDefault(); onTerminal(snapTarget.componentId, snapTarget.terminalId); setSnapTarget(null); } else if (tool === 'select' && canEditComponents && event.button === 0) begin(event, 'marquee'); }}
-        onPointerMove={movePointer} onPointerUp={endPointer} onPointerCancel={cancelGesture} onLostPointerCapture={() => { if (gesture.current || wirePointGesture.current) cancelGesture(); }} onPointerLeave={() => { if (!gesture.current) { setCursor(null); setSnapTarget(null); } }}
+        onPointerMove={movePointer} onPointerUp={endPointer} onPointerCancel={cancelGesture} onLostPointerCapture={() => { if (gesture.current || wirePointGesture.current || leadGesture.current) cancelGesture(); }} onPointerLeave={() => { if (!gesture.current && !leadGesture.current) { setCursor(null); setSnapTarget(null); } }}
         onContextMenu={event => { event.preventDefault(); if (!canEditComponents) return; const target = (event.target as Element).closest('[data-device]'); const id = target?.getAttribute('data-device') || undefined; if (id && !selection.devices.includes(id)) onSelect({ devices: [id], wire: null }); onContextMenu(event.clientX, event.clientY, id); }}
         onDragOver={event => { if (!canEditComponents || !event.dataTransfer.types.includes('application/qdc-device')) return; event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; setDrop(dropPreview(event)); }}
         onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDrop(null); }}
@@ -533,12 +567,12 @@ function BoardCanvas({ project, selection, layers, tool, mode, viewport, highlig
             return !occupied && canEditComponents && <rect key={`${rail}-${slot}`} data-qdc-editor-only="true" className="qdc-empty-slot" x={x + 3} y={y + 5} width={MODULE - 6} height={DEVICE_HEIGHT - 10} rx="3" fill="transparent" stroke="transparent" strokeDasharray="3 3" role="button" aria-label={`Espaço livre, trilho ${rail + 1}, módulo ${slot + 1}${selection.devices.length ? '. Mover seleção para este espaço.' : ''}`} tabIndex={selection.devices.length && tool === 'select' ? 0 : -1} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); clickDestination({ x: x + 3, y: y + DEVICE_HEIGHT / 2 }); } }} />;
           }))}
           <g data-qdc-layer="wires" style={{ display: layers.wires.visible ? undefined : 'none' }}>{visibleWires.filter(wire => wire.id !== selection.wire).sort((a, b) => Number(focus?.wireIds.has(a.id)) - Number(focus?.wireIds.has(b.id))).concat(visibleWires.filter(wire => wire.id === selection.wire)).map(wire => <WireDrawing key={wire.id} wire={wire} selected={selection.wire === wire.id} dimmed={Boolean(movePreview?.wireIds.includes(wire.id) || focus && !focus.wireIds.has(wire.id))} editable={canEditWires} mode={mode} onSelect={() => onSelect({ devices: [], wire: wire.id })} />)}</g>
-          <g data-qdc-layer="wires" data-qdc-pending-leads="true" style={{ display: layers.wires.visible ? undefined : 'none' }} pointerEvents={canEditWires ? undefined : 'none'}>{pendingLeads.map(({ device, terminal, point, end, color }) => <g key={`${device.id}:${terminal.id}`} className={`qdc-pending-lead${tool === 'wire' ? ' is-connectable' : ''}`} role="button" tabIndex={canEditWires && tool === 'wire' ? 0 : -1} aria-disabled={!canEditWires} aria-label={`Conectar fio ${terminal.label} do ${device.label}`} onPointerDown={event => { if (!canEditWires) return; event.stopPropagation(); if (event.button !== 0) return; if (tool !== 'wire') { onMessage('Ative Passar fios e clique na ponta livre para conectar.'); return; } event.preventDefault(); onTerminal(device.id, terminal.id); }} onKeyDown={event => { if (canEditWires && tool === 'wire' && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); event.stopPropagation(); onTerminal(device.id, terminal.id); } }}>
-            <title>{terminal.label} livre · clique e conecte ao componente</title>
+          <g data-qdc-layer="wires" data-qdc-pending-leads="true" style={{ display: layers.wires.visible ? undefined : 'none' }} pointerEvents={canEditWires && layers.components.visible ? undefined : 'none'}>{pendingLeads.map(({ device, terminal, point, end, color }) => <g key={`${device.id}:${terminal.id}`} className="qdc-pending-lead is-connectable" role="button" tabIndex={canEditWires && layers.components.visible ? 0 : -1} aria-disabled={!canEditWires || !layers.components.visible} aria-label={`Arrastar fio ${terminal.label} do ${device.label} até um borne`} onPointerDown={event => { if (!canEditWires || !layers.components.visible) return; event.stopPropagation(); if (event.button !== 0) return; event.preventDefault(); svgRef.current?.setPointerCapture(event.pointerId); leadGesture.current = { pointerId: event.pointerId, source: { componentId: device.id, terminalId: terminal.id }, tip: end, clientX: event.clientX, clientY: event.clientY, moved: false }; setLeadTip(end); setCursor(end); }} onKeyDown={event => { if (canEditWires && layers.components.visible && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); event.stopPropagation(); onTerminal(device.id, terminal.id); } }}>
+            <title>{terminal.label} livre · arraste a ponta até um borne compatível</title>
             <path d={`M${point.x} ${point.y} L${end.x} ${end.y}`} stroke="#fff" strokeWidth="6" strokeLinecap="round" />
             <path d={`M${point.x} ${point.y} L${end.x} ${end.y}`} stroke={color} strokeWidth="3.4" strokeLinecap="round" />
             {terminal.kind === 'PE' && <path d={`M${point.x} ${point.y} L${end.x} ${end.y}`} stroke="#edda40" strokeWidth="1.35" strokeDasharray="6 6" strokeLinecap="round" />}
-            <circle cx={end.x} cy={end.y} r={tool === 'wire' ? 7 : 4.5} fill="#fff" stroke={color} strokeWidth="2" />
+            <circle cx={end.x} cy={end.y} r="7" fill="#fff" stroke={color} strokeWidth="2" />
             <text x={end.x + (end.x === point.x ? 8 : 0)} y={end.y + (end.y === point.y ? -7 : 3)} fill={color} stroke="#fff" paintOrder="stroke" strokeWidth="2.5" fontSize="7" fontWeight="800" pointerEvents="none">{terminal.label}</text>
           </g>)}</g>
           <g data-qdc-layer="components" style={{ display: layers.components.visible ? undefined : 'none' }}>{[...project.devices].sort((a, b) => {
@@ -553,7 +587,7 @@ function BoardCanvas({ project, selection, layers, tool, mode, viewport, highlig
             const dimmed = Boolean(focus && !focus.deviceIds.has(device.id));
             return <g key={device.id} data-device={device.id} className={`qdc-device${selected ? ' is-selected' : ''}${dimmed ? ' is-dimmed' : ''}`} transform={`translate(${rect.x} ${rect.y})`} pointerEvents={!canEditComponents || tool === 'wire' && deviceMount(device) === 'overlay' ? 'none' : undefined} role="button" tabIndex={!canEditComponents || tool === 'wire' && deviceMount(device) === 'overlay' ? -1 : 0} aria-disabled={!canEditComponents} aria-label={`${device.label}, ${device.poles} ${device.poles === 1 ? 'polo' : 'polos'}, ${device.amperage ?? 'corrente não definida'} amperes. ${positionLabel}. Use Enter para selecionar, as setas para mover e Shift mais F10 para abrir as ações.`} aria-pressed={selected} onPointerDown={event => onDeviceDown(event, device)} onKeyDown={(event: ReactKeyboardEvent<SVGGElement>) => { if (!canEditComponents) return; if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); const ids = event.shiftKey ? selection.devices.includes(device.id) ? selection.devices.filter(id => id !== device.id) : [...selection.devices, device.id] : [device.id]; onSelect({ devices: ids, wire: null }); return; } if (!openDeviceMenu(event, device)) nudgeDevice(event, device); }} opacity={moving?.ids.includes(device.id) && (moving.rail || moving.slot) ? .4 : dimmed ? .62 : 1}>
               <title>{device.label}{circuit ? ` · C${circuit.number} ${circuit.name}` : ''} · {device.modules} módulos DIN · Setas movem</title>
-              <g className="qdc-device-body" transform={device.visualRotation === 180 ? `rotate(180 ${rect.width / 2} ${rect.height / 2})` : undefined}><DeviceDrawing device={device} width={rect.width} height={rect.height} mode={mode} visualModel={project.visualModel ?? 'classic'} dpsVisual={project.dpsVisual ?? 'standard'} /></g>
+              <g className="qdc-device-body" transform={device.visualRotation === 180 ? `rotate(180 ${rect.width / 2} ${rect.height / 2})` : undefined}><DeviceDrawing device={device} width={rect.width} height={rect.height} mode={mode} visualModel={project.visualModel ?? 'classic'} dpsVisual={project.dpsVisual ?? 'red'} /></g>
               {mode === 'labels' && isRailMounted(device) && <g className="qdc-identification-card" pointerEvents="none">
                 <rect x="5" y="32" width={rect.width - 10} height="65" rx="4" fill="#263940" fillOpacity=".12" transform="translate(0 2)" />
                 <rect x="4" y="30" width={rect.width - 8} height="65" rx="4" fill="#fffef9" stroke={circuit?.color ?? '#9ba8ad'} strokeWidth="1.5" />

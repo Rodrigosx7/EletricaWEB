@@ -1,4 +1,5 @@
 import type { Circuit, Project, Terminal, Wire } from '../types';
+import { combCoveredTerminals } from '../electrical-components/combPhases.ts';
 
 type Kind = 'phase' | 'neutral' | 'earth';
 type Link = { to: string; wireId: string | null; viaDeviceId?: string };
@@ -42,8 +43,8 @@ function graphFor(project: Project, kind: Kind): Map<string, Link[]> {
   // A comb has no terminals of its own. Join only terminals on the same physical lane.
   for (const comb of project.devices.filter(device => device.type === 'comb-bus')) {
     const groups = new Map<number, string[]>();
-    for (const device of project.devices.filter(device => device.id !== comb.id && device.rail === comb.rail && device.slot < comb.slot + comb.modules && comb.slot < device.slot + device.modules)) {
-      for (const terminal of device.terminals.filter(term => term.side === (comb.combSide ?? 'bottom') && kindFor(term) === kind)) {
+    for (const device of project.devices) {
+      for (const terminal of combCoveredTerminals(comb, device).filter(term => kindFor(term) === kind)) {
         const lane = (device.slot - comb.slot + terminal.index) % comb.poles;
         groups.set(lane, [...(groups.get(lane) ?? []), key(device.id, terminal.id)]);
       }
@@ -86,22 +87,28 @@ export function circuitConnectionMap(project: Project, circuit: Circuit): Circui
   const wires = new Map(project.wires.map(wire => [wire.id, wire]));
   const routes: ConnectionRoute[] = (['phase', 'neutral', 'earth'] as const).map(kind => {
     const graph = graphFor(project, kind);
-    const outputKeys = new Set(project.devices.filter(device => device.type === 'conduit-entry').flatMap(device => device.terminals
+    const outputs = project.devices.filter(device => device.type === 'conduit-entry').flatMap(device => device.terminals
       .filter(term => outputBelongsToCircuit(term, circuit) && kindFor(term) === kind)
-      .map(term => key(device.id, term.id))));
+      .map(term => ({ node: key(device.id, term.id), phase: circuit.phase.split('/')[(term.pole ?? 1) - 1] })));
+    const outputKeys = new Set(outputs.map(output => output.node));
     const phaseLabels = circuit.phase.split('/');
-    const entryKeys = project.devices.filter(device => device.type === 'power-entry').flatMap(device => device.terminals
-      .filter(term => kindFor(term) === kind && (kind !== 'phase' || !circuit.phase || phaseLabels.includes(term.label)))
-      .map(term => key(device.id, term.id)));
-    const path = trace(graph, entryKeys, outputKeys, kind === 'phase' ? circuit.breakerId : null);
-    const steps: ConnectionStep[] = path ? path.links.flatMap((link, index) => {
+    const paths = outputs.map(output => {
+      const entryKeys = project.devices.filter(device => device.type === 'power-entry').flatMap(device => device.terminals
+        .filter(term => kindFor(term) === kind && (kind !== 'phase' || term.label === output.phase || !output.phase && phaseLabels.includes(term.label)))
+        .map(term => key(device.id, term.id)));
+      return trace(graph, entryKeys, new Set([output.node]), kind === 'phase' ? circuit.breakerId : null);
+    });
+    const tracedSteps: ConnectionStep[] = paths.flatMap(path => path ? path.links.flatMap((link, index) => {
       const wire = link.wireId ? wires.get(link.wireId) : null;
       return wire ? [{ wire, from: path.nodes[index], to: path.nodes[index + 1] }] : [];
-    }) : project.wires.filter(wire => wireKind(wire) === kind && (
+    }) : []);
+    const partialSteps: ConnectionStep[] = paths.every(Boolean) ? [] : project.wires.filter(wire => wireKind(wire) === kind && (
       outputKeys.has(key(wire.sourceComponent, wire.sourceTerminal)) || outputKeys.has(key(wire.targetComponent, wire.targetTerminal)) ||
       kind === 'phase' && circuit.breakerId !== null && (wire.sourceComponent === circuit.breakerId || wire.targetComponent === circuit.breakerId)
     )).map(wire => ({ wire, from: key(wire.sourceComponent, wire.sourceTerminal), to: key(wire.targetComponent, wire.targetTerminal) }));
-    return { kind, complete: !!path && steps.length > 0, steps, deviceIds: new Set(path ? [...path.nodes.map(node => node.slice(0, node.indexOf(':'))), ...path.links.flatMap(link => link.viaDeviceId ? [link.viaDeviceId] : [])] : steps.flatMap(step => [step.wire.sourceComponent, step.wire.targetComponent])) };
+    const steps = [...new Map([...tracedSteps, ...partialSteps].map(step => [step.wire.id, step])).values()];
+    const tracedDevices = paths.flatMap(path => path ? [...path.nodes.map(node => node.slice(0, node.indexOf(':'))), ...path.links.flatMap(link => link.viaDeviceId ? [link.viaDeviceId] : [])] : []);
+    return { kind, complete: outputs.length > 0 && paths.every(path => path && path.links.some(link => link.wireId)), steps, deviceIds: new Set([...tracedDevices, ...steps.flatMap(step => [step.wire.sourceComponent, step.wire.targetComponent])]) };
   });
   return { routes, wireIds: new Set(routes.flatMap(route => route.steps.map(step => step.wire.id))), deviceIds: new Set(routes.flatMap(route => [...route.deviceIds])) };
 }

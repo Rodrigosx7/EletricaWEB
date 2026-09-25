@@ -1,22 +1,28 @@
 import { useState } from 'react';
 import { Boxes, Cable, ChevronDown, CircuitBoard, Clock3, Plus, Search, ShieldCheck, SlidersHorizontal, Star, X, Zap } from 'lucide-react';
-import { CATALOG } from '../electrical-components/catalog';
+import { INSERTABLE_CATALOG } from '../electrical-components/catalog';
 import ServiceEntranceArtwork from '../electrical-components/ServiceEntranceArtwork';
-import GenericMCB2P from '../electrical-components/visuals/GenericMCB2P';
-import type { CatalogItem } from '../types';
+import GenericMCB from '../electrical-components/visuals/GenericMCB';
+import GenericSPD from '../electrical-components/visuals/GenericSPD';
+import GenericRCD from '../electrical-components/visuals/GenericRCD';
+import type { CatalogItem, Supply } from '../types';
 import './panels.css';
 
-export type ComponentLibraryProps = { onAdd(type: string): void; onClose?(): void; storageKey?: string };
+export type ComponentLibraryProps = { onAdd(type: string): void; onClose?(): void; storageKey?: string; supply: Supply };
 type Collection = 'essentials' | 'favorites' | 'recent' | 'all';
 type LibraryPreferences = { favorites: string[]; recent: string[] };
 
-const ESSENTIALS = ['breaker-1p', 'breaker-2p', 'main-breaker', 'rcd-2p', 'spd', 'neutral-bus', 'earth-bus', 'comb-bus', 'power-entry', 'conduit-entry'];
+const ESSENTIALS = ['breaker-1p', 'breaker-2p', 'breaker-3p', 'rcd-2p', 'rcd-4p', 'spd', 'neutral-bus', 'earth-bus', 'comb-bus', 'power-entry', 'conduit-entry'];
 const MCB_PREVIEW = { amperage: 63, curve: 'C' as const, breakingCapacityKa: 6, voltage: 400, tag: 'QF01' };
+const SPD_PREVIEW = { voltage: 275, surgeCurrent: 20 };
 
 const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 const categoryIcons = { Proteção: ShieldCheck, Distribuição: Cable, Infraestrutura: CircuitBoard, Automação: SlidersHorizontal, Outros: Boxes };
-const catalogMeta = (item: CatalogItem) => item.type === 'comb-bus'
-  ? `${item.modules} encaixes · ${({ 1: 'unipolar', 2: 'bipolar', 4: 'tetrapolar' } as Record<number, string>)[item.poles]}`
+const phaseCount = (supply: Supply) => supply === 'tri' ? 3 : supply === 'bi' ? 2 : 1;
+const catalogMeta = (item: CatalogItem, supply: Supply) => item.type === 'power-entry'
+  ? `Mono/bi/tri · quadro atual: ${phaseCount(supply)}F`
+  : item.type === 'comb-bus'
+  ? `${item.modules} encaixes · ${({ 1: 'monofásico', 2: 'bifásico', 3: 'trifásico', 4: 'tetrapolar' } as Record<number, string>)[item.poles]}`
   : item.type === 'neutral-bus' || item.type === 'earth-bus'
     ? `${item.poles} bornes · 1 módulo`
     : item.mount === 'edge'
@@ -26,7 +32,7 @@ const catalogMeta = (item: CatalogItem) => item.type === 'comb-bus'
 function loadPreferences(storageKey: string): LibraryPreferences {
   try {
     const parsed = JSON.parse(localStorage.getItem(storageKey) ?? '{}') as Partial<LibraryPreferences>;
-    const known = new Set(CATALOG.map(item => item.type));
+    const known = new Set(INSERTABLE_CATALOG.map(item => item.type));
     return {
       favorites: Array.isArray(parsed.favorites) ? parsed.favorites.filter(type => typeof type === 'string' && known.has(type)) : [],
       recent: Array.isArray(parsed.recent) ? parsed.recent.filter(type => typeof type === 'string' && known.has(type)).slice(0, 6) : [],
@@ -35,9 +41,14 @@ function loadPreferences(storageKey: string): LibraryPreferences {
 }
 
 /** Decorative catalogue illustration. Device dimensions are defined by the editor catalogue. */
-function CatalogThumbnail({ item }: { item: CatalogItem }) {
-  if (item.type === 'breaker-2p') return <GenericMCB2P device={MCB_PREVIEW} width={72} height={108} finish="classic" />;
-  if (item.type === 'power-entry') return <svg viewBox="0 0 64 64" className="ewq-catalog-thumb" aria-hidden="true" focusable="false"><ServiceEntranceArtwork width={64} height={64} /></svg>;
+function CatalogThumbnail({ item, supply }: { item: CatalogItem; supply: Supply }) {
+  if (item.type.startsWith('breaker-') && item.poles >= 1 && item.poles <= 3) {
+    const poles = item.poles as 1 | 2 | 3;
+    return <GenericMCB device={{ ...MCB_PREVIEW, voltage: poles === 1 ? 127 : poles === 3 ? 380 : 220 }} poles={poles} width={poles * 20} height={60} finish="classic" />;
+  }
+  if (item.type === 'spd') return <GenericSPD device={SPD_PREVIEW} width={34} height={108} finish="red" />;
+  if (item.type === 'rcd-2p' || item.type === 'rcd-4p') return <GenericRCD device={{ amperage: 63, sensitivity: 30, voltage: item.poles === 2 ? 220 : 380, tag: '' }} poles={item.poles as 2 | 4} width={item.poles === 2 ? 72 : 100} height={108} finish="classic" />;
+  if (item.type === 'power-entry') return <svg viewBox="0 0 64 64" className="ewq-catalog-thumb" aria-hidden="true" focusable="false"><ServiceEntranceArtwork width={64} height={64} phases={phaseCount(supply)} /></svg>;
   const key = normalize(`${item.type} ${item.name}`);
   const isSurge = key.includes('dps');
   const isBar = /barramento|borne|busbar|terminal/.test(key);
@@ -71,21 +82,21 @@ function CatalogThumbnail({ item }: { item: CatalogItem }) {
   </svg>;
 }
 
-export function ComponentLibrary({ onAdd, onClose, storageKey = 'qdc-component-library' }: ComponentLibraryProps) {
+export function ComponentLibrary({ onAdd, onClose, supply, storageKey = 'qdc-component-library' }: ComponentLibraryProps) {
   const [query, setQuery] = useState('');
   const [collection, setCollection] = useState<Collection>('essentials');
   const [categoryFilter, setCategoryFilter] = useState('Todas');
-  const [showBreakerPreview, setShowBreakerPreview] = useState(false);
+  const [showPreview, setShowPreview] = useState<string | null>(null);
   const [preferences, setPreferences] = useState(() => loadPreferences(storageKey));
   const searching = !!query.trim();
-  const filtered = CATALOG.filter(item => searching
+  const filtered = INSERTABLE_CATALOG.filter(item => searching
     ? normalize(`${item.name} ${item.category} ${item.description}`).includes(normalize(query.trim()))
     : collection === 'essentials' ? ESSENTIALS.includes(item.type)
       : collection === 'favorites' ? preferences.favorites.includes(item.type)
         : collection === 'recent' ? preferences.recent.includes(item.type)
           : categoryFilter === 'Todas' || item.category === categoryFilter)
     .sort((a, b) => collection === 'recent' && !searching ? preferences.recent.indexOf(a.type) - preferences.recent.indexOf(b.type) : 0);
-  const categories = [...new Set(CATALOG.map(item => item.category))];
+  const categories = [...new Set(INSERTABLE_CATALOG.map(item => item.category))];
   function savePreferences(next: LibraryPreferences) {
     setPreferences(next);
     try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch { /* preferences remain available for this session */ }
@@ -103,18 +114,22 @@ export function ComponentLibrary({ onAdd, onClose, storageKey = 'qdc-component-l
   }
   function catalogButton(item: CatalogItem) {
     const favorite = preferences.favorites.includes(item.type);
-    const featured = item.type === 'breaker-2p';
+    const featured = item.type === 'spd' || item.type === 'rcd-2p' || item.type === 'rcd-4p';
+    const isMcb = item.type.startsWith('breaker-') && item.poles <= 3;
     return <div key={item.type} className={`ewq-catalog-item${featured ? ' ewq-catalog-feature' : ''}`} draggable onDragStart={event => { event.dataTransfer.setData('application/qdc-device', item.type); event.dataTransfer.effectAllowed = 'copy'; }} onDragEnd={event => { if (event.dataTransfer.dropEffect === 'copy') rememberRecent(item.type); }} title={item.description}>
-      <button type="button" className="ewq-catalog-main" onClick={() => addItem(item.type)} aria-label={`Adicionar ${item.name}`}><span className="ewq-catalog-art"><CatalogThumbnail item={item} /></span><span className="ewq-catalog-copy"><strong>{item.name}</strong><span>{catalogMeta(item)}</span>{featured && <span className="ewq-catalog-feature-label">Novo visual vetorial 2P</span>}</span><span className="ewq-catalog-add"><Plus size={15} aria-hidden="true" /></span></button>
+      <button type="button" className="ewq-catalog-main" onClick={() => addItem(item.type)} aria-label={`Adicionar ${item.name}`}><span className={`ewq-catalog-art${isMcb ? ' is-mcb' : ''}${item.type === 'rcd-4p' ? ' is-rcd-4p' : ''}`}><CatalogThumbnail item={item} supply={supply} /></span><span className="ewq-catalog-copy"><strong>{item.name}</strong><span>{catalogMeta(item, supply)}</span>{featured && <span className="ewq-catalog-feature-label">Visual vetorial detalhado</span>}</span><span className="ewq-catalog-add"><Plus size={15} aria-hidden="true" /></span></button>
       <button type="button" className="ewq-catalog-favorite" aria-label={favorite ? `Remover ${item.name} dos favoritos` : `Adicionar ${item.name} aos favoritos`} aria-pressed={favorite} onClick={() => toggleFavorite(item.type)}><Star size={15} aria-hidden="true" fill={favorite ? 'currentColor' : 'none'} /></button>
-      {featured && <><button type="button" className="ewq-catalog-preview-toggle" aria-expanded={showBreakerPreview} aria-controls={showBreakerPreview ? 'ewq-breaker-preview' : undefined} onClick={() => setShowBreakerPreview(value => !value)}>{showBreakerPreview ? 'Ocultar prévia' : 'Ver prévia ampliada'}</button>{showBreakerPreview && <div id="ewq-breaker-preview" className="ewq-catalog-preview" role="group" aria-label="Prévia do disjuntor bipolar"><GenericMCB2P device={MCB_PREVIEW} width={126} height={189} finish="classic" /><p>Exemplo ilustrativo: C63 · 6 kA · 400 V · 2P. No quadro, os textos acompanham as propriedades e os quatro bornes aceitam fios.</p></div>}</>}
+      {featured && <><button type="button" className="ewq-catalog-preview-toggle" aria-expanded={showPreview === item.type} aria-controls={showPreview === item.type ? `ewq-preview-${item.type}` : undefined} onClick={() => setShowPreview(value => value === item.type ? null : item.type)}>{showPreview === item.type ? 'Ocultar prévia' : 'Ver prévia ampliada'}</button>{showPreview === item.type && <div id={`ewq-preview-${item.type}`} className="ewq-catalog-preview" role="group" aria-label={`Prévia de ${item.name}`}>
+        {item.type === 'spd' ? <GenericSPD device={SPD_PREVIEW} width={60} height={189} finish="red" /> : <GenericRCD device={{ amperage: 63, sensitivity: 30, voltage: item.poles === 2 ? 220 : 380, tag: '' }} poles={item.poles as 2 | 4} width={item.poles === 2 ? 126 : 252} height={189} finish="classic" />}
+        <p>{item.type === 'spd' ? 'Exemplo ilustrativo: 275 V · 20 kA. Valores e acabamento seguem o projeto; o visor verde não indica estado real.' : `IDR ${item.poles === 2 ? 'bipolar (L e N)' : 'tetrapolar (L1, L2, L3 e N)'}: ${item.poles * 2} bornes conectáveis. Corrente, sensibilidade e tensão seguem as propriedades; o botão de teste é apenas gráfico.`}</p>
+      </div>}</>}
     </div>;
   }
   return <aside className="ewq-panel ewq-library" aria-label="Biblioteca de componentes">
-    <header className="ewq-panel-heading"><div><CircuitBoard size={17} aria-hidden="true" /><h2>Componentes</h2></div><span className="ewq-count">{CATALOG.length}</span>{onClose && <button className="ewq-icon ewq-panel-close" type="button" aria-label="Fechar biblioteca" onClick={onClose}><X size={16} aria-hidden="true" /></button>}</header>
+    <header className="ewq-panel-heading"><div><CircuitBoard size={17} aria-hidden="true" /><h2>Componentes</h2></div><span className="ewq-count">{INSERTABLE_CATALOG.length}</span>{onClose && <button className="ewq-icon ewq-panel-close" type="button" aria-label="Fechar biblioteca" onClick={onClose}><X size={16} aria-hidden="true" /></button>}</header>
     <div className="ewq-library-search"><label htmlFor="ewq-component-search" className="ewq-visually-hidden">Buscar componente</label><Search size={15} aria-hidden="true" /><input id="ewq-component-search" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Buscar componente…" autoComplete="off" /></div>
     <div className="ewq-collection-switch" aria-label="Coleção de componentes">{([['essentials', 'Essenciais'], ['favorites', 'Favoritos'], ['recent', 'Recentes'], ['all', 'Catálogo']] as const).map(([id, label]) => <button type="button" key={id} aria-pressed={collection === id} onClick={() => { setCollection(id); setQuery(''); }}>{id === 'favorites' && <Star size={13} aria-hidden="true" />}{id === 'recent' && <Clock3 size={13} aria-hidden="true" />}{label}{id === 'favorites' && preferences.favorites.length > 0 && <span>{preferences.favorites.length}</span>}</button>)}</div>
-    {collection === 'all' && !searching && <label className="ewq-category-filter"><span className="ewq-visually-hidden">Categoria de componentes</span><select aria-label="Categoria de componentes" value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)}><option value="Todas">Todas as categorias ({CATALOG.length})</option>{categories.map(category => <option key={category} value={category}>{category} ({CATALOG.filter(item => item.category === category).length})</option>)}</select></label>}
+    {collection === 'all' && !searching && <label className="ewq-category-filter"><span className="ewq-visually-hidden">Categoria de componentes</span><select aria-label="Categoria de componentes" value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)}><option value="Todas">Todas as categorias ({INSERTABLE_CATALOG.length})</option>{categories.map(category => <option key={category} value={category}>{category} ({INSERTABLE_CATALOG.filter(item => item.category === category).length})</option>)}</select></label>}
     <p className="ewq-panel-hint ewq-library-instruction" aria-live="polite">{searching ? `${filtered.length} ${filtered.length === 1 ? 'resultado' : 'resultados'} no catálogo` : collection === 'favorites' ? `${filtered.length} ${filtered.length === 1 ? 'favorito' : 'favoritos'}` : collection === 'recent' ? 'Últimos componentes adicionados' : 'Clique para adicionar ou arraste para o quadro.'}</p>
     <div className="ewq-catalog-groups">
       {collection !== 'all' || searching ? <div className="ewq-catalog-items">{filtered.map(catalogButton)}</div> : categories.map(category => {

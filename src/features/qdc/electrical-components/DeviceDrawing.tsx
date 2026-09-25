@@ -1,13 +1,17 @@
 import { memo } from 'react';
 import type { Device, DeviceVisualModel, DpsVisual, ViewMode } from '../types';
 import ServiceEntranceArtwork from './ServiceEntranceArtwork';
-import GenericMCB2P from './visuals/GenericMCB2P';
+import GenericMCB from './visuals/GenericMCB';
+import GenericSPD from './visuals/GenericSPD';
+import GenericRCD from './visuals/GenericRCD';
+import { combPhaseAt } from './combPhases';
+import { breakerTechnicalModel } from './technicalCatalog';
 
 type Props = { device: Device; width: number; height: number; mode: ViewMode; visualModel?: DeviceVisualModel; dpsVisual?: DpsVisual };
 const INK = '#273238';
 
 /** Manufacturer-neutral DIN device artwork. Terminals are drawn by the canvas. */
-function DeviceDrawing({ device: d, width: w, height: h, mode, visualModel: projectVisualModel, dpsVisual = 'standard' }: Props) {
+function DeviceDrawing({ device: d, width: w, height: h, mode, visualModel: projectVisualModel, dpsVisual = 'red' }: Props) {
   const rcd = d.type.startsWith('rcd') || d.type.startsWith('rcbo');
   const breaker = d.type.includes('breaker');
   const switching = breaker || rcd || d.type.startsWith('switch-disconnector');
@@ -28,11 +32,11 @@ function DeviceDrawing({ device: d, width: w, height: h, mode, visualModel: proj
   const amp = d.amperage === null ? '— A' : `${d.amperage} A`;
   const caption = d.type === 'rcbo-2p' ? 'RCBO' : d.type === 'motor-breaker-3p' ? 'MOTOR' : d.type.startsWith('switch-disconnector') ? 'SECC.' : breaker ? `${d.curve}${d.amperage ?? '—'}` : rcd ? 'DR' : ({ spd: 'DPS', 'fuse-holder': 'FUSÍVEL', 'comb-bus': 'PENTE', 'neutral-bus': 'NEUTRO', 'earth-bus': 'TERRA', terminal: 'BORNE', 'through-terminal': 'PASS.', 'terminal-n': 'N', 'terminal-pe': 'PE', 'distribution-block': 'DIST.', contactor: 'CONTATOR', relay: 'RELÉ', timer: 'TIMER', 'level-relay': 'NÍVEL', 'power-supply': 'FONTE', 'smart-relay': 'SMART', 'impulse-relay': 'IMPULSO', 'overload-relay': 'SOBREC.', 'phase-monitor': 'FASES', 'din-socket': 'TOMADA', bell: 'CAMPAINHA', indicator: 'SINAL', meter: 'MEDIDOR', voltmeter: 'VOLTÍMETRO', ammeter: 'AMPERÍMETRO' }[d.type] ?? d.type);
   if (d.type === 'comb-bus') {
-    const bottom = (d.combSide ?? 'bottom') === 'bottom', barY = bottom ? h - 7 : 1;
+    const bottom = (d.combSide ?? 'bottom') === 'bottom', barY = bottom ? h - 7 : 0;
     return <g>
-      <rect x="1" y={barY} width={w - 2} height="6" rx="3" fill="#d3a14d" stroke="#7b5927" />
-      <path d={`M5 ${barY + 1.8} H${w - 5}`} stroke="#f3d18c" strokeWidth="1.4" />
-      {Array.from({ length: d.modules }, (_, index) => { const x = (index + .5) * w / d.modules, tip = bottom ? Math.max(1, barY - 7) : Math.min(h - 1, barY + 13); return <path key={index} d={bottom ? `M${x} ${tip} V${barY}` : `M${x} ${barY + 6} V${tip}`} stroke="#a97331" strokeWidth="2.6" strokeLinecap="round" />; })}
+      <rect x="1" y={barY} width={w - 2} height="7" rx="2" fill="#f4f5f1" stroke="#aab5b4" />
+      <path d={`M3 ${barY + 2} H${w - 3}`} stroke="#fff" strokeWidth="1.4" />
+      {Array.from({ length: d.modules }, (_, index) => { const x = (index + .5) * w / d.modules, tip = bottom ? Math.max(1, barY - 8) : Math.min(h - 1, barY + 15), phase = combPhaseAt(d, index), phaseColor = phase === 'R' ? '#b93a3e' : phase === 'S' ? '#9a7626' : phase === 'T' ? '#386a9c' : '#3485ab'; return <g key={index}><path d={bottom ? `M${x} ${tip} V${barY}` : `M${x} ${barY + 7} V${tip}`} stroke="#a8733a" strokeWidth="3.3" strokeLinecap="square" /><path d={bottom ? `M${x - 1} ${tip + 1} V${barY - 1}` : `M${x - 1} ${barY + 8} V${tip - 1}`} stroke="#efc487" strokeWidth=".8" /><circle cx={x} cy={barY + 3.5} r="2.6" fill={phaseColor} /><text x={x} y={barY + 4.8} textAnchor="middle" fill="#fff" fontSize="3.8" fontWeight="900">{phase}</text></g>; })}
     </g>;
   }
   if (d.type === 'neutral-bus' || d.type === 'earth-bus') {
@@ -84,7 +88,11 @@ function DeviceDrawing({ device: d, width: w, height: h, mode, visualModel: proj
     <text x={w / 2} y={h / 2 - 4} textAnchor="middle" fill="#74838c" fontSize="11" fontWeight="700">{caption}</text>
     {!breaker && <text x={w / 2} y={h / 2 + 14} textAnchor="middle" fill="#74838c" fontSize="10">{amp}</text>}
   </g>;
-  if (d.type === 'breaker-2p' && (!d.visualVariant || d.visualVariant === 'generic-din-2p')) return <GenericMCB2P device={d} width={w} height={h} finish={visualModel} />;
+  const mcbModel = breakerTechnicalModel(d.type);
+  if (mcbModel && (!d.visualVariant || d.visualVariant === mcbModel.visualVariant)) return <GenericMCB device={d} poles={mcbModel.availablePoles[0] as 1 | 2 | 3} width={w} height={h} finish={visualModel} />;
+  if (d.type === 'main-breaker' && d.poles >= 1 && d.poles <= 3) return <GenericMCB device={d} poles={d.poles as 1 | 2 | 3} width={w} height={h} finish={visualModel} />;
+  if (d.type === 'rcd-2p' || d.type === 'rcd-4p') return <GenericRCD device={d} poles={d.type === 'rcd-2p' ? 2 : 4} width={w} height={h} finish={visualModel} />;
+  if (d.type === 'spd') return <GenericSPD device={d} width={w} height={h} finish={dpsVisual} />;
   if (bus) {
     const earth = d.type === 'earth-bus';
     const comb = d.type === 'comb-bus';

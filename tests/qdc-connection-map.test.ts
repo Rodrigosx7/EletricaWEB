@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { circuitConnectionMap, connectionEndpointLabel } from '../src/features/qdc/circuits/connectionMap.ts';
-import { demoProject } from '../src/features/qdc/projects/factory.ts';
+import { demoProject, emptyProject } from '../src/features/qdc/projects/factory.ts';
+import { circuitFromDraft, newCircuitDraft } from '../src/features/qdc/circuits/circuitDraft.ts';
+import { addDevice, connect, prepareCircuitOutputs } from '../src/features/qdc/editor/operations.ts';
 
 test('connection map traces the three drawn conductor paths without other circuit outputs', () => {
   const project = demoProject();
@@ -39,4 +41,19 @@ test('unconnected circuit is not presented as a complete route', () => {
   const map = circuitConnectionMap(empty, empty.circuits[0]);
   assert.ok(map.routes.every(route => !route.complete && route.steps.length === 0));
   assert.equal(map.wireIds.size, 0);
+});
+
+test('two-phase route stays partial while one incoming phase is missing', () => {
+  const circuit = circuitFromDraft({ ...newCircuitDraft('bi', 1, 220), name: 'Carga entre fases', hasNeutral: false, hasEarth: false }, 1);
+  let project = prepareCircuitOutputs({ ...emptyProject({ supply: 'bi', voltage: 220 }), circuits: [circuit] });
+  project = addDevice(project, 'power-entry');
+  project = addDevice(project, 'breaker-2p');
+  const output = project.devices.find(device => device.type === 'conduit-entry')!;
+  const entry = project.devices.find(device => device.type === 'power-entry')!;
+  const breaker = project.devices.find(device => device.type === 'breaker-2p')!;
+  const options = { conductorType: 'phase' as const, color: '#20252b', gauge: 2.5, termination: 'tubular' as const };
+  project = connect(project, { componentId: entry.id, terminalId: 'edge-0' }, { componentId: breaker.id, terminalId: 'top-0' }, options);
+  project = connect(project, { componentId: output.id, terminalId: `circuit-${circuit.id}-l` }, { componentId: breaker.id, terminalId: 'bottom-0' }, options);
+  project = connect(project, { componentId: output.id, terminalId: `circuit-${circuit.id}-l2` }, { componentId: breaker.id, terminalId: 'bottom-1' }, options);
+  assert.equal(circuitConnectionMap(project, project.circuits[0]).routes.find(route => route.kind === 'phase')?.complete, false);
 });

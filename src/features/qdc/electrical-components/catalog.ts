@@ -1,5 +1,5 @@
 import type { CatalogItem, Device, DpsInput, Terminal } from '../types.ts';
-import { breaker2pTerminals, GENERIC_DIN_2P } from './technicalCatalog.ts';
+import { breakerTechnicalModel, breakerTerminals } from './technicalCatalog.ts';
 
 export const DPS_MODELS = [
   { id: 'classe-ii-20ka-275v', name: 'Classe II · 20 kA · 275 V', surgeCurrent: 20, voltage: 275, description: 'DPS Classe II, corrente máxima de descarga de 20 kA e tensão máxima de operação contínua de 275 V.' },
@@ -14,14 +14,14 @@ export const CATALOG: CatalogItem[] = [
   { type: 'breaker-2p', name: 'Disjuntor bipolar', category: 'Proteção', modules: 2, poles: 2, description: 'Dois polos com acionamento conjunto.' },
   { type: 'breaker-3p', name: 'Disjuntor tripolar', category: 'Proteção', modules: 3, poles: 3, description: 'Três polos com acionamento conjunto.' },
   { type: 'main-breaker', name: 'Disjuntor geral', category: 'Proteção', modules: 2, poles: 2, description: 'Dispositivo geral; seleção depende da alimentação.' },
-  { type: 'rcd-2p', name: 'DR bipolar', category: 'Proteção', modules: 2, poles: 2, description: 'Terminais de fase e neutro; não substitui proteção de sobrecorrente.' },
-  { type: 'rcd-4p', name: 'DR tetrapolar', category: 'Proteção', modules: 4, poles: 4, description: 'Terminais de três fases e neutro.' },
+  { type: 'rcd-2p', name: 'IDR bipolar', category: 'Proteção', modules: 2, poles: 2, description: 'Terminais de fase e neutro; não substitui proteção de sobrecorrente.' },
+  { type: 'rcd-4p', name: 'IDR tetrapolar', category: 'Proteção', modules: 4, poles: 4, description: 'Terminais de três fases e neutro.' },
   { type: 'spd', name: 'DPS', category: 'Proteção', modules: 1, poles: 1, description: 'DPS pré-configurado; selecione uma combinação existente de classe, tensão e corrente de descarga.' },
   { type: 'rcbo-2p', name: 'Disjuntor com DR', category: 'Proteção', modules: 2, poles: 2, description: 'Proteção diferencial e sobrecorrente combinadas.' },
   { type: 'switch-disconnector-2p', name: 'Interruptor-seccionador', category: 'Proteção', modules: 2, poles: 2, description: 'Seccionamento bipolar; categoria e corrente a definir conforme o fabricante.' },
   { type: 'fuse-holder', name: 'Porta-fusível', category: 'Proteção', modules: 1, poles: 1, description: 'Porta-fusível modular; fusível e capacidade de interrupção a definir.' },
   { type: 'motor-breaker-3p', name: 'Disjuntor-motor', category: 'Proteção', modules: 3, poles: 3, description: 'Proteção de motor em três polos; faixa de ajuste e coordenação a definir.' },
-  { type: 'comb-bus', name: 'Barramento pente', category: 'Distribuição', modules: 3, poles: 2, description: 'Pente fino sobre os bornes dos disjuntores; não recebe fios diretamente.', mount: 'overlay' },
+  { type: 'comb-bus', name: 'Barramento pente', category: 'Distribuição', modules: 3, poles: 1, description: 'Pente mono, bi ou trifásico sobre os bornes dos disjuntores; não recebe fios diretamente.', mount: 'overlay' },
   { type: 'neutral-bus', name: 'Barramento de neutro', category: 'Distribuição', modules: 1, poles: 8, description: 'Barramento vertical azul com quantidade de bornes configurável.' },
   { type: 'earth-bus', name: 'Barramento de terra', category: 'Distribuição', modules: 1, poles: 8, description: 'Barramento vertical verde com quantidade de bornes configurável.' },
   { type: 'terminal', name: 'Borne', category: 'Distribuição', modules: 1, poles: 1, description: 'Ponto de conexão modular.' },
@@ -29,7 +29,7 @@ export const CATALOG: CatalogItem[] = [
   { type: 'terminal-n', name: 'Borne de neutro', category: 'Distribuição', modules: 1, poles: 1, description: 'Borne genérico identificado para neutro.' },
   { type: 'terminal-pe', name: 'Borne de proteção PE', category: 'Distribuição', modules: 1, poles: 1, description: 'Borne genérico identificado para condutor de proteção.' },
   { type: 'distribution-block', name: 'Bloco distribuidor', category: 'Distribuição', modules: 3, poles: 4, description: 'Distribuição visual; capacidade a definir.' },
-  { type: 'power-entry', name: 'Entrada de energia', category: 'Infraestrutura', modules: 1, poles: 3, description: 'Representação visual do padrão de entrada e medição. Conecta a alimentação externa ao quadro por fase, neutro e PE.', mount: 'edge' },
+  { type: 'power-entry', name: 'Entrada de energia', category: 'Infraestrutura', modules: 1, poles: 3, description: 'Entrada mono, bi ou trifásica conforme a alimentação do quadro, com neutro e PE. Representação visual do padrão de entrada e medição.', mount: 'edge' },
   { type: 'conduit-entry', name: 'Eletroduto de entrada/saída', category: 'Infraestrutura', modules: 1, poles: 4, description: 'Passagem pela borda do quadro para indicar a entrada ou saída dos fios de um circuito.', mount: 'edge' },
   { type: 'contactor', name: 'Contator', category: 'Automação', modules: 3, poles: 3, description: 'Contatos de potência e terminais A1/A2 da bobina.' },
   { type: 'relay', name: 'Relé', category: 'Automação', modules: 2, poles: 1, description: 'Bobina A1/A2 e contato reversível 11/12/14.' },
@@ -48,11 +48,14 @@ export const CATALOG: CatalogItem[] = [
   { type: 'ammeter', name: 'Amperímetro DIN', category: 'Outros', modules: 2, poles: 2, description: 'Indicação de corrente; entrada direta ou TC depende do modelo.' },
 ];
 
+/** Components offered for manual insertion. Keep main-breaker in CATALOG for saved projects and generated boards. */
+export const INSERTABLE_CATALOG = CATALOG.filter(item => item.type !== 'main-breaker');
+
 const terminal = (id: string, label: string, side: Terminal['side'], index: number, kind: Terminal['kind'] = 'L'): Terminal => ({ id, label, side, index, kind });
 
 /** Pinagens genéricas editáveis pelo projeto; não representam um modelo de fabricante. */
 export function buildTerminals(type: string, poles: number): Terminal[] {
-  if (type === 'breaker-2p' && poles === 2) return breaker2pTerminals();
+  if (breakerTechnicalModel(type) && poles >= 1 && poles <= 3) return breakerTerminals(poles as 1 | 2 | 3);
   if (type === 'comb-bus') return [];
   if (type === 'neutral-bus' || type === 'earth-bus') {
     const kind = type === 'neutral-bus' ? 'N' : 'PE';
@@ -100,6 +103,7 @@ export function createDevice(type: string): Device {
   const item = CATALOG.find(entry => entry.type === type);
   if (!item) throw new Error('Componente não encontrado no catálogo.');
   const dps = type === 'spd' ? DPS_MODELS[0] : null;
+  const breakerModel = breakerTechnicalModel(type);
   return {
     id: crypto.randomUUID(), type, label: item.name, rail: 0, slot: 0, modules: item.modules,
     poles: item.poles, amperage: null, curve: 'C', gauge: null, sensitivity: 0,
@@ -108,10 +112,10 @@ export function createDevice(type: string): Device {
     terminals: buildTerminals(type, item.poles), mount: item.mount ?? 'rail',
     edgeSide: item.mount === 'edge' ? 'top' : undefined, edgeOffset: item.mount === 'edge' ? type === 'power-entry' ? 88 : 50 : undefined,
     model: dps?.id,
-    technicalModelId: type === 'breaker-2p' ? GENERIC_DIN_2P.id : undefined,
-    visualVariant: type === 'breaker-2p' ? GENERIC_DIN_2P.visualVariant : undefined,
-    breakingCapacityKa: type === 'breaker-2p' ? null : undefined,
-    tag: type === 'breaker-2p' ? '' : undefined,
+    technicalModelId: breakerModel?.id,
+    visualVariant: breakerModel?.visualVariant,
+    breakingCapacityKa: breakerModel ? null : undefined,
+    tag: breakerModel ? '' : undefined,
     spdInput: type === 'spd' ? 'phase' : undefined,
     visualModel: 'classic',
     orientation: type === 'neutral-bus' || type === 'earth-bus' ? 'vertical' : undefined,

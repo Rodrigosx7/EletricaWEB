@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from 'react';
 import { Cable, ChevronDown, Copy, Info, MousePointer2, Settings2, SlidersHorizontal, TriangleAlert, Trash2, X } from 'lucide-react';
 import { CATALOG, DPS_MODELS } from '../electrical-components/catalog';
-import { GENERIC_DIN_2P } from '../electrical-components/technicalCatalog';
+import { breakerTechnicalModel } from '../electrical-components/technicalCatalog';
+import { combPhases } from '../electrical-components/combPhases';
 import { deviceRect, isRailMounted } from '../wiring/routing';
 import { ferruleColor, TERMINATION_OPTIONS, wireColorSwatch, WIRE_COLORS, WIRE_GAUGES } from '../wiring/options';
 import type { Conductor, Device, DeviceVisualModel, EdgeSide, Project, Selection, Wire, WireTermination } from '../types';
@@ -109,6 +110,7 @@ export function WireDetails({ project, wire, onUpdateWire, onDelete, expanded = 
 
 export function PropertiesPanel({ project, selection, onUpdateDevice, onUpdateWire, onDelete, onDuplicate, onUpdateProject, onClose }: PropertiesPanelProps) {
   const device = selection.devices.length === 1 ? project.devices.find(item => item.id === selection.devices[0]) : undefined;
+  const mcbModel = device ? breakerTechnicalModel(device.type) : undefined;
   const wire = selection.wire ? project.wires.find(item => item.id === selection.wire) : undefined;
   const multiple = selection.devices.length > 1;
   const catalogItem = device ? CATALOG.find(item => item.type === device.type) : undefined;
@@ -140,17 +142,17 @@ export function PropertiesPanel({ project, selection, onUpdateDevice, onUpdateWi
         <h3 className="ewq-properties-title">{selection.devices.length} componentes</h3>
         <p className="ewq-panel-hint">Mova a seleção pelo quadro ou escolha um componente para editar.</p>
         <SelectedActions onDelete={onDelete} onDuplicate={onDuplicate} plural />
-      </> : wire ? <WireDetails project={project} wire={wire} onUpdateWire={onUpdateWire} onDelete={onDelete} /> : device?.type === 'breaker-2p' ? <>
-        <h3 className="ewq-properties-title">Disjuntor DIN · 2P</h3>{deviceSummary}{pendingNotice}
-        <p className="ewq-panel-hint">Protótipo vetorial com quatro bornes conectáveis. Dados ilustrativos: confira sempre a ficha técnica do produto real.</p>
+      </> : wire ? <WireDetails project={project} wire={wire} onUpdateWire={onUpdateWire} onDelete={onDelete} /> : device && mcbModel ? <>
+        <h3 className="ewq-properties-title">Disjuntor DIN · {device.poles}P</h3>{deviceSummary}{pendingNotice}
+        <p className="ewq-panel-hint">Modelo vetorial com {device.poles * 2} bornes conectáveis. Valores de seleção ilustrativos; confira a ficha técnica do produto real.</p>
         <div className="ewq-field-grid">
-          <Field label="Marca"><input value={GENERIC_DIN_2P.brand} readOnly /></Field>
-          <Field label="Modelo"><input value={GENERIC_DIN_2P.model} readOnly /></Field>
-          <Field label="Polos"><input value="2P · quatro bornes" readOnly /></Field>
-          <Field label="Corrente nominal (A)"><select value={device.amperage ?? ''} onChange={event => update({ amperage: event.target.value ? Number(event.target.value) : null })}><option value="">A definir</option>{device.amperage != null && !GENERIC_DIN_2P.availableCurrents.includes(device.amperage) && <option value={device.amperage}>{device.amperage} A · fora do preset</option>}{GENERIC_DIN_2P.availableCurrents.map(value => <option key={value} value={value}>{value} A</option>)}</select></Field>
-          <Field label="Curva de disparo"><select value={device.curve} onChange={event => update({ curve: event.target.value as Device['curve'] })}>{GENERIC_DIN_2P.availableCurves.map(value => <option key={value} value={value}>{value}</option>)}</select></Field>
-          <Field label="Capacidade de interrupção"><select value={device.breakingCapacityKa ?? ''} onChange={event => update({ breakingCapacityKa: event.target.value ? Number(event.target.value) : null })}><option value="">A definir</option>{device.breakingCapacityKa != null && !GENERIC_DIN_2P.availableBreakingCapacitiesKa.includes(device.breakingCapacityKa) && <option value={device.breakingCapacityKa}>{device.breakingCapacityKa} kA · fora do preset</option>}{GENERIC_DIN_2P.availableBreakingCapacitiesKa.map(value => <option key={value} value={value}>{value} kA</option>)}</select></Field>
-          <Field label="Tensão nominal (V)"><select value={device.voltage || ''} onChange={event => update({ voltage: event.target.value ? Number(event.target.value) : 0 })}><option value="">A definir</option>{device.voltage > 0 && !GENERIC_DIN_2P.availableVoltages.includes(device.voltage) && <option value={device.voltage}>{device.voltage} V · fora do preset</option>}{GENERIC_DIN_2P.availableVoltages.map(value => <option key={value} value={value}>{value} V</option>)}</select></Field>
+          <Field label="Marca"><input value={mcbModel.brand} readOnly /></Field>
+          <Field label="Modelo"><input value={mcbModel.model} readOnly /></Field>
+          <Field label="Polos" help={connectedWireCount ? 'Ao reduzir polos, as ligações dos bornes removidos serão excluídas.' : undefined}><select value={device.poles} onChange={event => update({ poles: Number(event.target.value) })}>{[1, 2, 3].map(poles => <option key={poles} value={poles}>{poles}P · {poles * 2} bornes</option>)}</select></Field>
+          <Field label="Corrente nominal (A)"><select value={device.amperage ?? ''} onChange={event => update({ amperage: event.target.value ? Number(event.target.value) : null })}><option value="">A definir</option>{device.amperage != null && !mcbModel.availableCurrents.includes(device.amperage) && <option value={device.amperage}>{device.amperage} A · fora do preset</option>}{mcbModel.availableCurrents.map(value => <option key={value} value={value}>{value} A</option>)}</select></Field>
+          <Field label="Curva de disparo"><select value={device.curve} onChange={event => update({ curve: event.target.value as Device['curve'] })}>{mcbModel.availableCurves.map(value => <option key={value} value={value}>{value}</option>)}</select></Field>
+          <Field label="Capacidade de interrupção"><select value={device.breakingCapacityKa ?? ''} onChange={event => update({ breakingCapacityKa: event.target.value ? Number(event.target.value) : null })}><option value="">A definir</option>{device.breakingCapacityKa != null && !mcbModel.availableBreakingCapacitiesKa.includes(device.breakingCapacityKa) && <option value={device.breakingCapacityKa}>{device.breakingCapacityKa} kA · fora do preset</option>}{mcbModel.availableBreakingCapacitiesKa.map(value => <option key={value} value={value}>{value} kA</option>)}</select></Field>
+          <Field label="Tensão nominal (V)"><select value={device.voltage || ''} onChange={event => update({ voltage: event.target.value ? Number(event.target.value) : 0 })}><option value="">A definir</option>{device.voltage > 0 && !mcbModel.availableVoltages.includes(device.voltage) && <option value={device.voltage}>{device.voltage} V · fora do preset</option>}{mcbModel.availableVoltages.map(value => <option key={value} value={value}>{value} V</option>)}</select></Field>
           <Field label="Tag"><input value={device.tag ?? ''} maxLength={32} placeholder="Ex.: QF01" onChange={event => update({ tag: event.target.value })} /></Field>
           <Field label="Nome do circuito" wide><input value={device.label} maxLength={80} onChange={event => update({ label: event.target.value })} /></Field>
         </div>
@@ -182,10 +184,11 @@ export function PropertiesPanel({ project, selection, onUpdateDevice, onUpdateWi
           {(device.mount ?? 'rail') === 'edge' ? edgePlacement : railPlacement}
         </AdvancedSection><SelectedActions onDelete={onDelete} onDuplicate={onDuplicate} />
       </> : isComb ? <>
-        <h3 className="ewq-properties-title">Barramento pente</h3>{deviceSummary}<p className="ewq-panel-hint">Fica encaixado nos bornes dos disjuntores, por baixo por padrão, e não aceita fios diretamente.</p>
+        <h3 className="ewq-properties-title">Barramento pente</h3>{deviceSummary}<p className="ewq-panel-hint">Os dentes repetem {combPhases(device).join(' · ')} ao longo dos bornes. Confira a alimentação de cada fase e a compatibilidade física do pente com os dispositivos.</p>
         <div className="ewq-field-grid">
-          <Field label="Tipo"><select value={device.poles} onChange={event => update({ poles: Number(event.target.value) })}><option value="1">Unipolar</option><option value="2">Bipolar</option><option value="4">Tetrapolar</option></select></Field>
+          <Field label="Tipo"><select value={device.poles} onChange={event => update({ poles: Number(event.target.value), combPhaseStart: 0 })}><option value="1">Monofásico · R</option>{(project.supply !== 'mono' || device.poles === 2) && <option value="2">Bifásico · R/S{project.supply === 'mono' ? ' · revisar' : ''}</option>}{(project.supply === 'tri' || device.poles === 3) && <option value="3">Trifásico · R/S/T{project.supply !== 'tri' ? ' · revisar' : ''}</option>}{device.poles === 4 && <option value="4">Tetrapolar · legado</option>}</select></Field>
           <Field label="Amperagem (A)"><Numeric value={device.amperage} options={[40, 63, 80, 100, 125]} list="ewq-comb-current" onChange={amperage => update({ amperage })} /></Field>
+          {device.poles < 3 && project.supply !== 'mono' && <Field label="Primeira fase"><select value={device.combPhaseStart ?? 0} onChange={event => update({ combPhaseStart: Number(event.target.value) as Device['combPhaseStart'] })}>{(device.poles === 1 ? ['R', 'S', ...(project.supply === 'tri' ? ['T'] : [])] : project.supply === 'tri' ? ['R/S', 'S/T', 'T/R'] : ['R/S']).map((label, index) => <option key={label} value={index}>{label}</option>)}</select></Field>}
           <Field label="Número de encaixes" wide><select value={device.modules} onChange={event => update({ modules: Number(event.target.value) })}>{Array.from({ length: 23 }, (_, index) => index + 2).map(count => <option key={count} value={count}>{count} encaixes</option>)}</select></Field>
         </div>
         <AdvancedSection summary="Encaixe nos bornes e posição no trilho">
@@ -196,7 +199,7 @@ export function PropertiesPanel({ project, selection, onUpdateDevice, onUpdateWi
         <h3 className="ewq-properties-title">{catalogItem?.name}</h3>{deviceSummary}<p className="ewq-panel-hint">Os fios podem começar ou terminar aqui para representar a passagem pela caixa.</p>
         <div className="ewq-field-grid">
           <Field label="Identificação" wide><DraftInput value={device.label} maxLength={80} onCommit={label => update({ label })} /></Field>
-          {device.type === 'power-entry' ? <Field label="Alimentação disponível" wide><input readOnly value={`${project.supply === 'mono' ? 'R' : project.supply === 'bi' ? 'R · S' : 'R · S · T'} · N · PE`} /><small>Segue automaticamente a alimentação definida no projeto.</small></Field> : device.terminals.some(term => term.id.startsWith('circuit-') || /^c\d+-(?:l|n|pe)$/.test(term.id)) ? <Field label="Fios dos circuitos" wide><input readOnly value={`${device.poles} fios · definidos pelos circuitos`} /></Field> : <Field label="Quantidade de fios" wide><select value={device.poles} onChange={event => update({ poles: Number(event.target.value) })}>{Array.from({ length: 12 }, (_, index) => index + 1).map(count => <option key={count} value={count}>{count}</option>)}</select></Field>}
+          {device.type === 'power-entry' ? <Field label="Tipo de alimentação" wide><select value={project.supply} onChange={event => onUpdateProject({ supply: event.target.value as Project['supply'] })}><option value="mono">Monofásica · R + N + PE</option><option value="bi">Bifásica · R + S + N + PE</option><option value="tri">Trifásica · R + S + T + N + PE</option></select><small>Atualiza os bornes das entradas do projeto. Revise disjuntor geral, DR, DPS e circuitos após a mudança.</small></Field> : device.terminals.some(term => term.id.startsWith('circuit-') || /^c\d+-(?:l|n|pe)$/.test(term.id)) ? <Field label="Fios dos circuitos" wide><input readOnly value={`${device.poles} fios · definidos pelos circuitos`} /></Field> : <Field label="Quantidade de fios" wide><select value={device.poles} onChange={event => update({ poles: Number(event.target.value) })}>{Array.from({ length: 12 }, (_, index) => index + 1).map(count => <option key={count} value={count}>{count}</option>)}</select></Field>}
           <Field label="Orientação visual" wide><select value={device.visualRotation ?? 0} onChange={event => update({ visualRotation: Number(event.target.value) as 0 | 180 })}><option value={0}>Normal · 0°</option><option value={180}>De cabeça para baixo · 180°</option></select></Field>
         </div>
         <AdvancedSection summary="Posicionamento dentro ou na borda do quadro">{edgeEntryPlacement}</AdvancedSection>
@@ -226,7 +229,7 @@ export function PropertiesPanel({ project, selection, onUpdateDevice, onUpdateWi
         <details className="ewq-project-settings ewq-appearance-settings" open><summary>Aparência do projeto <ChevronDown size={16} aria-hidden="true" /></summary>
           <VisualModelPicker value={project.visualModel ?? 'classic'} onChange={visualModel => onUpdateProject({ visualModel })} />
           <div className="ewq-dps-visual-field"><span>Acabamento dos DPS</span><div className="ewq-dps-visuals" role="radiogroup" aria-label="Acabamento visual dos DPS">
-            <button type="button" role="radio" aria-checked={(project.dpsVisual ?? 'standard') === 'standard'} className={(project.dpsVisual ?? 'standard') === 'standard' ? 'is-active' : ''} onClick={() => onUpdateProject({ dpsVisual: 'standard' })}><i className="is-standard" aria-hidden="true" /><span><strong>Padrão</strong><small>Frente clara</small></span></button>
+            <button type="button" role="radio" aria-checked={project.dpsVisual === 'standard'} className={project.dpsVisual === 'standard' ? 'is-active' : ''} onClick={() => onUpdateProject({ dpsVisual: 'standard' })}><i className="is-standard" aria-hidden="true" /><span><strong>Padrão</strong><small>Frente clara</small></span></button>
             <button type="button" role="radio" aria-checked={project.dpsVisual === 'red'} className={project.dpsVisual === 'red' ? 'is-active' : ''} onClick={() => onUpdateProject({ dpsVisual: 'red' })}><i className="is-red" aria-hidden="true" /><span><strong>Vermelho</strong><small>Frente destacada</small></span></button>
           </div><small>Aplica a escolha a todos os DPS deste projeto.</small></div>
         </details>

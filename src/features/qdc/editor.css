@@ -123,7 +123,7 @@
 .ewq-workbench { position: relative; display: grid; grid-template-columns: var(--ewq-library-width, 240px) 10px minmax(360px, 1fr) 10px var(--ewq-properties-width, 268px); height: var(--ewq-workbench-height, clamp(520px, calc(100dvh - 320px), 760px)); background: white; }
 .ewq-library-slot, .ewq-properties-slot { min-height: 0; min-width: 0; overflow: hidden; }
 .ewq-properties-slot { display: flex; flex-direction: column; }
-.ewq-side-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); flex: none; gap: 4px; padding: 7px; background: #f4f7f9; border-bottom: 1px solid var(--ewq-border); }
+.ewq-side-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); flex: none; gap: 4px; padding: 7px; background: #f4f7f9; border-bottom: 1px solid var(--ewq-border); }
 .ewq-side-tabs button { display: inline-flex; justify-content: center; align-items: center; gap: 6px; min-width: 0; min-height: 36px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--ewq-muted); font-size: 12px; font-weight: 650; }
 .ewq-side-tabs button[aria-pressed="true"] { background: white; border-color: #cad9e3; color: var(--ewq-ink); box-shadow: 0 1px 3px #1834490d; }
 .ewq-side-tabs button:hover { background: white; }
@@ -364,6 +364,26 @@ body.ewq-resizing-row { cursor: row-resize; }
 .ewq-dialog-form :is(input, select, textarea) { border: 1px solid #ccd6df; border-radius: 7px; padding: 11px; min-width: 0; width: 100%; background: white; font: inherit; font-weight: 400; }
 .ewq-dialog-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .ewq-dialog-form small { color: #687b8b; font-weight: 400; }
+.ewq-dialog-circuits { display: grid; gap: 10px; padding: 16px; border: 1px solid #d8e2e7; border-radius: 10px; background: #f9fbfb; }
+.ewq-dialog-circuits-heading, .ewq-circuit-composer-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ewq-dialog-circuits-heading strong { font-size: 14px; }
+.ewq-dialog-circuits-heading span { color: #647781; font-variant-numeric: tabular-nums; }
+.ewq-dialog-circuits > p { margin: 0; color: #667984; line-height: 1.5; }
+.ewq-dialog-circuits ol { display: grid; gap: 6px; max-height: 180px; overflow: auto; list-style: none; margin: 2px 0; padding: 0; }
+.ewq-dialog-circuits li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid #e1e8eb; border-radius: 7px; background: #fff; }
+.ewq-dialog-circuits li > span:nth-child(2) { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.ewq-dialog-circuits li small { display: block; }
+.ewq-dialog-circuits li button { border: 0; background: transparent; color: #9a4040; cursor: pointer; }
+.ewq-dialog-circuit-index { font-weight: 750; color: #9a781f; }
+.ewq-circuit-composer { display: grid; gap: 12px; padding: 14px; border: 1px solid #d8e2e7; border-radius: 9px; background: #fff; font-size: 13px; }
+.ewq-circuit-composer label { display: grid; gap: 6px; font-weight: 650; }
+.ewq-circuit-composer :is(input:not([type='checkbox']), select) { min-width: 0; width: 100%; min-height: 39px; padding: 8px 10px; border: 1px solid #cdd9df; border-radius: 6px; background: #fff; color: #263b47; font: inherit; font-weight: 400; }
+.ewq-circuit-conductors { display: flex; flex-wrap: wrap; gap: 18px; }
+.ewq-circuit-conductors label { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
+.ewq-circuit-conductors input { width: 16px; height: 16px; accent-color: #b99228; }
+.ewq-circuit-composer-footer span { color: #617581; }
+.ewq-circuit-composer > small { color: #657985; line-height: 1.5; }
+.ewq-circuit-composer-footer button { white-space: nowrap; }
 .ewq-capacity-preview { display: grid; gap: 10px; padding: 14px; border: 1px solid #cfe0e8; border-radius: 10px; background: #f5fafc; }
 .ewq-capacity-heading, .ewq-capacity-detail { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .ewq-capacity-heading span { color: #526c7c; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .045em; }

@@ -28,6 +28,7 @@ export default function ServiceEntranceArtwork({ width: w, height: h, phases = 1
     <path d={`M${meterX - meterRadius * .48} ${meterY + meterRadius * .2} H${meterX + meterRadius * .48}`} stroke="#516d76" strokeWidth="1.1" strokeLinecap="round" />
     <path d={`M${cabinetX + 3} ${cabinetY + cabinetHeight * .78} H${cabinetX + cabinetWidth - 3}`} stroke="#aabbbd" strokeWidth=".8" />
     <circle cx={cabinetX + cabinetWidth - 4.5} cy={cabinetY + cabinetHeight * .88} r="1" fill="#b66853" />
+    <g><rect x={w - 22} y="3" width="18" height="10" rx="2" fill="#315c70" stroke="#234958" strokeWidth=".5" /><text x={w - 13} y="10.4" textAnchor="middle" fill="#fff" fontSize="7" fontWeight="800">{Math.min(3, Math.max(1, phases))}F</text></g>
     {reserveTerminalArea && <g>{Array.from({ length: Math.min(3, Math.max(1, phases)) }, (_, index) => {
       const labels = ['R', 'S', 'T'];
       const x = cabinetX + 5 + index * 7;

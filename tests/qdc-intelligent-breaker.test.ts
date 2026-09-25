@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { addDevice, connect, moveDevices, updateDevice, validateProject } from '../src/features/qdc/editor/operations.ts';
 import { emptyProject } from '../src/features/qdc/projects/factory.ts';
 import { createDevice } from '../src/features/qdc/electrical-components/catalog.ts';
-import { breaker2pTerminals, GENERIC_DIN_2P } from '../src/features/qdc/electrical-components/technicalCatalog.ts';
+import { breakerTerminals, GENERIC_DIN_2P } from '../src/features/qdc/electrical-components/technicalCatalog.ts';
 import { deviceRect, terminalPoint } from '../src/features/qdc/wiring/routing.ts';
 
 test('2P prototype separates catalog preset, project instance and stable functional terminals', () => {
@@ -13,10 +13,10 @@ test('2P prototype separates catalog preset, project instance and stable functio
   assert.equal(first.technicalModelId, GENERIC_DIN_2P.id);
   assert.equal(first.visualVariant, GENERIC_DIN_2P.visualVariant);
   assert.equal(first.amperage, null);
-  assert.deepEqual(first.terminals, breaker2pTerminals());
+  assert.deepEqual(first.terminals, breakerTerminals(2));
   assert.deepEqual(first.terminals.map(term => [term.id, term.label, term.pole, term.position?.x, term.position?.y]), [
-    ['top-0', '1', 1, .25, 0], ['top-1', '3', 2, .75, 0],
-    ['bottom-0', '2', 1, .25, 1], ['bottom-1', '4', 2, .75, 1],
+    ['top-0', '1', 1, .25, 0], ['bottom-0', '2', 1, .25, 1],
+    ['top-1', '3', 2, .75, 0], ['bottom-1', '4', 2, .75, 1],
   ]);
 });
 
