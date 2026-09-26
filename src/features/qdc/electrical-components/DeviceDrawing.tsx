@@ -6,12 +6,13 @@ import GenericSPD from './visuals/GenericSPD';
 import GenericRCD from './visuals/GenericRCD';
 import { combPhaseAt } from './combPhases';
 import { breakerTechnicalModel } from './technicalCatalog';
+import ConduitEntry, { type ConduitConductor } from './ConduitEntry';
 
-type Props = { device: Device; width: number; height: number; mode: ViewMode; visualModel?: DeviceVisualModel; dpsVisual?: DpsVisual };
+type Props = { device: Device; width: number; height: number; mode: ViewMode; visualModel?: DeviceVisualModel; dpsVisual?: DpsVisual; conduitConductors?: ConduitConductor[]; activeConduitTerminalId?: string };
 const INK = '#273238';
 
 /** Manufacturer-neutral DIN device artwork. Terminals are drawn by the canvas. */
-function DeviceDrawing({ device: d, width: w, height: h, mode, visualModel: projectVisualModel, dpsVisual = 'red' }: Props) {
+function DeviceDrawing({ device: d, width: w, height: h, mode, visualModel: projectVisualModel, dpsVisual = 'red', conduitConductors = [], activeConduitTerminalId }: Props) {
   const rcd = d.type.startsWith('rcd') || d.type.startsWith('rcbo');
   const breaker = d.type.includes('breaker');
   const switching = breaker || rcd || d.type.startsWith('switch-disconnector');
@@ -31,6 +32,11 @@ function DeviceDrawing({ device: d, width: w, height: h, mode, visualModel: proj
   };
   const amp = d.amperage === null ? '— A' : `${d.amperage} A`;
   const caption = d.type === 'rcbo-2p' ? 'RCBO' : d.type === 'motor-breaker-3p' ? 'MOTOR' : d.type.startsWith('switch-disconnector') ? 'SECC.' : breaker ? `${d.curve}${d.amperage ?? '—'}` : rcd ? 'DR' : ({ spd: 'DPS', 'fuse-holder': 'FUSÍVEL', 'comb-bus': 'PENTE', 'neutral-bus': 'NEUTRO', 'earth-bus': 'TERRA', terminal: 'BORNE', 'through-terminal': 'PASS.', 'terminal-n': 'N', 'terminal-pe': 'PE', 'distribution-block': 'DIST.', contactor: 'CONTATOR', relay: 'RELÉ', timer: 'TIMER', 'level-relay': 'NÍVEL', 'power-supply': 'FONTE', 'smart-relay': 'SMART', 'impulse-relay': 'IMPULSO', 'overload-relay': 'SOBREC.', 'phase-monitor': 'FASES', 'din-socket': 'TOMADA', bell: 'CAMPAINHA', indicator: 'SINAL', meter: 'MEDIDOR', voltmeter: 'VOLTÍMETRO', ammeter: 'AMPERÍMETRO' }[d.type] ?? d.type);
+  if (d.type === 'fishbone-bus') return <g>
+    <rect x="1" y="1" width={w - 2} height={h - 2} rx="5" fill="#e8ece9" stroke="#829493" />
+    <rect x="5" y="5" width={w - 10} height={h - 10} rx="3" fill="#cfd9d3" stroke="#a9b8b1" />
+    <text x={w / 2} y={h - 11} textAnchor="middle" fill="#435b61" fontSize="8" fontWeight="750">ESPINHA</text>
+  </g>;
   if (d.type === 'comb-bus') {
     const bottom = (d.combSide ?? 'bottom') === 'bottom', barY = bottom ? h - 7 : 0;
     return <g>
@@ -51,22 +57,7 @@ function DeviceDrawing({ device: d, width: w, height: h, mode, visualModel: proj
     </g>;
   }
   if (d.type === 'power-entry') return <ServiceEntranceArtwork width={w} height={h} phases={Math.max(1, d.poles - 2)} reserveTerminalArea />;
-  if (d.type === 'conduit-entry') {
-    const tag = d.label.match(/C\d+(?:\s*[–-]\s*C?\d+)?/i)?.[0]?.replace(/\s/g, '') ?? 'SAÍDA';
-    const radius = Math.min(18, Math.min(w, h) / 2 - 5);
-    return <g>
-      <rect x="2" y="2" width={w - 4} height={h - 4} rx="7" fill="#e7ece9" stroke="#7d8d91" />
-      <circle cx={w / 2} cy={h / 2 - 3} r={radius + 3} fill="#c9d1cf" stroke="#73848a" strokeWidth="1.5" />
-      <circle cx={w / 2} cy={h / 2 - 3} r={radius} fill="#485b62" stroke="#263941" strokeWidth="2" />
-      <circle cx={w / 2 - 7} cy={h / 2 - 5} r="3.2" fill="#252a2d" stroke="#0d1214" />
-      <circle cx={w / 2} cy={h / 2 - 7} r="3.2" fill="#2686bd" stroke="#175b7f" />
-      <circle cx={w / 2 + 7} cy={h / 2 - 5} r="3.2" fill="#3b9254" stroke="#ecd83c" strokeWidth="1.2" />
-      {mode === 'labels' && <>
-        <rect x={Math.max(5, w / 2 - 24)} y={h - 15} width={Math.min(48, w - 10)} height="11" rx="3" fill="#f8faf8" stroke="#a7b2b1" />
-        <text x={w / 2} y={h - 7} textAnchor="middle" fill="#34474e" fontSize={tag.length > 7 ? 6.2 : 7.2} fontWeight="800">{tag}</text>
-      </>}
-    </g>;
-  }
+  if (d.type === 'conduit-entry') return <ConduitEntry device={d} width={w} height={h} mode={mode} conductors={conduitConductors} activeTerminalId={activeConduitTerminalId} />;
   if (mode === 'schematic') return <g fill="none" stroke={INK} strokeWidth="1.6">
     <rect x="2" y="7" width={w - 4} height={h - 14} rx="2" fill="#fff" stroke="#a4b1b9" />
     <text x={w / 2} y="31" textAnchor="middle" fill={INK} stroke="none" fontSize="10" fontWeight="700">{caption}</text>

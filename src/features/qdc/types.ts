@@ -1,4 +1,9 @@
 export type Supply = 'mono' | 'bi' | 'tri';
+export type BoardType = 'din' | 'fishbone';
+export type FishboneSide = 'left' | 'right';
+export type FishbonePhase = 'R' | 'S' | 'T';
+export type FishboneSlot = { id: string; side: FishboneSide; position: number; phase: FishbonePhase; enabled: boolean };
+export type FishboneConfig = { modelId: string; slots: FishboneSlot[] };
 export type ViewMode = 'realistic' | 'schematic' | 'installation' | 'labels';
 export type Tool = 'select' | 'wire' | 'pan';
 export type Conductor = 'phase' | 'neutral' | 'earth' | 'return';
@@ -22,6 +27,7 @@ export type Device = {
   technicalModelId?: string; visualVariant?: string; breakingCapacityKa?: number | null; tag?: string;
   spdInput?: DpsInput; visualRotation?: 0 | 180;
   canvasPosition?: Point;
+  fishboneSlotId?: string;
   orientation?: BusOrientation; busTerminalSide?: TerminalSide; combSide?: CombSide;
   combPhaseStart?: 0 | 1 | 2;
 };
@@ -45,6 +51,7 @@ export type Project = {
   version: 2; id: string; name: string; client: string; supply: Supply; voltage: number;
   rails: number; modulesPerRail: number; widthMm: number; heightMm: number;
   visualModel: DeviceVisualModel; dpsVisual: DpsVisual;
+  boardType?: BoardType; fishbone?: FishboneConfig;
   devices: Device[]; wires: Wire[]; circuits: Circuit[]; materials: Material[];
   createdAt: string; updatedAt: string;
 };

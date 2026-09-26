@@ -1,8 +1,9 @@
 import { CATALOG, DPS_MODELS, buildSpdTerminals, buildTerminals, createDevice } from '../electrical-components/catalog.ts';
 import { breakerTechnicalModel, technicalModel, TECHNICAL_MODELS } from '../electrical-components/technicalCatalog.ts';
 import { suggestedCircuitVoltage } from '../circuits/circuitDraft.ts';
+import { FISHBONE_CAPACITIES, FISHBONE_MODELS, fishbonePhase, fishboneSlotIssue, isFishboneBreaker } from '../fishbone/model.ts';
 import { boardSize, deviceMount, deviceRect, isRailMounted, pathAvoidsDevices, routeWires } from '../wiring/routing.ts';
-import type { Circuit, Conductor, Device, Project, Selection, Terminal, WireOptions, WireTermination } from '../types.ts';
+import type { Circuit, Conductor, Device, Project, Selection, Terminal, Wire, WireOptions, WireTermination } from '../types.ts';
 
 export type Endpoint = { componentId: string; terminalId: string };
 export type ConnectionRequest = { source: Endpoint; target: Endpoint; options: WireOptions; label?: string };
@@ -40,10 +41,20 @@ function compatibleEndpoints(project: Project, source: Endpoint, target: Endpoin
   return terminals.every(terminal => terminal && conductorFitsTerminal(conductor, terminal));
 }
 
+function canConfigureNeutralDps(project: Project, endpoint: Endpoint, conductor: Conductor): boolean {
+  if (conductor !== 'neutral' || endpoint.terminalId !== 'top-0') return false;
+  const device = project.devices.find(item => item.id === endpoint.componentId);
+  return device?.type === 'spd' && device.spdInput !== 'neutral' &&
+    !project.wires.some(wire => wire.sourceComponent === device.id && wire.sourceTerminal === 'top-0' || wire.targetComponent === device.id && wire.targetTerminal === 'top-0');
+}
+
 export function connectionIssue(project: Project, source: Endpoint, target: Endpoint, conductor: Conductor): string | null {
   if (!validEndpoint(project, source) || !validEndpoint(project, target)) return 'Escolha terminais existentes para conectar.';
   if (source.componentId === target.componentId && source.terminalId === target.terminalId) return 'Escolha outro terminal para concluir o fio.';
-  if (!compatibleEndpoints(project, source, target, conductor)) return 'O tipo de condutor não é compatível com este terminal. Use fase/retorno em L, neutro em N e proteção em PE.';
+  if (![source, target].every(endpoint => {
+    const terminal = endpointTerminal(project, endpoint);
+    return terminal && (conductorFitsTerminal(conductor, terminal) || canConfigureNeutralDps(project, endpoint, conductor));
+  })) return 'O tipo de condutor não é compatível com este terminal. Use fase/retorno em L, neutro em N e proteção em PE.';
   const output = [source, target].find(endpoint => project.devices.find(device => device.id === endpoint.componentId)?.type === 'conduit-entry' && circuitForOutputTerminal(project, endpoint.terminalId));
   if (output) {
     if (project.wires.some(wire => wire.sourceComponent === output.componentId && wire.sourceTerminal === output.terminalId || wire.targetComponent === output.componentId && wire.targetTerminal === output.terminalId)) return 'Esta ponta do circuito já está conectada. Remova a ligação anterior para mudar o destino.';
@@ -71,8 +82,10 @@ export function connectionIssue(project: Project, source: Endpoint, target: Endp
 
 export function fits(project: Project, device: Device): boolean {
   if (!Number.isInteger(device.modules) || device.modules < 1) return false;
+  if (device.fishboneSlotId) return fishboneSlotIssue(project, device, device.fishboneSlotId) === null;
   const mount = deviceMount(device);
   if (mount === 'edge') {
+    if (device.type === 'fishbone-bus') return project.boardType === 'fishbone' && device.poles === (project.supply === 'tri' ? 3 : project.supply === 'bi' ? 2 : 1);
     if (!device.canvasPosition) return ['top', 'bottom', 'left', 'right'].includes(device.edgeSide ?? 'top') && Number.isFinite(device.edgeOffset ?? 50) && (device.edgeOffset ?? 50) >= 0 && (device.edgeOffset ?? 50) <= 100;
     const size = boardSize(project), rect = deviceRect(device, project);
     return (device.type === 'power-entry' || device.type === 'conduit-entry') && rect.x >= 0 && rect.y >= 0 && rect.x + rect.width <= size.width && rect.y + rect.height <= size.height &&
@@ -84,7 +97,7 @@ export function fits(project: Project, device: Device): boolean {
   return Number.isInteger(device.modules) && device.modules >= 1 &&
     Number.isInteger(device.rail) && device.rail >= 0 && device.rail < project.rails &&
     Number.isInteger(device.slot) && device.slot >= 0 && device.slot + device.modules <= project.modulesPerRail &&
-    !project.devices.some(other => other.id !== device.id && isRailMounted(other) && other.rail === device.rail &&
+    !project.devices.some(other => other.id !== device.id && isRailMounted(other) && !other.fishboneSlotId && other.rail === device.rail &&
       other.slot < device.slot + device.modules && device.slot < other.slot + other.modules);
 }
 
@@ -106,10 +119,17 @@ function firstOverlaySpace(project: Project, modules: number): { rail: number; s
   return null;
 }
 
-export function addDevice(project: Project, type: string, position?: { rail: number; slot: number }): Project {
+export function addDevice(project: Project, type: string, position?: { rail: number; slot: number; fishboneSlotId?: string }): Project {
   const base = createDevice(type);
   const phases = project.supply === 'tri' ? 3 : project.supply === 'bi' ? 2 : 1;
-  const device = type === 'power-entry' ? { ...base, poles: phases + 2, terminals: buildTerminals(type, phases + 2) } : base;
+  const device = type === 'power-entry' ? { ...base, poles: phases + 2, terminals: buildTerminals(type, phases + 2) }
+    : type === 'main-breaker' && project.boardType === 'fishbone' ? { ...base, poles: phases, modules: phases, terminals: buildTerminals(type, phases), label: 'Geral' } : base;
+  if (project.boardType === 'fishbone' && isFishboneBreaker(device)) {
+    const slotId = position?.fishboneSlotId ?? project.fishbone?.slots.find(slot => !fishboneSlotIssue(project, device, slot.id))?.id;
+    if (!slotId) throw new Error('Não há posições laterais compatíveis livres na espinha.');
+    if (fishboneSlotIssue(project, device, slotId)) throw new Error(fishboneSlotIssue(project, device, slotId)!);
+    return stamp({ ...project, devices: [...project.devices, { ...device, fishboneSlotId: slotId, rail: 0, slot: 0 }] });
+  }
   if (deviceMount(device) === 'edge') {
     const count = project.devices.filter(item => deviceMount(item) === 'edge' && (item.edgeSide ?? 'top') === (device.edgeSide ?? 'top')).length;
     const placed = { ...device, ...(position ?? {}), edgeOffset: type === 'power-entry' ? 88 : Math.min(90, 15 + count * 15) };
@@ -129,11 +149,23 @@ export function addDevice(project: Project, type: string, position?: { rail: num
 
 /** Validate the complete proposed placement before committing any selected device. */
 export function moveDevices(project: Project, ids: string[], railDelta: number, slotDelta: number): Project {
+  if (ids.some(id => project.devices.find(device => device.id === id)?.fishboneSlotId)) throw new Error('Use uma posição lateral da espinha para mover esse disjuntor.');
   const selected = new Set(ids);
   if (!Number.isInteger(railDelta) || !Number.isInteger(slotDelta)) throw new Error('Use posições inteiras de trilho e módulo.');
   const next = { ...project, devices: project.devices.map(device => selected.has(device.id) ? { ...device, rail: device.rail + railDelta, slot: device.slot + slotDelta } : device) };
   if (!next.devices.every(device => fits(next, device))) throw new Error('O movimento sobrepõe componentes ou ultrapassa o quadro.');
   return stamp(next);
+}
+
+export function moveFishboneBreaker(project: Project, id: string, slotId: string): Project {
+  const device = project.devices.find(item => item.id === id);
+  if (!device || !device.fishboneSlotId) throw new Error('Selecione um disjuntor encaixado na espinha.');
+  const issue = fishboneSlotIssue(project, device, slotId);
+  if (issue) throw new Error(issue);
+  const next = { ...project, devices: project.devices.map(item => item.id === id ? { ...item, fishboneSlotId: slotId } : item) };
+  const moved = next.devices.find(item => item.id === id)!;
+  const phase = fishbonePhase(next, moved);
+  return stamp({ ...next, circuits: next.circuits.map(circuit => circuit.breakerId === id ? { ...circuit, phase } : circuit) });
 }
 
 export function moveDeviceOnPlane(project: Project, id: string, position: { x: number; y: number }): Project {
@@ -156,6 +188,7 @@ function cleanWires(project: Project): Project {
 export function updateDevice(project: Project, id: string, patch: Partial<Device>): Project {
   const original = project.devices.find(device => device.id === id);
   if (!original) throw new Error('Componente não encontrado.');
+  if (original.type === 'fishbone-bus') throw new Error('O barramento espinha é definido pelo modelo do quadro.');
   let device = { ...original, ...patch, id: original.id };
   if (!CATALOG.some(item => item.type === device.type)) throw new Error('Tipo de componente desconhecido.');
   if (device.type === 'spd') {
@@ -248,6 +281,7 @@ export function updateDevice(project: Project, id: string, patch: Partial<Device
 }
 
 export function deleteSelection(project: Project, selection: Selection): Project {
+  if (selection.devices.some(id => project.devices.find(device => device.id === id)?.type === 'fishbone-bus')) throw new Error('O barramento espinha faz parte do modelo do quadro e não pode ser removido.');
   const removed = new Set(selection.devices);
   const removedWires = project.wires.filter(wire => wire.id === selection.wire || removed.has(wire.sourceComponent) || removed.has(wire.targetComponent));
   const removedWireIds = new Set(removedWires.map(wire => wire.id));
@@ -299,6 +333,9 @@ export function connectMany(project: Project, requests: ConnectionRequest[]): Pr
     if (!['phase', 'neutral', 'earth', 'return'].includes(options.conductorType) || !color(options.color) || !nullablePositive(options.gauge) || !terminations.includes(options.termination) || !text(label)) throw new Error('Revise a cor, a seção e o terminal do condutor.');
     const issue = connectionIssue(next, source, target, options.conductorType);
     if (issue) throw new Error(issue);
+    for (const endpoint of [source, target]) if (canConfigureNeutralDps(next, endpoint, options.conductorType)) {
+      next = updateDevice(next, endpoint.componentId, { spdInput: 'neutral' });
+    }
     next = { ...next, wires: [...next.wires, {
       id: crypto.randomUUID(), sourceComponent: source.componentId, sourceTerminal: source.terminalId,
       targetComponent: target.componentId, targetTerminal: target.terminalId,
@@ -319,12 +356,15 @@ export function connect(project: Project, source: Endpoint, target: Endpoint, op
     if (circuit.breakerId && circuit.breakerId !== breaker.id) throw new Error(`C${circuit.number} já está vinculado a outro disjuntor. Desvincule-o antes de trocar.`);
     if (breaker.circuitId && breaker.circuitId !== circuit.id) throw new Error(`${breaker.label} já está vinculado a outro circuito.`);
   }
-  const connected = connectMany(project, [{ source, target, options }]);
+  const prepared = circuit && breaker?.fishboneSlotId && circuit.phase !== fishbonePhase(project, breaker)
+    ? updateCircuit(project, circuit.id, { phase: fishbonePhase(project, breaker) }) : project;
+  const connected = connectMany(prepared, [{ source, target, options }]);
   return circuit && breaker && isCircuitBreaker(breaker.type) && !circuit.breakerId
     ? updateCircuit(connected, circuit.id, { breakerId: breaker.id }) : connected;
 }
 
 export function organize(project: Project): Project {
+  if (project.boardType === 'fishbone') return project;
   const edges = project.devices.filter(device => deviceMount(device) === 'edge');
   const overlays = project.devices.filter(device => deviceMount(device) === 'overlay');
   const railDevices = project.devices.filter(isRailMounted);
@@ -416,6 +456,16 @@ export function rerouteWires(project: Project): Project {
   return stamp({ ...project, wires: project.wires.map(wire => ({ ...wire, manualPath: false })) });
 }
 
+export function updateWire(project: Project, id: string, patch: Partial<Wire>): Project {
+  const current = project.wires.find(wire => wire.id === id);
+  if (!current) throw new Error('Fio não encontrado.');
+  const next = { ...current, ...patch, id: current.id, sourceComponent: current.sourceComponent, sourceTerminal: current.sourceTerminal, targetComponent: current.targetComponent, targetTerminal: current.targetTerminal };
+  if (!compatibleEndpoints(project, { componentId: next.sourceComponent, terminalId: next.sourceTerminal }, { componentId: next.targetComponent, terminalId: next.targetTerminal }, next.conductorType)) {
+    throw new Error('O tipo de condutor não é compatível com os bornes deste fio.');
+  }
+  return stamp({ ...project, wires: project.wires.map(wire => wire.id === id ? next : wire) });
+}
+
 const circuitOutputPrefix = (id: string) => `circuit-${id}-`;
 
 export function circuitForOutputTerminal(project: Project, terminalId: string): Circuit | undefined {
@@ -423,8 +473,37 @@ export function circuitForOutputTerminal(project: Project, terminalId: string): 
     || [`c${circuit.number}-l`, `c${circuit.number}-n`, `c${circuit.number}-pe`].includes(terminalId));
 }
 
+function outputLabel(project: Project, terminals: Terminal[]): string {
+  const numbers = [...new Set(terminals.map(term => circuitForOutputTerminal(project, term.id)?.number).filter((number): number is number => number !== undefined))].sort((a, b) => a - b);
+  return numbers.length ? `Saída ${numbers.map(number => `C${number}`).join(' · ')}` : 'Saída de circuitos';
+}
+
+/** Reuse the existing conduit device when several circuits share one physical entry. */
+export function moveCircuitToConduit(project: Project, circuitId: string, targetId: string): Project {
+  const source = project.devices.find(device => device.type === 'conduit-entry' && device.terminals.some(term => circuitForOutputTerminal(project, term.id)?.id === circuitId));
+  const target = project.devices.find(device => device.id === targetId && device.type === 'conduit-entry');
+  if (!source || !target) throw new Error('Circuito ou conduíte não encontrado.');
+  if (source.id === target.id) return project;
+  const moving = source.terminals.filter(term => circuitForOutputTerminal(project, term.id)?.id === circuitId);
+  if (target.terminals.length + moving.length > 16) throw new Error('Este conduíte já reúne muitos condutores. Escolha outro para manter as pontas legíveis.');
+  const reindex = (terminals: Terminal[]) => terminals.map((term, index) => ({ ...term, index }));
+  const targetTerminals = reindex([...target.terminals, ...moving]);
+  const sourceTerminals = reindex(source.terminals.filter(term => !moving.includes(term)));
+  const candidate = { ...target, terminals: targetTerminals, poles: targetTerminals.length, label: outputLabel(project, targetTerminals) };
+  const devices = project.devices.flatMap(device => device.id === source.id
+    ? sourceTerminals.length ? [{ ...source, terminals: sourceTerminals, poles: sourceTerminals.length, label: outputLabel(project, sourceTerminals) }] : []
+    : device.id === target.id ? [candidate] : [device]);
+  const next = { ...project, devices, wires: project.wires.map(wire => ({
+    ...wire,
+    sourceComponent: wire.sourceComponent === source.id && moving.some(term => term.id === wire.sourceTerminal) ? target.id : wire.sourceComponent,
+    targetComponent: wire.targetComponent === source.id && moving.some(term => term.id === wire.targetTerminal) ? target.id : wire.targetComponent,
+  })) };
+  if (!fits(next, candidate)) throw new Error('O conduíte agrupado não cabe nesta posição. Mova as entradas ou escolha outro conduíte.');
+  return stamp(next);
+}
+
 /** Prepare external circuit conductors without connecting them to a breaker or bus. */
-export function prepareCircuitOutputs(project: Project): Project {
+export function prepareCircuitOutputs(project: Project, requestedConduits: Record<string, string> = {}): Project {
   let devices = project.devices;
   let wires = project.wires;
   const outputTerminals = (circuit: Circuit): Terminal[] => {
@@ -450,10 +529,23 @@ export function prepareCircuitOutputs(project: Project): Project {
     if (oldGrouped) continue; // Preserve the grouped outputs of older automatic proposals.
     const terminals = outputTerminals(circuit);
     if (!terminals.length) throw new Error(`C${circuit.number}: escolha pelo menos um condutor.`);
-    const base: Device = existing ? { ...existing, label: `Saída C${circuit.number}`, poles: terminals.length, terminals } : { ...createDevice('conduit-entry'), label: `Saída C${circuit.number}`, poles: terminals.length,
+    const requested = !existing && requestedConduits[circuit.id] ? devices.find(device => device.id === requestedConduits[circuit.id] && device.type === 'conduit-entry') : undefined;
+    if (!existing && requestedConduits[circuit.id] && !requested) throw new Error(`C${circuit.number}: o conduíte escolhido não está disponível.`);
+    if (requested) {
+      const merged = [...requested.terminals, ...terminals].map((term, index) => ({ ...term, index }));
+      if (merged.length > 16) throw new Error(`C${circuit.number}: este conduíte não comporta mais pontas legíveis.`);
+      const candidate = { ...requested, terminals: merged, poles: merged.length, label: outputLabel(project, merged) };
+      const next = { ...project, devices: devices.map(device => device.id === requested.id ? candidate : device) };
+      if (!fits(next, candidate)) throw new Error(`C${circuit.number}: falta espaço para ampliar este conduíte. Mova-o ou escolha um novo.`);
+      devices = next.devices;
+      continue;
+    }
+    const retainedOthers = existing?.terminals.filter(term => !term.id.startsWith(circuitOutputPrefix(circuit.id))) ?? [];
+    const combined = [...retainedOthers, ...terminals].map((term, index) => ({ ...term, index }));
+    const base: Device = existing ? { ...existing, label: outputLabel(project, combined), poles: combined.length, terminals: combined } : { ...createDevice('conduit-entry'), label: `Saída C${circuit.number}`, poles: terminals.length,
       terminals, edgeSide: 'bottom', edgeOffset: 50 };
     if (existing) {
-      const retained = new Set(terminals.map(terminal => terminal.id));
+      const retained = new Set(combined.map(terminal => terminal.id));
       wires = wires.filter(wire => !((wire.sourceComponent === existing.id && !retained.has(wire.sourceTerminal)) || (wire.targetComponent === existing.id && !retained.has(wire.targetTerminal))));
       const placement = clearPosition(base, existing.id) ? base : (['bottom', 'top', 'left', 'right'] as const).flatMap(edgeSide => Array.from({ length: 45 }, (_, index) => ({ ...base, edgeSide, edgeOffset: 6 + index * 2 }))).find(candidate => clearPosition(candidate, existing.id));
       if (!placement) throw new Error(`C${circuit.number}: não há espaço na borda para ${terminals.length} condutores.`);
@@ -500,6 +592,11 @@ export function updateCircuit(project: Project, id: string, patch: Partial<Circu
   }
   if (!circuitShape(circuit)) throw new Error('Revise os dados do circuito. Tensão e fator de potência devem ser válidos.');
   const selectedBreaker = circuit.breakerId ? project.devices.find(device => device.id === circuit.breakerId && isCircuitBreaker(device.type)) : undefined;
+  if (selectedBreaker?.fishboneSlotId) {
+    const assigned = fishbonePhase(project, selectedBreaker);
+    if (patch.phase !== undefined && patch.phase !== assigned) throw new Error(`A posição da espinha alimenta este disjuntor em ${assigned}. Mova-o para alterar a fase.`);
+    circuit = { ...circuit, phase: assigned };
+  }
   if (circuit.breakerId && !selectedBreaker) throw new Error('Selecione um disjuntor de circuito existente.');
   if (selectedBreaker && patch.breakerId !== undefined && selectedBreaker.terminals.filter(term => term.side === 'bottom' && term.kind === 'L').length !== circuit.phase.split('/').filter(Boolean).length) throw new Error('Escolha um disjuntor multipolar compatível com as fases do circuito.');
   if (selectedBreaker && project.circuits.some(other => other.id !== id && other.breakerId === selectedBreaker.id)) throw new Error('Este disjuntor já está vinculado a outro circuito.');
@@ -568,6 +665,7 @@ function deviceShape(value: unknown): value is Device {
     (value.edgeSide !== undefined && !['top', 'bottom', 'left', 'right'].includes(value.edgeSide as string)) ||
     (value.edgeOffset !== undefined && (!nonnegative(value.edgeOffset) || value.edgeOffset > 100)) ||
     (value.canvasPosition !== undefined && (!record(value.canvasPosition) || !nonnegative(value.canvasPosition.x) || !nonnegative(value.canvasPosition.y))) ||
+    (value.fishboneSlotId !== undefined && !identifier(value.fishboneSlotId)) ||
     (value.model !== undefined && !text(value.model)) ||
     (value.technicalModelId !== undefined && (!text(value.technicalModelId) || !technicalModel(value.technicalModelId))) ||
     (value.visualVariant !== undefined && !TECHNICAL_MODELS.some(model => model.visualVariant === value.visualVariant)) ||
@@ -614,17 +712,32 @@ function circuitShape(value: unknown): value is Circuit {
 export function validateProject(value: unknown): value is Project {
   if (!record(value) || value.version !== 2 || !identifier(value.id) || !text(value.name) || !text(value.client) ||
     !['mono', 'bi', 'tri'].includes(value.supply as string) || !positive(value.voltage) ||
+    (value.boardType !== undefined && !['din', 'fishbone'].includes(value.boardType as string)) ||
     (value.visualModel !== undefined && !['classic', 'graphite', 'two-tone'].includes(value.visualModel as string)) ||
     (value.dpsVisual !== undefined && !['standard', 'red'].includes(value.dpsVisual as string)) ||
     !integer(value.rails, 1, 12) || !integer(value.modulesPerRail, 4, 72) || !positive(value.widthMm) || !positive(value.heightMm) ||
     !text(value.createdAt) || !Number.isFinite(Date.parse(value.createdAt)) || !text(value.updatedAt) || !Number.isFinite(Date.parse(value.updatedAt)) ||
     !Array.isArray(value.devices) || value.devices.length > 864 || !Array.isArray(value.wires) || value.wires.length > 10000 ||
     !Array.isArray(value.circuits) || value.circuits.length > 1000 || !Array.isArray(value.materials) || value.materials.length > 1000) return false;
+  if (value.boardType === 'fishbone') {
+    const fishbone = value.fishbone;
+    if (!record(fishbone) || !FISHBONE_MODELS.some(model => model.id === fishbone.modelId) || !Array.isArray(fishbone.slots)) return false;
+    const slots = fishbone.slots;
+    if (!FISHBONE_CAPACITIES.some(capacity => capacity === slots.length)) return false;
+    const allowedPhases = value.supply === 'tri' ? ['R', 'S', 'T'] : value.supply === 'bi' ? ['R', 'S'] : ['R'];
+    if (!slots.every((slot: unknown) => record(slot) && (slot.side === 'left' || slot.side === 'right') && integer(slot.position, 0, slots.length / 2 - 1) &&
+      slot.id === `${slot.side}-${slot.position + 1}` && allowedPhases.includes(slot.phase as string) && typeof slot.enabled === 'boolean') ||
+      new Set(slots.map((slot: { id: string }) => slot.id)).size !== slots.length ||
+      !Array.from({ length: slots.length / 2 }, (_, position) => ['left', 'right'].every(side => slots.some((slot: { side: string; position: number }) => slot.side === side && slot.position === position))).every(Boolean)) return false;
+  } else if (value.fishbone !== undefined) return false;
   if (!value.devices.every(deviceShape) || !value.circuits.every(circuitShape)) return false;
   const project = value as unknown as Project;
   const deviceIds = new Set(project.devices.map(device => device.id));
   const circuitIds = new Set(project.circuits.map(circuit => circuit.id));
   if (deviceIds.size !== project.devices.length || circuitIds.size !== project.circuits.length || new Set(project.circuits.map(circuit => circuit.number)).size !== project.circuits.length || !project.devices.every(device => fits(project, device))) return false;
+  if (project.boardType === 'fishbone' && project.devices.some(device => isFishboneBreaker(device) && !device.fishboneSlotId)) return false;
+  if (project.boardType === 'fishbone' && project.devices.filter(device => device.type === 'fishbone-bus').length !== 1) return false;
+  if (project.boardType !== 'fishbone' && project.devices.some(device => device.fishboneSlotId)) return false;
   if (project.devices.some(device => device.circuitId !== null && !project.circuits.some(circuit => circuit.id === device.circuitId && circuit.breakerId === device.id && circuit.cableGauge === device.gauge))) return false;
   if (project.circuits.some(circuit => (circuit.breakerId !== null && !project.devices.some(device => device.id === circuit.breakerId && isBreaker(device.type) && device.circuitId === circuit.id)) || (circuit.drId !== null && !project.devices.some(device => device.id === circuit.drId && isRcd(device.type))))) return false;
   const wireIds = new Set<string>();

@@ -4,8 +4,9 @@ import { CATALOG, DPS_MODELS } from '../electrical-components/catalog';
 import { breakerTechnicalModel } from '../electrical-components/technicalCatalog';
 import { combPhases } from '../electrical-components/combPhases';
 import { deviceRect, isRailMounted } from '../wiring/routing';
+import { FISHBONE_MODELS, fishbonePhase, fishboneSlotsFor } from '../fishbone/model';
 import { ferruleColor, TERMINATION_OPTIONS, wireColorSwatch, WIRE_COLORS, WIRE_GAUGES } from '../wiring/options';
-import type { Conductor, Device, DeviceVisualModel, EdgeSide, Project, Selection, Wire, WireTermination } from '../types';
+import type { Conductor, Device, EdgeSide, Project, Selection, Wire, WireTermination } from '../types';
 import './panels.css';
 
 export type PropertiesPanelProps = {
@@ -20,11 +21,6 @@ export type PropertiesPanelProps = {
 const CURRENTS = [2, 4, 6, 10, 16, 20, 25, 32, 40, 50, 63, 80, 100, 125];
 const VOLTAGES = [12, 24, 110, 127, 220, 230, 254, 380, 400, 440];
 const SIDES: { value: EdgeSide; label: string }[] = [{ value: 'top', label: 'Borda superior' }, { value: 'bottom', label: 'Borda inferior' }, { value: 'left', label: 'Borda esquerda' }, { value: 'right', label: 'Borda direita' }];
-const VISUAL_MODELS: { value: DeviceVisualModel; label: string; hint: string }[] = [
-  { value: 'classic', label: 'Branco', hint: 'Modular clássico' },
-  { value: 'graphite', label: 'Grafite', hint: 'Industrial robusto' },
-  { value: 'two-tone', label: 'Bicolor', hint: 'Técnico moderno' },
-];
 
 function Field({ label, children, wide = false, help }: { label: string; children: ReactNode; wide?: boolean; help?: string }) {
   return <label className={`ewq-field${wide ? ' ewq-field-wide' : ''}`}><span>{label}</span>{children}{help && <small>{help}</small>}</label>;
@@ -69,19 +65,6 @@ function AdvancedSection({ children, summary = 'Posição, aparência e detalhes
     <summary><span><SlidersHorizontal size={15} aria-hidden="true" /><span><strong>Mais configurações</strong><small>{summary}</small></span></span><ChevronDown size={16} aria-hidden="true" /></summary>
     <div className="ewq-field-grid">{children}</div>
   </details>;
-}
-
-function VisualModelPicker({ value, onChange }: { value: DeviceVisualModel; onChange(value: DeviceVisualModel): void }) {
-  return <div className="ewq-visual-model-field">
-    <span>Acabamento de todos os componentes</span>
-    <div className="ewq-visual-models" role="radiogroup" aria-label="Acabamento visual do projeto">
-      {VISUAL_MODELS.map(model => <button key={model.value} type="button" role="radio" aria-checked={value === model.value} className={value === model.value ? 'is-active' : ''} onClick={() => onChange(model.value)}>
-        <span className={`ewq-device-skin ewq-device-skin--${model.value}`} aria-hidden="true"><i /><b /><em /></span>
-        <span><strong>{model.label}</strong><small>{model.hint}</small></span>
-      </button>)}
-    </div>
-    <small>Aplicado ao projeto inteiro. Não altera corrente, polos, terminais ou ligações.</small>
-  </div>;
 }
 
 function ColorPalette({ conductor, value, onChange }: { conductor: Conductor; value: string; onChange(value: string): void }) {
@@ -129,6 +112,7 @@ export function PropertiesPanel({ project, selection, onUpdateDevice, onUpdateWi
     <span>{isPlanePositioned ? 'Posição livre' : (device.mount ?? 'rail') === 'edge' || isEdgeEntry && !isPlanePositioned ? 'Na borda' : `Trilho ${device.rail + 1}`}</span>
     <span>{connectedWireCount} {connectedWireCount === 1 ? 'ligação' : 'ligações'}</span>
     {linkedCircuit && <span>C{linkedCircuit.number} · {linkedCircuit.name}</span>}
+    {device.fishboneSlotId && <span>Espinha · {fishboneSlotsFor(project, device)[0]?.side === 'left' ? 'esquerda' : 'direita'} · posição {(fishboneSlotsFor(project, device)[0]?.position ?? 0) + 1} · {fishbonePhase(project, device)}</span>}
   </div>;
   const pendingNotice = pendingDeviceFields.length > 0 && <p className="ewq-property-alert"><TriangleAlert size={15} aria-hidden="true" /><span>Complete {pendingDeviceFields.join(' e ')} para deixar o componente pronto para conferência.</span></p>;
   const heading = multiple ? 'Seleção múltipla' : wire ? 'Condutor' : device ? 'Componente' : 'Configuração do quadro';
@@ -161,8 +145,11 @@ export function PropertiesPanel({ project, selection, onUpdateDevice, onUpdateWi
           {railPlacement}
           <Field label="Observações" wide><DraftTextarea rows={3} maxLength={600} value={device.description} onCommit={description => update({ description })} /></Field>
         </AdvancedSection><SelectedActions onDelete={onDelete} onDuplicate={onDuplicate} />
+      </> : device?.type === 'fishbone-bus' ? <>
+        <h3 className="ewq-properties-title">Barramento espinha</h3>{deviceSummary}
+        <p className="ewq-panel-hint">Ligue as fases da área superior aos bornes deste barramento. Os disjuntores laterais recebem sua fase pelo encaixe, sem fio manual entre o borne de entrada e a espinha.</p>
       </> : device?.type === 'spd' ? <>
-        <h3 className="ewq-properties-title">DPS</h3>{deviceSummary}<p className="ewq-panel-hint">Escolha um modelo pré-configurado. Os valores técnicos permanecem protegidos contra alterações acidentais.</p>
+        <h3 className="ewq-properties-title">DPS</h3>{deviceSummary}<p className="ewq-panel-hint">O borne superior pode representar fase ou neutro; ao ligar neutro em um DPS ainda livre, ele muda para N. O borne inferior permanece PE. Confirme no fabricante se o modelo escolhido admite a ligação N–PE e se ela se aplica ao esquema de aterramento.</p>
         <div className="ewq-field-grid">
           <Field label="Condutor protegido" wide><select value={device.spdInput ?? 'phase'} onChange={event => update({ spdInput: event.target.value as Device['spdInput'] })}><option value="phase">Fase · borne superior L</option><option value="neutral">Neutro · borne superior N</option></select></Field>
           <Field label="Modelo do DPS" wide><select value={device.model ?? DPS_MODELS[0].id} onChange={event => { const model = DPS_MODELS.find(item => item.id === event.target.value) ?? DPS_MODELS[0]; update({ model: model.id, voltage: model.voltage, surgeCurrent: model.surgeCurrent, description: model.description }); }}>{DPS_MODELS.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}</select></Field>
@@ -222,26 +209,20 @@ export function PropertiesPanel({ project, selection, onUpdateDevice, onUpdateWi
       </> : <>
         <div className="ewq-board-overview">
           <svg viewBox={`0 0 200 ${45 + project.rails * 22}`} aria-hidden="true"><rect x="1" y="1" width="198" height={43 + project.rails * 22} rx="8" fill="#f5f7f9" stroke="#c8d3dd" /><path d="M12 13h26" stroke="#93a6b6" strokeWidth="3" />{Array.from({ length: project.rails }, (_, rail) => <g key={rail}><rect x="14" y={25 + rail * 22} width="172" height="12" rx="2" fill="#dce4ea" />{project.devices.filter(device => isRailMounted(device) && device.rail === rail).map(device => <rect key={device.id} x={14 + device.slot * 172 / project.modulesPerRail} y={22 + rail * 22} width={Math.max(2, device.modules * 172 / project.modulesPerRail - 2)} height="18" rx="2" fill="#547386" />)}</g>)}</svg>
-          <div><strong>{project.rails * project.modulesPerRail} módulos</strong><span>{project.rails} trilhos DIN</span><span>{project.widthMm} × {project.heightMm} mm</span></div>
+          <div><strong>{project.boardType === 'fishbone' ? `${project.fishbone?.slots.length ?? 0} posições` : `${project.rails * project.modulesPerRail} módulos`}</strong><span>{project.boardType === 'fishbone' ? 'Espinha de peixe' : `${project.rails} trilhos DIN`}</span><span>{project.widthMm} × {project.heightMm} mm</span></div>
         </div>
         <h3 className="ewq-properties-title">{project.name || 'Novo quadro'}</h3>
         <p className="ewq-selection-prompt"><MousePointer2 size={18} aria-hidden="true" /><span>Clique em um componente ou fio no quadro para ver suas propriedades.</span></p>
-        <details className="ewq-project-settings ewq-appearance-settings" open><summary>Aparência do projeto <ChevronDown size={16} aria-hidden="true" /></summary>
-          <VisualModelPicker value={project.visualModel ?? 'classic'} onChange={visualModel => onUpdateProject({ visualModel })} />
-          <div className="ewq-dps-visual-field"><span>Acabamento dos DPS</span><div className="ewq-dps-visuals" role="radiogroup" aria-label="Acabamento visual dos DPS">
-            <button type="button" role="radio" aria-checked={project.dpsVisual === 'standard'} className={project.dpsVisual === 'standard' ? 'is-active' : ''} onClick={() => onUpdateProject({ dpsVisual: 'standard' })}><i className="is-standard" aria-hidden="true" /><span><strong>Padrão</strong><small>Frente clara</small></span></button>
-            <button type="button" role="radio" aria-checked={project.dpsVisual === 'red'} className={project.dpsVisual === 'red' ? 'is-active' : ''} onClick={() => onUpdateProject({ dpsVisual: 'red' })}><i className="is-red" aria-hidden="true" /><span><strong>Vermelho</strong><small>Frente destacada</small></span></button>
-          </div><small>Aplica a escolha a todos os DPS deste projeto.</small></div>
-        </details>
-        {(() => { const used = project.devices.filter(isRailMounted).reduce((total, item) => total + item.modules, 0); const total = project.rails * project.modulesPerRail; return <div className="ewq-capacity-card"><span>Ocupação dos trilhos<strong>{Math.round(used / total * 100)}%</strong></span><progress value={used} max={total} aria-label="Módulos ocupados" /><span>{used} ocupados <span>{Math.max(0, total - used)} disponíveis</span></span></div>; })()}
+        {project.boardType === 'fishbone' && project.fishbone && <details className="ewq-project-settings" open><summary>Posições da espinha <ChevronDown size={16} aria-hidden="true" /></summary><p className="ewq-panel-hint">Modelo {FISHBONE_MODELS.find(model => model.id === project.fishbone?.modelId)?.name}. Desative derivações livres ou ajuste a fase antes de encaixar um disjuntor.</p><div className="ewq-fishbone-slots">{project.fishbone.slots.map(slot => { const occupied = project.devices.some(device => fishboneSlotsFor(project, device).some(item => item.id === slot.id)); return <div key={slot.id}><span>{slot.side === 'left' ? 'E' : 'D'}{slot.position + 1}</span><select aria-label={`Fase da posição ${slot.id}`} value={slot.phase} disabled={occupied} onChange={event => onUpdateProject({ fishbone: { ...project.fishbone!, slots: project.fishbone!.slots.map(item => item.id === slot.id ? { ...item, phase: event.target.value as typeof item.phase } : item) } })}>{(project.supply === 'tri' ? ['R', 'S', 'T'] : project.supply === 'bi' ? ['R', 'S'] : ['R']).map(phase => <option key={phase} value={phase}>{phase}</option>)}</select><label><input type="checkbox" checked={slot.enabled} disabled={occupied} onChange={event => onUpdateProject({ fishbone: { ...project.fishbone!, slots: project.fishbone!.slots.map(item => item.id === slot.id ? { ...item, enabled: event.target.checked } : item) } })} /> Ativa</label><small>{occupied ? 'Ocupada' : 'Livre'}</small></div>; })}</div></details>}
+        {(() => { const used = project.devices.filter(item => isRailMounted(item) && !item.fishboneSlotId).reduce((total, item) => total + item.modules, 0); const total = project.rails * project.modulesPerRail; return <div className="ewq-capacity-card"><span>{project.boardType === 'fishbone' ? 'Área superior DIN' : 'Ocupação dos trilhos'}<strong>{Math.round(used / total * 100)}%</strong></span><progress value={used} max={total} aria-label="Módulos ocupados" /><span>{used} ocupados <span>{Math.max(0, total - used)} disponíveis</span></span></div>; })()}
         <details className="ewq-project-settings" open><summary>Dados e dimensões <ChevronDown size={16} aria-hidden="true" /></summary>
         <div className="ewq-field-grid">
           <Field label="Nome do quadro" wide><DraftInput value={project.name} maxLength={100} onCommit={name => onUpdateProject({ name })} /></Field>
           <Field label="Cliente / obra" wide><DraftInput value={project.client} maxLength={160} onCommit={client => onUpdateProject({ client })} /></Field>
-          <Field label="Alimentação" wide><select value={project.supply} onChange={event => onUpdateProject({ supply: event.target.value as Project['supply'] })}><option value="mono">Monofásica · 1 fase</option><option value="bi">Bifásica · 2 fases</option><option value="tri">Trifásica · 3 fases</option></select></Field>
+          <Field label="Alimentação" wide><select value={project.supply} disabled={project.boardType === 'fishbone'} onChange={event => onUpdateProject({ supply: event.target.value as Project['supply'] })}><option value="mono">Monofásica · 1 fase</option><option value="bi">Bifásica · 2 fases</option><option value="tri">Trifásica · 3 fases</option></select></Field>
           <Field label="Tensão de referência (V)" wide><Numeric value={project.voltage} options={[127, 220, 230, 254, 380, 400, 440]} list="ewq-project-voltage" min={1} onChange={voltage => voltage !== null && onUpdateProject({ voltage })} /></Field>
-          <Field label="Trilhos"><select value={project.rails} onChange={event => onUpdateProject({ rails: Number(event.target.value) })}>{[1, 2, 3, 4, 5, 6, 8].map(rails => <option key={rails} value={rails}>{rails}</option>)}</select></Field>
-          <Field label="Módulos por trilho"><select value={project.modulesPerRail} onChange={event => onUpdateProject({ modulesPerRail: Number(event.target.value) })}>{[8, 12, 16, 18, 24, 36, 48].map(modules => <option key={modules} value={modules}>{modules}</option>)}</select></Field>
+          <Field label="Trilhos"><select value={project.rails} disabled={project.boardType === 'fishbone'} onChange={event => onUpdateProject({ rails: Number(event.target.value) })}>{[1, 2, 3, 4, 5, 6, 8].map(rails => <option key={rails} value={rails}>{rails}</option>)}</select></Field>
+          <Field label="Módulos por trilho"><select value={project.modulesPerRail} disabled={project.boardType === 'fishbone'} onChange={event => onUpdateProject({ modulesPerRail: Number(event.target.value) })}>{[8, 12, 16, 18, 24, 36, 48].map(modules => <option key={modules} value={modules}>{modules}</option>)}</select></Field>
           <Field label="Largura externa (mm)"><Numeric value={project.widthMm} min={100} max={3000} step={1} list="ewq-project-width" onChange={widthMm => widthMm !== null && onUpdateProject({ widthMm })} /></Field>
           <Field label="Altura externa (mm)"><Numeric value={project.heightMm} min={100} max={3000} step={1} list="ewq-project-height" onChange={heightMm => heightMm !== null && onUpdateProject({ heightMm })} /></Field>
         </div>

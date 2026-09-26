@@ -2,6 +2,7 @@ import { CATALOG } from '../electrical-components/catalog.ts';
 import { combCoveredTerminals, combPhaseAt, combPhases } from '../electrical-components/combPhases.ts';
 import { circuitForOutputTerminal, fits } from '../editor/operations.ts';
 import { isRailMounted } from '../wiring/routing.ts';
+import { fishbonePhase, fishboneSlotsFor } from '../fishbone/model.ts';
 import type { Circuit, Material, Project, Supply, Warning } from '../types.ts';
 
 export function availablePhases(supply: Supply): string[] {
@@ -65,6 +66,20 @@ export function warnings(project: Project): Warning[] {
   const available = availablePhases(project.supply);
   const connections = new Set(project.wires.flatMap(wire => [`${wire.sourceComponent}:${wire.sourceTerminal}`, `${wire.targetComponent}:${wire.targetTerminal}`]));
   const effectiveConnections = new Set(connections);
+  if (project.boardType === 'fishbone') {
+    const spine = project.devices.find(device => device.type === 'fishbone-bus');
+    for (const terminal of spine?.terminals ?? []) if (!connections.has(`${spine!.id}:${terminal.id}`)) result.push({ id: `fishbone-feed-${terminal.id}`, severity: 'warning', deviceId: spine!.id, message: `Espinha: alimentação da fase ${terminal.label} ainda não foi desenhada até o barramento.` });
+    for (const breaker of project.devices.filter(device => device.fishboneSlotId)) {
+      const slots = fishboneSlotsFor(project, breaker);
+      if (slots.length !== breaker.poles || slots.some(slot => !slot.enabled)) result.push({ id: `fishbone-slot-${breaker.id}`, severity: 'error', deviceId: breaker.id, message: `${breaker.label}: encaixe da espinha indisponível para todos os polos.` });
+      const assigned = fishbonePhase(project, breaker);
+      const circuit = project.circuits.find(entry => entry.breakerId === breaker.id);
+      if (circuit && circuit.phase !== assigned) result.push({ id: `fishbone-phase-${circuit.id}`, severity: 'warning', circuitId: circuit.id, deviceId: breaker.id, message: `C${circuit.number}: fase identificada ${circuit.phase} difere da posição ${assigned} na espinha.` });
+      breaker.terminals.filter(term => term.side === 'top' && term.kind === 'L').forEach((terminal, index) => {
+        if (slots[index] && spine?.terminals.some(feed => feed.label === slots[index].phase && connections.has(`${spine.id}:${feed.id}`))) effectiveConnections.add(`${breaker.id}:${terminal.id}`);
+      });
+    }
+  }
   for (const comb of project.devices.filter(device => device.type === 'comb-bus')) {
     const phases = combPhases(comb);
     if (phases.some(phase => phase !== 'N' && !available.includes(phase))) result.push({ id: `comb-supply-${comb.id}`, severity: 'error', deviceId: comb.id, message: `${comb.label}: sequência ${phases.join('/')} usa fase indisponível na alimentação do quadro.` });
@@ -86,7 +101,7 @@ export function warnings(project: Project): Warning[] {
     }
   }
   const allowsUnusedTerminals = new Set(['comb-bus', 'neutral-bus', 'earth-bus', 'power-entry', 'conduit-entry', 'distribution-block']);
-  if (project.devices.filter(isRailMounted).reduce((sum, device) => sum + device.modules, 0) > project.rails * project.modulesPerRail) result.push({ id: 'capacity', severity: 'error', message: 'Há mais módulos utilizados que disponíveis.' });
+  if (project.devices.filter(device => isRailMounted(device) && !device.fishboneSlotId).reduce((sum, device) => sum + device.modules, 0) > project.rails * project.modulesPerRail) result.push({ id: 'capacity', severity: 'error', message: 'Há mais módulos utilizados que disponíveis.' });
   for (const device of project.devices) {
     if (!fits(project, device)) result.push({ id: `position-${device.id}`, severity: 'error', deviceId: device.id, message: `${device.label || 'Componente'}: fora do trilho ou sobreposto.` });
     if (!device.label.trim()) result.push({ id: `label-${device.id}`, severity: 'warning', deviceId: device.id, message: 'Componente sem identificação.' });
@@ -134,7 +149,7 @@ export function warnings(project: Project): Warning[] {
 }
 
 export function materialList(project: Project): Material[] {
-  const generated: Material[] = [{ id: 'generated-enclosure', name: 'Quadro de distribuição', specification: `${project.rails * project.modulesPerRail} módulos · ${project.rails} trilhos · ${project.widthMm} × ${project.heightMm} mm`, quantity: 1, unit: 'un' }];
+  const generated: Material[] = [{ id: 'generated-enclosure', name: 'Quadro de distribuição', specification: project.boardType === 'fishbone' ? `Espinha de peixe · ${project.fishbone?.slots.length ?? 0} posições · ${project.widthMm} × ${project.heightMm} mm` : `${project.rails * project.modulesPerRail} módulos · ${project.rails} trilhos · ${project.widthMm} × ${project.heightMm} mm`, quantity: 1, unit: 'un' }];
   const groups = new Map<string, Material>();
   for (const device of project.devices) {
     const catalog = CATALOG.find(item => item.type === device.type);

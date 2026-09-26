@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CATALOG, buildSpdTerminals, buildTerminals, createDevice } from '../src/features/qdc/electrical-components/catalog.ts';
-import { addDevice, connect, connectionIssue, deleteSelection, duplicateSelection, firstSpace, fits, moveDeviceOnPlane, moveDevices, organize, prepareCircuitOutputs, removeCircuitOutput, rerouteWires, updateCircuit, updateDevice, validateProject } from '../src/features/qdc/editor/operations.ts';
+import { addDevice, connect, connectionIssue, deleteSelection, duplicateSelection, firstSpace, fits, moveCircuitToConduit, moveDeviceOnPlane, moveDevices, moveFishboneBreaker, organize, prepareCircuitOutputs, removeCircuitOutput, rerouteWires, updateCircuit, updateDevice, updateWire, validateProject } from '../src/features/qdc/editor/operations.ts';
+import { createFishboneConfig, fishbonePhase, fishboneSlotIssue, fishboneSlotsFor } from '../src/features/qdc/fishbone/model.ts';
 import { circuitCurrent, materialList, phaseBalance, warnings } from '../src/features/qdc/circuits/analysis.ts';
 import { automaticProject, automaticRequiredModules, demoProject, emptyProject, migrateLegacy } from '../src/features/qdc/projects/factory.ts';
-import { loadProjects, parseProjectFile } from '../src/features/qdc/projects/storage.ts';
+import { loadProjects, parseProjectFile, saveProjects } from '../src/features/qdc/projects/storage.ts';
 import { boardSize, deviceRect, isRailMounted, pathAvoidsDevices, pathOverlapLength, routeWires, terminalPoint } from '../src/features/qdc/wiring/routing.ts';
 import { bendWirePoint, flexWireSegment, reattachManualWirePath, removeWireBend, roundedWirePath, snapWirePoint } from '../src/features/qdc/wiring/geometry.ts';
 import { ferruleColor, TERMINATION_OPTIONS, WIRE_COLORS } from '../src/features/qdc/wiring/options.ts';
@@ -14,6 +15,79 @@ import type { Circuit, Project } from '../src/features/qdc/types.ts';
 const options = { conductorType: 'phase' as const, color: '#20252b', gauge: 2.5, termination: 'tubular' as const };
 const endpoint = (componentId: string, terminalId = 'top-0') => ({ componentId, terminalId });
 const loadCircuit = (patch: Partial<Circuit> = {}): Circuit => ({ id: 'c1', number: 1, name: 'Carga de teste', phase: 'R', breakerId: null, cableGauge: null, load: 1000, loadUnit: 'W', voltage: 127, powerFactor: 1, drId: null, notes: '', color: '#20252b', ...patch });
+
+test('fishbone keeps real phase slots, supports multipole snap, removal and storage beside DIN projects', () => {
+  let fishbone = emptyProject({ boardType: 'fishbone', fishbone: createFishboneConfig(12, 'bi', 'alternating'), supply: 'bi', voltage: 220, rails: 1, modulesPerRail: 16 });
+  assert.equal(fishbone.devices.filter(device => device.type === 'fishbone-bus').length, 1);
+  fishbone = addDevice(fishbone, 'breaker-2p', { rail: 0, slot: 0, fishboneSlotId: 'left-1' });
+  const breaker = fishbone.devices.at(-1)!;
+  assert.equal(fishbonePhase(fishbone, breaker), 'R/S');
+  assert.deepEqual(fishboneSlotsFor(fishbone, breaker).map(slot => slot.id), ['left-1', 'left-2']);
+  assert.throws(() => addDevice(fishbone, 'breaker-1p', { rail: 0, slot: 0, fishboneSlotId: 'left-2' }), /ocupada/);
+  fishbone = prepareCircuitOutputs({ ...fishbone, circuits: [loadCircuit({ phase: 'R/S', voltage: 220, hasNeutral: false })] });
+  const output = fishbone.devices.find(device => device.type === 'conduit-entry')!;
+  const phases = output.terminals.filter(term => term.kind === 'L');
+  fishbone = connect(fishbone, endpoint(output.id, phases[0].id), endpoint(breaker.id, 'bottom-0'), options);
+  fishbone = connect(fishbone, endpoint(output.id, phases[1].id), endpoint(breaker.id, 'bottom-1'), options);
+  assert.equal(fishbone.circuits[0].breakerId, breaker.id);
+  assert.equal(fishbone.circuits[0].phase, 'R/S');
+  assert.equal(fishbone.devices.find(device => device.id === breaker.id)?.circuitId, 'c1');
+  fishbone = moveFishboneBreaker(fishbone, breaker.id, 'right-2');
+  assert.equal(fishbonePhase(fishbone, fishbone.devices.find(device => device.id === breaker.id)!), 'R/S');
+  assert.ok(validateProject(fishbone));
+  const din = addDevice(emptyProject(), 'breaker-1p');
+  assert.ok(validateProject(din));
+  const values = new Map<string, string>();
+  const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); } };
+  saveProjects(storage, 'user', [din, fishbone], fishbone.id);
+  const loaded = loadProjects(storage, 'user');
+  assert.equal(loaded.error, '');
+  assert.deepEqual(loaded.projects[1].fishbone, fishbone.fishbone);
+  assert.equal(loaded.projects[1].devices.find(device => device.id === breaker.id)?.fishboneSlotId, 'right-2');
+  const removed = deleteSelection(fishbone, { devices: [breaker.id], wire: null });
+  assert.equal(fishboneSlotIssue(removed, createDevice('breaker-1p'), 'right-2'), null);
+  assert.ok(validateProject(removed));
+});
+
+test('fishbone respects disabled and occupied slots and requires drawn feed per phase', () => {
+  let project = emptyProject({ boardType: 'fishbone', fishbone: createFishboneConfig(18, 'tri', 'paired'), supply: 'tri', voltage: 380, rails: 1, modulesPerRail: 16 });
+  project = addDevice(project, 'breaker-3p', { rail: 0, slot: 0, fishboneSlotId: 'left-1' });
+  const breaker = project.devices.at(-1)!;
+  assert.equal(fishbonePhase(project, breaker), 'R/S/T');
+  assert.equal(fishboneSlotIssue(project, createDevice('breaker-1p'), 'left-2'), 'Uma das posições já está ocupada.');
+  assert.equal(warnings(project).filter(warning => warning.id.startsWith('fishbone-feed-')).length, 3);
+  assert.equal(warnings(project).some(warning => warning.id === `terminal-${breaker.id}`), true);
+  project = addDevice(project, 'main-breaker', { rail: 0, slot: 0 });
+  const general = project.devices.at(-1)!;
+  project = connect(project, endpoint(general.id, 'bottom-0'), endpoint(project.devices[0].id, 'feed-0'), options);
+  assert.equal(warnings(project).filter(warning => warning.id.startsWith('fishbone-feed-')).length, 2);
+  assert.ok(validateProject(project));
+  const disabled = { ...project, fishbone: { ...project.fishbone!, slots: project.fishbone!.slots.map(slot => slot.id === 'right-1' ? { ...slot, enabled: false } : slot) } };
+  assert.ok(validateProject(disabled));
+  assert.match(fishboneSlotIssue(disabled, createDevice('breaker-1p'), 'right-1') ?? '', /habilitadas/);
+  const invalid = { ...project, fishbone: { ...project.fishbone!, slots: project.fishbone!.slots.map(slot => slot.id === 'left-2' ? { ...slot, enabled: false } : slot) } };
+  assert.equal(validateProject(invalid), false);
+  assert.throws(() => deleteSelection(project, { devices: [project.devices[0].id], wire: null }), /não pode ser removido/);
+});
+
+test('fishbone accepts the physical phase order on both sides while keeping circuit labels canonical', () => {
+  let twoPhase = emptyProject({ boardType: 'fishbone', fishbone: createFishboneConfig(12, 'bi', 'alternating'), supply: 'bi', voltage: 220, rails: 1, modulesPerRail: 16 });
+  twoPhase = addDevice(twoPhase, 'breaker-2p', { rail: 0, slot: 0, fishboneSlotId: 'right-1' });
+  assert.deepEqual(fishboneSlotsFor(twoPhase, twoPhase.devices.at(-1)!).map(slot => slot.phase), ['S', 'R']);
+  assert.equal(fishbonePhase(twoPhase, twoPhase.devices.at(-1)!), 'R/S');
+  assert.ok(validateProject(twoPhase));
+
+  let threePhase = emptyProject({ boardType: 'fishbone', fishbone: createFishboneConfig(18, 'tri', 'alternating'), supply: 'tri', voltage: 380, rails: 1, modulesPerRail: 16 });
+  threePhase = addDevice(threePhase, 'breaker-3p', { rail: 0, slot: 0, fishboneSlotId: 'right-1' });
+  assert.deepEqual(fishboneSlotsFor(threePhase, threePhase.devices.at(-1)!).map(slot => slot.phase), ['S', 'T', 'R']);
+  assert.equal(fishbonePhase(threePhase, threePhase.devices.at(-1)!), 'R/S/T');
+  assert.ok(validateProject(threePhase));
+
+  let singlePhase = emptyProject({ boardType: 'fishbone', fishbone: createFishboneConfig(12, 'mono', 'paired'), supply: 'mono', voltage: 127, rails: 1, modulesPerRail: 16 });
+  singlePhase = addDevice(singlePhase, 'breaker-1p', { rail: 0, slot: 0, fishboneSlotId: 'left-1' });
+  assert.equal(fishbonePhase(singlePhase, singlePhase.devices.at(-1)!), 'R');
+  assert.ok(validateProject(singlePhase));
+});
 
 test('catalog contains the complete QDC families with usable terminal identities and no invented sizing', () => {
   assert.ok(CATALOG.length >= 34);
@@ -144,6 +218,47 @@ test('manual circuits prepare separate conduit leads without inventing electrica
   assert.ok(validateProject(removed));
 });
 
+test('two circuits can share one conduit without merging conductors or losing breaker links', () => {
+  const first = loadCircuit({ id: 'entry-first', number: 1, name: 'Iluminação' });
+  const second = loadCircuit({ id: 'entry-second', number: 2, name: 'Tomadas' });
+  let project = prepareCircuitOutputs(emptyProject({ circuits: [first] }));
+  const conduitId = project.devices[0].id;
+  project = prepareCircuitOutputs({ ...project, circuits: [first, second] }, { [second.id]: conduitId });
+  assert.equal(project.devices.filter(device => device.type === 'conduit-entry').length, 1);
+  assert.equal(project.devices[0].terminals.length, 6);
+  assert.equal(new Set(project.devices[0].terminals.map(term => term.id)).size, 6);
+  const tip = terminalPoint(project, conduitId, `circuit-${second.id}-l`)!;
+  assert.ok(tip.y < deviceRect(project.devices[0], project).y);
+  project = addDevice(project, 'breaker-1p', { rail: 0, slot: 0 });
+  const breaker = project.devices.at(-1)!;
+  assert.match(connectionIssue(project, endpoint(conduitId, `circuit-${first.id}-n`), endpoint(breaker.id, 'bottom-0'), 'neutral') ?? '', /não é compatível/);
+  project = connect(project, endpoint(conduitId, `circuit-${first.id}-l`), endpoint(breaker.id, 'bottom-0'), options);
+  assert.equal(project.circuits[0].breakerId, breaker.id);
+  project = updateCircuit(project, second.id, { name: 'Tomadas gerais' });
+  assert.equal(project.devices[0].terminals.length, 6);
+  assert.equal(project.wires.length, 1);
+  assert.ok(validateProject(project));
+});
+
+test('moving a circuit into another conduit preserves its existing wire', () => {
+  const first = loadCircuit({ id: 'move-first', number: 1 });
+  const second = loadCircuit({ id: 'move-second', number: 2 });
+  let project = prepareCircuitOutputs(emptyProject({ circuits: [first, second] }));
+  const outputs = project.devices.filter(device => device.type === 'conduit-entry');
+  project = addDevice(project, 'breaker-1p', { rail: 0, slot: 0 });
+  const breaker = project.devices.at(-1)!;
+  project = connect(project, endpoint(outputs[1].id, `circuit-${second.id}-l`), endpoint(breaker.id, 'bottom-0'), options);
+  project = moveCircuitToConduit(project, second.id, outputs[0].id);
+  assert.equal(project.devices.filter(device => device.type === 'conduit-entry').length, 1);
+  assert.equal(project.wires[0].sourceComponent, outputs[0].id);
+  assert.equal(project.wires[0].sourceTerminal, `circuit-${second.id}-l`);
+  assert.ok(validateProject(project));
+  const disconnected = deleteSelection(project, { devices: [], wire: project.wires[0].id });
+  assert.equal(disconnected.wires.length, 0);
+  assert.equal(disconnected.circuits.length, 2);
+  assert.equal(disconnected.devices.find(device => device.id === outputs[0].id)?.terminals.length, 6);
+});
+
 test('collision rejection preserves input and checks board bounds', () => {
   const empty = emptyProject({ rails: 1, modulesPerRail: 4 });
   const project = addDevice(empty, 'breaker-2p', { rail: 0, slot: 1 });
@@ -235,6 +350,28 @@ test('wire operations reject missing endpoints, loops and duplicate reversed con
   assert.throws(() => connect(project, endpoint(a.id, 'bottom-0'), endpoint(b.id), { ...options, gauge: Number.NaN }), /seção/);
 });
 
+test('editing an existing wire preserves its connection and saves color and gauge', () => {
+  let project = addDevice(emptyProject(), 'breaker-1p');
+  project = addDevice(project, 'breaker-1p');
+  project = connect(project, endpoint(project.devices[0].id), endpoint(project.devices[1].id), options);
+  const before = project.wires[0];
+  project = updateWire(project, before.id, { color: '#e03131', gauge: 6 });
+  const edited = project.wires[0];
+  assert.equal(edited.id, before.id);
+  assert.equal(edited.sourceComponent, before.sourceComponent);
+  assert.equal(edited.targetComponent, before.targetComponent);
+  assert.equal(edited.color, '#e03131');
+  assert.equal(edited.gauge, 6);
+  assert.ok(validateProject(project));
+  const values = new Map<string, string>();
+  const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); } };
+  saveProjects(storage, 'user', [project], project.id);
+  const loaded = loadProjects(storage, 'user');
+  assert.equal(loaded.error, '');
+  assert.equal(loaded.projects[0].wires[0].color, '#e03131');
+  assert.equal(loaded.projects[0].wires[0].gauge, 6);
+});
+
 test('wire operations enforce conductor compatibility with L, N and PE terminals', () => {
   let project = emptyProject({ rails: 2, modulesPerRail: 12 });
   project = addDevice(project, 'breaker-1p', { rail: 0, slot: 0 });
@@ -249,6 +386,36 @@ test('wire operations enforce conductor compatibility with L, N and PE terminals
   assert.ok(validateProject(validNeutral));
   const invalidImported = { ...validNeutral, wires: validNeutral.wires.map(wire => ({ ...wire, conductorType: 'phase' as const })) };
   assert.equal(validateProject(invalidImported), false);
+});
+
+test('a free DPS input accepts neutral, changes to N, and keeps PE separate', () => {
+  let project = emptyProject({ modulesPerRail: 8 });
+  project = addDevice(project, 'neutral-bus', { rail: 0, slot: 0 });
+  project = addDevice(project, 'earth-bus', { rail: 0, slot: 1 });
+  project = addDevice(project, 'spd', { rail: 0, slot: 2 });
+  const [neutral, earth, dps] = project.devices;
+  const neutralOptions = { ...options, conductorType: 'neutral' as const, color: '#1686cf' };
+  assert.equal(connectionIssue(project, endpoint(neutral.id, 'side-0'), endpoint(dps.id, 'top-0'), 'neutral'), null);
+  project = connect(project, endpoint(neutral.id, 'side-0'), endpoint(dps.id, 'top-0'), neutralOptions);
+  assert.equal(project.devices.find(device => device.id === dps.id)?.spdInput, 'neutral');
+  assert.equal(project.devices.find(device => device.id === dps.id)?.terminals[0].kind, 'N');
+  assert.equal(project.wires[0].conductorType, 'neutral');
+  assert.match(connectionIssue(project, endpoint(neutral.id, 'side-1'), endpoint(dps.id, 'bottom-0'), 'neutral') ?? '', /não é compatível/);
+  project = connect(project, endpoint(earth.id, 'side-0'), endpoint(dps.id, 'bottom-0'), { ...options, conductorType: 'earth', color: '#27854c' });
+  assert.ok(validateProject(project));
+  const values = new Map<string, string>();
+  const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); } };
+  saveProjects(storage, 'user', [project], project.id);
+  const loaded = loadProjects(storage, 'user');
+  assert.equal(loaded.error, '');
+  assert.equal(loaded.projects[0].devices.find(device => device.id === dps.id)?.spdInput, 'neutral');
+  assert.deepEqual(loaded.projects[0].wires.map(wire => wire.conductorType), ['neutral', 'earth']);
+
+  let fed = addDevice(emptyProject({ modulesPerRail: 8 }), 'breaker-1p', { rail: 0, slot: 0 });
+  fed = addDevice(fed, 'neutral-bus', { rail: 0, slot: 1 });
+  fed = addDevice(fed, 'spd', { rail: 0, slot: 2 });
+  fed = connect(fed, endpoint(fed.devices[0].id), endpoint(fed.devices[2].id), options);
+  assert.match(connectionIssue(fed, endpoint(fed.devices[1].id, 'side-0'), endpoint(fed.devices[2].id), 'neutral') ?? '', /não é compatível/);
 });
 
 test('RCBO can be linked as combined breaker and residual-current protection', () => {

@@ -1,6 +1,6 @@
 import type { Circuit, Supply } from '../types';
 
-export type CircuitDraft = { name: string; description: string; phase: string; voltage: number; cableGauge: number | null; neutralGauge: number | null; earthGauge: number | null; phaseColors: string[]; neutralColor: string; earthColor: string; sameGauge: boolean; hasNeutral: boolean; hasEarth: boolean };
+export type CircuitDraft = { name: string; description: string; phase: string; voltage: number; cableGauge: number | null; neutralGauge: number | null; earthGauge: number | null; phaseColors: string[]; neutralColor: string; earthColor: string; sameGauge: boolean; hasNeutral: boolean; hasEarth: boolean; outputGroup?: string };
 
 export const phaseOptions = (supply: Supply): string[] => supply === 'mono' ? ['R'] : supply === 'bi' ? ['R', 'S', 'R/S'] : ['R', 'S', 'T', 'R/S', 'S/T', 'R/T', 'R/S/T'];
 

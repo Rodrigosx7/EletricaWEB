@@ -25,6 +25,10 @@ export function emptyProject(config: Partial<Project> = {}): Project {
     rails: 2, modulesPerRail: 12, widthMm: 360, heightMm: 420,
     visualModel: 'classic', dpsVisual: 'red',
     devices: [], wires: [], circuits: [], materials: [], createdAt: now, updatedAt: now, ...config };
+  if (project.boardType === 'fishbone' && !project.devices.some(device => device.type === 'fishbone-bus')) {
+    const phases = project.supply === 'tri' ? 3 : project.supply === 'bi' ? 2 : 1;
+    project.devices = [{ ...createDevice('fishbone-bus'), poles: phases, terminals: buildTerminals('fishbone-bus', phases), canvasPosition: { x: 390, y: 310 } }, ...project.devices];
+  }
   if (!validateProject(project)) throw new Error('Configuração de quadro inválida. Revise alimentação, dimensões e módulos.');
   return structuredClone(project);
 }
@@ -50,6 +54,7 @@ function circuit(number: number, name: string, project: Project, breaker: Device
 }
 
 export function automaticProject(config: Partial<Project>, names: string[]): Project {
+  if (config.boardType === 'fishbone') throw new Error('A montagem automática está disponível somente para quadros modulares. Crie a espinha no modo manual.');
   if (names.length > 100) throw new Error('Use até 100 circuitos por proposta.');
   let project = emptyProject({ ...config, devices: [], wires: [], circuits: [], materials: [] });
   const requiredModules = automaticRequiredModules(project.supply, names.length);

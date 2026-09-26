@@ -34,6 +34,12 @@
 .qdc-terminal { outline: none; }
 .qdc-terminal.is-connectable { cursor: crosshair; }
 .qdc-terminal.is-connectable:hover .qdc-terminal-target, .qdc-terminal:focus-visible .qdc-terminal-target { fill: #f3ce2866; stroke: #9c8216; stroke-width: 1.5; }
+.qdc-terminal.is-wire-exit.is-connectable { cursor: crosshair; }
+.qdc-terminal.is-wire-exit:hover > circle:first-of-type, .qdc-terminal.is-wire-exit:focus-visible > circle:first-of-type { filter: drop-shadow(0 0 4px #f2cc2b); stroke-width: 3; }
+.qdc-terminal.is-compatible .qdc-terminal-target { fill: #dcf4e7; stroke: #298353; stroke-width: 2; }
+.qdc-terminal.is-unavailable:not(.is-magnetic) { opacity: .4; }
+.qdc-terminal.is-unavailable:not(.is-magnetic):hover .qdc-terminal-target { fill: transparent; stroke: transparent; }
+.qdc-terminal.is-source .qdc-terminal-target { fill: #fff2b6; stroke: #bd9519; stroke-width: 2; }
 .qdc-pending-lead { outline: none; }
 .qdc-pending-lead.is-connectable { cursor: crosshair; }
 .qdc-pending-lead.is-connectable:hover circle, .qdc-pending-lead:focus-visible circle { fill: #fff7cf; stroke-width: 3; }
@@ -56,8 +62,11 @@
 .qdc-canvas-empty svg { color: #9b831d; }
 .qdc-canvas-empty strong { font-size: 14px; font-weight: 600; color: #2d454f; }
 .qdc-canvas-empty span { font-size: 12px; line-height: 1.6; }
-.qdc-canvas-hint { position: absolute; bottom: 18px; left: 16px; display: flex; align-items: center; gap: 7px; max-width: calc(100% - 184px); min-height: 38px; padding: 8px 11px; border: 1px solid #c4d0d6; border-radius: 8px; background: #f8fbfbe8; box-shadow: 0 4px 16px #20384412; backdrop-filter: blur(8px); color: #405e72; font-size: 12px; line-height: 1.5; pointer-events: none; }
+.qdc-canvas-hint { position: absolute; bottom: 18px; left: 16px; display: flex; align-items: center; gap: 7px; max-width: calc(100% - 184px); min-height: 38px; padding: 8px 11px; border: 1px solid #c4d0d6; border-radius: 8px; background: #f8fbfbe8; box-shadow: 0 4px 16px #20384412; backdrop-filter: blur(8px); color: #405e72; font-size: 12px; line-height: 1.5; pointer-events: auto; }
 .qdc-canvas-hint svg { flex: 0 0 auto; }
+.qdc-canvas-hint-close { display: grid; place-items: center; flex: 0 0 auto; width: 24px; height: 24px; margin-left: 4px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: #526e7d; cursor: pointer; }
+.qdc-canvas-hint-close:hover { background: #e6eef1; color: #1b3747; }
+.qdc-canvas-hint-close:focus-visible { outline: 2px solid #2d6c92; outline-offset: 2px; }
 .qdc-canvas-navigation { position: absolute; right: 16px; bottom: 18px; display: flex; align-items: flex-end; gap: 10px; }
 .qdc-zoom-controls { display: flex; align-items: center; overflow: hidden; border: 1px solid #c2ced4; border-radius: 8px; background: #f9fbfbe8; box-shadow: 0 4px 16px #20384416; backdrop-filter: blur(8px); }
 .qdc-zoom-controls button { display: flex; align-items: center; justify-content: center; height: 38px; min-width: 38px; padding: 0 9px; background: transparent; border: none; border-radius: 0; color: #354f61; font-size: 12px; font-weight: 700; cursor: pointer; }

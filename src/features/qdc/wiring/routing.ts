@@ -1,5 +1,6 @@
 import type { Device, DeviceMount, Point, Project, TerminalSide, Wire } from '../types.ts';
 import { reattachManualWirePath } from './geometry.ts';
+import { FISHBONE_ROW, FISHBONE_TOP, FISHBONE_WIDTH, fishboneRect, fishboneSlotsFor } from '../fishbone/model.ts';
 
 export const MODULE = 44;
 export const RAIL = 210;
@@ -17,10 +18,16 @@ export function deviceMount(device: Device): DeviceMount {
 export const isRailMounted = (device: Device) => deviceMount(device) === 'rail';
 
 export function boardSize(project: Project): { width: number; height: number } {
+  if (project.boardType === 'fishbone' && project.fishbone) return { width: FISHBONE_WIDTH, height: FISHBONE_TOP + project.fishbone.slots.length / 2 * FISHBONE_ROW + 95 };
   return { width: LEFT * 2 + project.modulesPerRail * MODULE, height: TOP * 2 + (project.rails - 1) * RAIL + DEVICE_HEIGHT };
 }
 
 export function deviceRect(device: Device, project?: Project) {
+  if (device.type === 'fishbone-bus') return { x: 390, y: 310, width: 80, height: 42 };
+  if (project?.boardType === 'fishbone' && device.fishboneSlotId) {
+    const rect = fishboneRect(project, device);
+    if (rect) return rect;
+  }
   const mount = deviceMount(device);
   if (mount === 'overlay') return {
     x: LEFT + device.slot * MODULE + 2,
@@ -32,7 +39,8 @@ export function deviceRect(device: Device, project?: Project) {
     const size = project ? boardSize(project) : { width: LEFT * 2 + 12 * MODULE, height: TOP * 2 + DEVICE_HEIGHT };
     const isBus = device.type === 'neutral-bus' || device.type === 'earth-bus';
     const horizontal = isBus && device.orientation === 'horizontal';
-    const width = isBus ? horizontal ? 92 : 30 : device.type === 'power-entry' ? Math.max(58, device.poles * 18) : Math.max(48, Math.min(104, device.poles * 8 + 8));
+    const groupedCircuitOutput = device.type === 'conduit-entry' && device.poles > 4 && device.terminals.some(terminal => terminal.id.startsWith('circuit-'));
+    const width = isBus ? horizontal ? 92 : 30 : device.type === 'power-entry' ? Math.max(58, device.poles * 18) : groupedCircuitOutput ? Math.min(208, device.poles * 12 + 8) : Math.max(48, Math.min(104, device.poles * 8 + 8));
     const height = isBus ? horizontal ? 30 : 92 : 48;
     if (device.canvasPosition) return { x: device.canvasPosition.x, y: device.canvasPosition.y, width, height };
     const offset = Math.max(5, Math.min(95, device.edgeOffset ?? 50)) / 100;
@@ -62,6 +70,10 @@ export function deviceRect(device: Device, project?: Project) {
 }
 
 export function terminalSide(device: Device, side: TerminalSide): TerminalSide {
+  if (device.fishboneSlotId && (side === 'top' || side === 'bottom')) {
+    const left = device.fishboneSlotId.startsWith('left-');
+    return side === 'top' ? left ? 'right' : 'left' : left ? 'left' : 'right';
+  }
   if (device.type === 'neutral-bus' || device.type === 'earth-bus') {
     const allowed = device.orientation === 'horizontal' ? ['top', 'bottom'] : ['left', 'right'];
     return allowed.includes(device.busTerminalSide ?? '') ? device.busTerminalSide! : device.orientation === 'horizontal' ? 'bottom' : 'right';
@@ -76,16 +88,23 @@ export function terminalPoint(project: Project, componentId: string, terminalId:
   const device = project.devices.find(d => d.id === componentId);
   const terminal = device?.terminals.find(t => t.id === terminalId);
   if (!device || !terminal) return null;
+  if (device.fishboneSlotId && (terminal.side === 'top' || terminal.side === 'bottom')) {
+    const slot = fishboneSlotsFor(project, device)[terminal.index];
+    if (!slot) return null;
+    const rect = deviceRect(device, project), side = terminalSide(device, terminal.side);
+    return { x: rect.x + (side === 'right' ? rect.width : 0), y: FISHBONE_TOP + slot.position * FISHBONE_ROW + 36 };
+  }
   const side = terminalSide(device, terminal.side);
   const peers = device.terminals.filter(t => terminalSide(device, t.side) === side).sort((a, b) => a.index - b.index);
   const index = peers.findIndex(t => t.id === terminal.id);
   const rect = deviceRect(device, project);
+  const exit = device.type === 'conduit-entry' ? 12 : 0;
   if (terminal.position && deviceMount(device) === 'rail') return {
     x: rect.x + rect.width * terminal.position.x,
     y: rect.y + rect.height * terminal.position.y,
   };
-  if (side === 'left' || side === 'right') return { x: rect.x + (side === 'right' ? rect.width : 0), y: rect.y + rect.height * (index + .5) / peers.length };
-  return { x: rect.x + rect.width * (index + .5) / peers.length, y: rect.y + (side === 'bottom' ? rect.height : 0) };
+  if (side === 'left' || side === 'right') return { x: rect.x + (side === 'right' ? rect.width + exit : -exit), y: rect.y + rect.height * (index + .5) / peers.length };
+  return { x: rect.x + rect.width * (index + .5) / peers.length, y: rect.y + (side === 'bottom' ? rect.height + exit : -exit) };
 }
 
 function compact(points: Point[]): Point[] {

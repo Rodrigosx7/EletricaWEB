@@ -119,7 +119,7 @@ export async function presentationImage(project: Project): Promise<string> {
   context.fillText(fitText(context, project.client ? `Cliente: ${project.client}` : 'Cliente não informado', 780), 180, 138);
 
   const supply = project.supply === 'mono' ? 'Monofásico' : project.supply === 'bi' ? 'Bifásico' : 'Trifásico';
-  const chips = [`${supply} · ${project.voltage} V`, `${project.rails} trilhos DIN`, `${project.modulesPerRail * project.rails} módulos`];
+  const chips = project.boardType === 'fishbone' ? [`${supply} · ${project.voltage} V`, 'Espinha de peixe', `${project.fishbone?.slots.length ?? 0} posições`] : [`${supply} · ${project.voltage} V`, `${project.rails} trilhos DIN`, `${project.modulesPerRail * project.rails} módulos`];
   let chipX = 1546;
   context.font = '700 14px Arial, sans-serif';
   for (const label of chips.reverse()) {
@@ -138,10 +138,10 @@ export async function presentationImage(project: Project): Promise<string> {
   card(context, 1124, 220, 422, 810, 20, '#fff', '#d4dfe4');
   context.fillStyle = muted; context.font = '700 14px Arial, sans-serif'; context.fillText('RESUMO DA MONTAGEM', 1160, 266);
   context.fillStyle = ink; context.font = '700 25px Arial, sans-serif'; context.fillText('Dados do quadro', 1160, 303);
-  const used = project.devices.filter(isRailMounted).reduce((total, device) => total + device.modules, 0);
+  const used = project.boardType === 'fishbone' ? project.devices.filter(device => device.fishboneSlotId).reduce((total, device) => total + device.poles, 0) : project.devices.filter(isRailMounted).reduce((total, device) => total + device.modules, 0);
   const summary = [
     ['Dimensões', `${project.widthMm} × ${project.heightMm} mm`],
-    ['Ocupação', `${used} de ${project.modulesPerRail * project.rails} módulos`],
+    ['Ocupação', project.boardType === 'fishbone' ? `${used} de ${project.fishbone?.slots.length ?? 0} posições` : `${used} de ${project.modulesPerRail * project.rails} módulos`],
     ['Componentes', String(project.devices.length)],
     ['Condutores', String(project.wires.length)],
   ];

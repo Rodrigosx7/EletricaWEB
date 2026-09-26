@@ -3,7 +3,7 @@ import { circuitOverview } from './overview';
 import { phaseOptions } from './circuitDraft';
 import type { Circuit, Device, Project } from '../types';
 
-type Props = { project: Project; circuit: Circuit; onUpdate(patch: Partial<Circuit>): void; onUpdateDevice(id: string, patch: Partial<Device>): void; onMap(): void; onDelete(): void; onClose(): void };
+type Props = { project: Project; circuit: Circuit; onUpdate(patch: Partial<Circuit>): void; onUpdateDevice(id: string, patch: Partial<Device>): void; onConduit(id: string): void; onMap(): void; onDelete(): void; onClose(): void };
 
 function NumberField({ label, value, unit, min = 0.01, max, nullable = true, onCommit }: { label: string; value: number | null; unit?: string; min?: number; max?: number; nullable?: boolean; onCommit(value: number | null): void }) {
   return <label className="ewq-circuit-inspector-field"><span>{label}</span><span className="ewq-circuit-inspector-number"><input key={`${label}-${value ?? ''}`} type="number" min={min} max={max} step="any" defaultValue={value ?? ''} placeholder={nullable ? 'A definir' : undefined} onBlur={event => {
@@ -13,13 +13,16 @@ function NumberField({ label, value, unit, min = 0.01, max, nullable = true, onC
   }} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { event.currentTarget.value = value === null ? '' : String(value); event.currentTarget.blur(); } }} />{unit && <em>{unit}</em>}</span></label>;
 }
 
-export default function CircuitInspector({ project, circuit, onUpdate, onUpdateDevice, onMap, onDelete, onClose }: Props) {
+export default function CircuitInspector({ project, circuit, onUpdate, onUpdateDevice, onConduit, onMap, onDelete, onClose }: Props) {
   const overview = circuitOverview(project, circuit);
   const sameGauge = circuit.neutralGauge === undefined && circuit.earthGauge === undefined;
   const phases = phaseOptions(project.supply);
   const phaseCount = circuit.phase.split('/').filter(Boolean).length;
   const breakers = project.devices.filter(device => (device.type.startsWith('breaker-') || device.type.startsWith('rcbo-') || device.type.startsWith('motor-breaker-')) && (device.id === circuit.breakerId || device.terminals.filter(term => term.side === 'bottom' && term.kind === 'L').length === phaseCount));
   const rcds = project.devices.filter(device => device.type.startsWith('rcd-') || device.type.startsWith('rcbo-'));
+  const conduits = project.devices.filter(device => device.type === 'conduit-entry');
+  const currentConduit = conduits.find(device => device.terminals.some(terminal => terminal.id.startsWith(`circuit-${circuit.id}-`) || [`c${circuit.number}-l`, `c${circuit.number}-n`, `c${circuit.number}-pe`].includes(terminal.id)));
+  const conductorCount = circuit.phase.split('/').length + Number(circuit.hasNeutral !== false) + Number(circuit.hasEarth !== false);
   return <section className="ewq-circuit-inspector" aria-label={`Editar circuito C${circuit.number}`}>
     <header><div><small>CIRCUITO C{String(circuit.number).padStart(2, '0')}</small><h3>{circuit.name || 'Sem nome'}</h3></div><button type="button" aria-label="Fechar circuito" onClick={onClose}><X size={16} /></button></header>
     <div className={`ewq-circuit-inspector-state is-${overview.status}`}><CircuitBoard size={17} /><span><strong>{overview.label}</strong><small>{overview.connected.length} de {overview.terminals.length} condutores conectados</small></span></div>
@@ -27,6 +30,7 @@ export default function CircuitInspector({ project, circuit, onUpdate, onUpdateD
       <label className="ewq-circuit-inspector-field"><span>Nome</span><input key={circuit.name} defaultValue={circuit.name} maxLength={100} onBlur={event => { const name = event.currentTarget.value.trim(); if (name !== circuit.name) onUpdate({ name }); }} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }} /></label>
       <label className="ewq-circuit-inspector-field"><span>Fases</span><select value={circuit.phase} onChange={event => onUpdate({ phase: event.target.value })}>{!phases.includes(circuit.phase) && <option value={circuit.phase}>{circuit.phase || 'Definir'}</option>}{phases.map(phase => <option key={phase} value={phase}>{phase} · {phase.split('/').length} {phase.includes('/') ? 'fases' : 'fase'}</option>)}</select></label>
       <div className="ewq-circuit-inspector-switches"><label><input type="checkbox" checked={circuit.hasNeutral !== false} onChange={event => onUpdate({ hasNeutral: event.target.checked })} /> Neutro</label><label><input type="checkbox" checked={circuit.hasEarth !== false} onChange={event => onUpdate({ hasEarth: event.target.checked })} /> Proteção PE</label></div>
+      {currentConduit && <label className="ewq-circuit-inspector-field"><span>Conduíte de entrada</span><select value={currentConduit.id} onChange={event => onConduit(event.target.value)}>{conduits.map(device => <option key={device.id} value={device.id} disabled={device.id !== currentConduit.id && device.terminals.length + conductorCount > 16}>{device.label} · {device.terminals.length} pontas</option>)}</select></label>}
       <h4>Condutores</h4>
       <label className="ewq-circuit-inspector-check"><input type="checkbox" checked={sameGauge} onChange={event => onUpdate(event.target.checked ? { neutralGauge: undefined, earthGauge: undefined } : { neutralGauge: circuit.cableGauge, earthGauge: circuit.cableGauge })} /> Mesma bitola para todos</label>
       <NumberField label="Fases" value={circuit.cableGauge} unit="mm²" onCommit={cableGauge => onUpdate({ cableGauge })} />

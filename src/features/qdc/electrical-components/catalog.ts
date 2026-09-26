@@ -22,6 +22,7 @@ export const CATALOG: CatalogItem[] = [
   { type: 'fuse-holder', name: 'Porta-fusível', category: 'Proteção', modules: 1, poles: 1, description: 'Porta-fusível modular; fusível e capacidade de interrupção a definir.' },
   { type: 'motor-breaker-3p', name: 'Disjuntor-motor', category: 'Proteção', modules: 3, poles: 3, description: 'Proteção de motor em três polos; faixa de ajuste e coordenação a definir.' },
   { type: 'comb-bus', name: 'Barramento pente', category: 'Distribuição', modules: 3, poles: 1, description: 'Pente mono, bi ou trifásico sobre os bornes dos disjuntores; não recebe fios diretamente.', mount: 'overlay' },
+  { type: 'fishbone-bus', name: 'Barramento espinha', category: 'Distribuição', modules: 1, poles: 1, description: 'Alimentação das derivações laterais do quadro espinha de peixe.', mount: 'edge' },
   { type: 'neutral-bus', name: 'Barramento de neutro', category: 'Distribuição', modules: 1, poles: 8, description: 'Barramento vertical azul com quantidade de bornes configurável.' },
   { type: 'earth-bus', name: 'Barramento de terra', category: 'Distribuição', modules: 1, poles: 8, description: 'Barramento vertical verde com quantidade de bornes configurável.' },
   { type: 'terminal', name: 'Borne', category: 'Distribuição', modules: 1, poles: 1, description: 'Ponto de conexão modular.' },
@@ -49,7 +50,7 @@ export const CATALOG: CatalogItem[] = [
 ];
 
 /** Components offered for manual insertion. Keep main-breaker in CATALOG for saved projects and generated boards. */
-export const INSERTABLE_CATALOG = CATALOG.filter(item => item.type !== 'main-breaker');
+export const INSERTABLE_CATALOG = CATALOG.filter(item => item.type !== 'main-breaker' && item.type !== 'fishbone-bus');
 
 const terminal = (id: string, label: string, side: Terminal['side'], index: number, kind: Terminal['kind'] = 'L'): Terminal => ({ id, label, side, index, kind });
 
@@ -57,6 +58,7 @@ const terminal = (id: string, label: string, side: Terminal['side'], index: numb
 export function buildTerminals(type: string, poles: number): Terminal[] {
   if (breakerTechnicalModel(type) && poles >= 1 && poles <= 3) return breakerTerminals(poles as 1 | 2 | 3);
   if (type === 'comb-bus') return [];
+  if (type === 'fishbone-bus') return Array.from({ length: poles }, (_, i) => terminal(`feed-${i}`, ['R', 'S', 'T'][i], 'top', i));
   if (type === 'neutral-bus' || type === 'earth-bus') {
     const kind = type === 'neutral-bus' ? 'N' : 'PE';
     return Array.from({ length: poles }, (_, i) => terminal(`side-${i}`, `${kind}${i + 1}`, 'right', i, kind));

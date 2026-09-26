@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { Supply } from '../types';
 import { newCircuitDraft, phaseOptions, suggestedCircuitVoltage, type CircuitDraft } from './circuitDraft';
 
-export default function CircuitComposer({ supply, number, referenceVoltage, onAdd }: { supply: Supply; number: number; referenceVoltage: number; onAdd(draft: CircuitDraft): boolean }) {
+export default function CircuitComposer({ supply, number, referenceVoltage, conduitOptions = [], onAdd }: { supply: Supply; number: number; referenceVoltage: number; conduitOptions?: { id: string; label: string; conductors: number }[]; onAdd(draft: CircuitDraft): boolean }) {
   const [draft, setDraft] = useState<CircuitDraft>(() => newCircuitDraft(supply, number, referenceVoltage));
   const [error, setError] = useState('');
   const options = phaseOptions(supply);
@@ -12,7 +12,7 @@ export default function CircuitComposer({ supply, number, referenceVoltage, onAd
     if (!Number.isFinite(draft.voltage) || draft.voltage <= 0) { setError('Informe uma tensão de carga válida.'); return; }
     if (draft.cableGauge !== null && (!Number.isFinite(draft.cableGauge) || draft.cableGauge <= 0)) { setError('Informe uma bitola positiva ou deixe em branco.'); return; }
     if (!draft.sameGauge && [draft.neutralGauge, draft.earthGauge].some(gauge => gauge !== null && (!Number.isFinite(gauge) || gauge <= 0))) { setError('Informe bitolas positivas ou deixe em branco.'); return; }
-    if (!onAdd({ ...draft, phase, name: draft.name.trim() })) return;
+    if (!onAdd({ ...draft, phase, name: draft.name.trim(), outputGroup: draft.outputGroup && draft.outputGroup !== 'new' ? draft.outputGroup : crypto.randomUUID() })) return;
     setDraft(newCircuitDraft(supply, number + 1, referenceVoltage));
     setError('');
   }
@@ -23,6 +23,7 @@ export default function CircuitComposer({ supply, number, referenceVoltage, onAd
       <label>Fases<select value={phase} onChange={event => { const next = event.target.value; setDraft({ ...draft, phase: next, voltage: draft.voltage === suggestedCircuitVoltage(supply, phase, referenceVoltage) ? suggestedCircuitVoltage(supply, next, referenceVoltage) : draft.voltage }); }}>{options.map(option => <option key={option} value={option}>{option} · {option.split('/').length} {option.includes('/') ? 'fases' : 'fase'}</option>)}</select></label>
       <label>Tensão da carga (V)<input type="number" min="1" step="any" list="ewq-composer-voltages" value={draft.voltage} onChange={event => setDraft({ ...draft, voltage: Number(event.target.value) })} /></label>
       <label>Bitola das fases (mm²)<input type="number" min="0.01" step="any" list="ewq-composer-gauges" value={draft.cableGauge ?? ''} placeholder="A definir" onChange={event => setDraft({ ...draft, cableGauge: event.target.value === '' ? null : Number(event.target.value) })} /></label>
+      <label>Entrada no quadro<select value={draft.outputGroup ?? 'new'} onChange={event => setDraft({ ...draft, outputGroup: event.target.value })}><option value="new">Novo conduíte</option>{conduitOptions.map(option => <option key={option.id} value={option.id} disabled={option.conductors + phase.split('/').length + Number(draft.hasNeutral) + Number(draft.hasEarth) > 16}>{option.label} · {option.conductors} fios</option>)}</select></label>
     </div>
     <label className="ewq-circuit-same-gauge"><input type="checkbox" checked={draft.sameGauge} onChange={event => setDraft({ ...draft, sameGauge: event.target.checked })} /> Usar a mesma bitola para fase, neutro e PE</label>
     {!draft.sameGauge && <div className="ewq-dialog-grid">
