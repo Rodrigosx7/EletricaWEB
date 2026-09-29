@@ -35,10 +35,10 @@ drop policy if exists "Users can manage own movimentacoes" on public.movimentaco
 create policy "Users can manage own movimentacoes"
   on public.movimentacoes for all
   using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  with check (auth.uid() = user_id and
+    (ordem_servico_id is null or exists (select 1 from public.ordens_servico os where os.id = ordem_servico_id and os.user_id = auth.uid())));
 
 grant select, insert, update, delete on table public.movimentacoes to authenticated;
-grant usage, select on all sequences in schema public to authenticated;
 
 create or replace function public.atualizar_updated_at()
 returns trigger
@@ -75,13 +75,14 @@ create index if not exists idx_historico_status_os
 alter table public.historico_status_os enable row level security;
 
 drop policy if exists "Users can manage own hist_status_os" on public.historico_status_os;
-create policy "Users can manage own hist_status_os"
-  on public.historico_status_os for all
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+drop policy if exists "Users can read own hist_status_os" on public.historico_status_os;
+create policy "Users can read own hist_status_os"
+  on public.historico_status_os for select to authenticated
+  using (auth.uid() = user_id);
 
-grant select, insert, update, delete on table public.historico_status_os to authenticated;
-grant usage, select on all sequences in schema public to authenticated;
+revoke insert, update, delete on table public.historico_status_os from public, anon, authenticated;
+grant select on table public.historico_status_os to authenticated;
+revoke usage, select on sequence public.historico_status_os_id_seq from public, anon, authenticated;
 
 -- Função/Trigger para registrar mudança de status
 create or replace function public.registrar_historico_status_os()

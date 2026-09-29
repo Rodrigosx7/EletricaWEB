@@ -26,14 +26,30 @@ test('circuito bifásico exige dois polos corretos e vínculo único', () => {
   const { project, circuit, single, double, source, target } = board();
   assert.match(connectionIssue(project, source('l'), target(single, 'bottom-0'), 'phase'), /2 fase/);
   assert.match(connectionIssue(project, source('l'), target(double, 'top-0'), 'phase'), /borne de saída/);
-  assert.match(connectionIssue(project, source('l'), target(double, 'bottom-1'), 'phase'), /polo 1/);
-  const first = connect(project, source('l'), target(double, 'bottom-0'), options);
-  assert.equal(first.circuits[0].breakerId, double.id);
-  assert.equal(first.devices.find(device => device.id === double.id).circuitId, circuit.id);
-  assert.match(connectionIssue(first, source('l'), target(double, 'bottom-1'), 'phase'), /já está conectada/);
-  const second = connect(first, source('l2'), target(double, 'bottom-1'), options);
+  assert.equal(connectionIssue(project, source('l'), target(double, 'bottom-1'), 'phase'), null);
+  const first = connect(project, source('l'), target(double, 'bottom-1'), options);
+  assert.equal(first.circuits[0].breakerId, null);
+  assert.equal(first.devices.find(device => device.id === double.id).circuitId, null);
+  assert.match(connectionIssue(first, source('l'), target(double, 'bottom-0'), 'phase'), /já está conectada/);
+  assert.match(connectionIssue(first, source('l2'), target(double, 'bottom-1'), 'phase'), /já recebe outra fase/);
+  const second = connect(first, source('l2'), target(double, 'bottom-0'), options);
   assert.equal(second.wires.length, 2);
+  assert.equal(second.circuits[0].breakerId, double.id);
+  assert.equal(second.devices.find(device => device.id === double.id).circuitId, circuit.id);
   assert.equal(validateProject(second), true);
+});
+
+test('fases parciais não podem ser divididas entre disjuntores nem compartilhadas com outro circuito', () => {
+  let { project, circuit, double, source, target } = board();
+  project = addDevice(project, 'breaker-2p');
+  const otherBreaker = project.devices.at(-1);
+  project = connect(project, source('l'), target(double, 'bottom-0'), options);
+  assert.match(connectionIssue(project, source('l2'), target(otherBreaker, 'bottom-1'), 'phase'), /mesmo disjuntor/);
+  const otherCircuit = circuitFromDraft({ ...newCircuitDraft('bi', 2, 220), name: 'Outro circuito', phase: 'R/S' }, 2);
+  project = prepareCircuitOutputs({ ...project, circuits: [...project.circuits, otherCircuit] });
+  const otherOutput = project.devices.find(device => device.type === 'conduit-entry' && device.terminals.some(term => term.id === `circuit-${otherCircuit.id}-l`));
+  assert.match(connectionIssue(project, { componentId: otherOutput.id, terminalId: `circuit-${otherCircuit.id}-l` }, target(double, 'bottom-1'), 'phase'), /outro circuito/);
+  assert.equal(project.circuits.find(item => item.id === circuit.id).breakerId, null);
 });
 
 test('neutro e PE mantêm tipo e seção próprios; edição propaga à ligação', () => {
@@ -55,7 +71,9 @@ test('neutro e PE mantêm tipo e seção próprios; edição propaga à ligaçã
 
 test('mudar a topologia remove fases incompatíveis e desvincula proteção multipolar', () => {
   const { project, circuit, double, source, target } = board();
-  const wired = connect(project, source('l'), target(double, 'bottom-0'), options);
+  const first = connect(project, source('l'), target(double, 'bottom-0'), options);
+  const wired = connect(first, source('l2'), target(double, 'bottom-1'), options);
+  assert.equal(wired.circuits[0].breakerId, double.id);
   const changed = updateCircuit(wired, circuit.id, { phase: 'R' });
   assert.equal(changed.circuits[0].breakerId, null);
   assert.equal(changed.wires.length, 0);
@@ -94,19 +112,26 @@ test('potência total de duas fases com neutro não é tratada como corrente de 
   assert.deepEqual(balance.map(phase => [phase.current, phase.missing]), [[0, 1], [0, 1]]);
 });
 
-test('excluir a última fase desenhada remove o vínculo automático do disjuntor', () => {
+test('excluir qualquer fase de um circuito completo remove o vínculo automático do disjuntor', () => {
   const { project, circuit, double, source, target } = board();
-  const linked = connect(project, source('l'), target(double, 'bottom-0'), options);
+  const first = connect(project, source('l'), target(double, 'bottom-0'), options);
+  const linked = connect(first, source('l2'), target(double, 'bottom-1'), options);
+  assert.equal(linked.circuits[0].breakerId, double.id);
   const deleted = deleteSelection(linked, { devices: [], wire: linked.wires[0].id });
+  assert.equal(deleted.wires.length, 1);
   assert.equal(deleted.circuits[0].breakerId, null);
   assert.equal(deleted.devices.find(device => device.id === double.id)?.circuitId, null);
   assert.equal(validateProject(deleted), true);
   assert.equal(circuitOverview(deleted, deleted.circuits.find(item => item.id === circuit.id)).status, 'unprotected');
+  const reconnected = connect(deleted, source('l'), target(double, 'bottom-0'), options);
+  assert.equal(reconnected.circuits[0].breakerId, double.id);
+  assert.equal(reconnected.devices.find(device => device.id === double.id)?.circuitId, circuit.id);
 });
 
 test('alterar seção no disjuntor atualiza o fio de saída do circuito', () => {
   const { project, circuit, double, source, target } = board();
-  const linked = connect(project, source('l'), target(double, 'bottom-0'), options);
+  const first = connect(project, source('l'), target(double, 'bottom-0'), options);
+  const linked = connect(first, source('l2'), target(double, 'bottom-1'), options);
   const revised = updateDevice(linked, double.id, { gauge: 6 });
   assert.equal(revised.circuits.find(item => item.id === circuit.id)?.cableGauge, 6);
   assert.equal(revised.wires[0].gauge, 6);

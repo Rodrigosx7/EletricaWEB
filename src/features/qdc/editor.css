@@ -52,7 +52,8 @@
 .ewq-bar-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
 .ewq-project-bar .ewq-button { color: #eef5f8; border-color: #ffffff3d; background: #ffffff0a; min-height: 40px; }
 .ewq-project-bar .ewq-button:hover { background: #ffffff1c; border-color: #ffffff70; }
-.ewq-project-bar .ewq-exit { flex-shrink: 0; margin-right: 4px; padding-inline: 11px; }
+.ewq-project-bar .ewq-exit { flex-shrink: 0; margin-right: 4px; padding-inline: 11px; background: #fff; border-color: #c9d6df; color: #183449; }
+.ewq-project-bar .ewq-exit:hover:not(:disabled) { background: #eaf3f8; border-color: #91afc0; color: #102c40; }
 .ewq-project-bar .ewq-primary { background: var(--ewq-accent); border-color: var(--ewq-accent); color: #263641; padding-inline: 16px; box-shadow: 0 4px 12px #07192336; }
 .ewq-project-bar .ewq-primary:hover { background: #f3ca69; border-color: #f3ca69; box-shadow: 0 6px 16px #07192342; }
 .ewq-export { position: relative; }
@@ -312,6 +313,12 @@ body.ewq-resizing-row { cursor: row-resize; }
 .ewq-warnings svg { margin-top: 2px; }
 .ewq-warnings li > div { min-width: 0; }
 .ewq-warnings button { display: block; margin-top: 3px; color: inherit; text-align: left; line-height: 1.5; }
+.ewq-warnings li.is-active { outline: 2px solid #b87813; outline-offset: -2px; }
+.ewq-warning-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
+.ewq-warning-actions button { margin: 0; min-height: 30px; padding: 5px 9px; border: 1px solid currentColor; border-radius: 5px; font-weight: 700; line-height: 1.2; }
+.ewq-warning-actions button:first-child { background: #fff; }
+.ewq-warning-actions button:last-child { border-color: #cbd9e2; color: #34556b; background: #fff; }
+.ewq-warning-actions button:hover, .ewq-warning-actions button:focus-visible { background: #e9f2f8; outline-offset: 2px; }
 .ewq-warning-level { display: block; font-size: 10px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
 .ewq-verification-header { gap: 18px; }
 .ewq-verification-summary { display: flex; flex-wrap: wrap; gap: 7px; margin-left: auto; }

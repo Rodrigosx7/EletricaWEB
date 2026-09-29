@@ -10,11 +10,37 @@ import { boardSize, deviceRect, isRailMounted, pathAvoidsDevices, pathOverlapLen
 import { bendWirePoint, flexWireSegment, reattachManualWirePath, removeWireBend, roundedWirePath, snapWirePoint } from '../src/features/qdc/wiring/geometry.ts';
 import { ferruleColor, TERMINATION_OPTIONS, WIRE_COLORS } from '../src/features/qdc/wiring/options.ts';
 import { canvasFocus } from '../src/features/qdc/canvas/focus.ts';
+import { warningLocation } from '../src/features/qdc/circuits/warningFocus.ts';
 import type { Circuit, Project } from '../src/features/qdc/types.ts';
 
 const options = { conductorType: 'phase' as const, color: '#20252b', gauge: 2.5, termination: 'tubular' as const };
 const endpoint = (componentId: string, terminalId = 'top-0') => ({ componentId, terminalId });
 const loadCircuit = (patch: Partial<Circuit> = {}): Circuit => ({ id: 'c1', number: 1, name: 'Carga de teste', phase: 'R', breakerId: null, cableGauge: null, load: 1000, loadUnit: 'W', voltage: 127, powerFactor: 1, drId: null, notes: '', color: '#20252b', ...patch });
+
+test('alertas localizam circuito, borne livre e fio sem perder seus alvos no desenho', () => {
+  let project = prepareCircuitOutputs({ ...emptyProject(), circuits: [loadCircuit()] });
+  project = addDevice(project, 'breaker-1p');
+  const breaker = project.devices.find(device => device.type === 'breaker-1p')!;
+  const output = project.devices.find(device => device.type === 'conduit-entry')!;
+  const circuitNotice = warnings(project).find(notice => notice.id === 'breaker-c1')!;
+  const circuitTarget = warningLocation(project, circuitNotice);
+  assert.equal(circuitTarget.kind, 'circuit');
+  assert.ok(circuitTarget.focus.deviceIds.has(output.id));
+  assert.ok(circuitTarget.focus.terminalIds?.has(`${output.id}:${output.terminals[0].id}`));
+
+  const terminalNotice = warnings(project).find(notice => notice.id === `terminal-${breaker.id}`)!;
+  const terminalTarget = warningLocation(project, terminalNotice);
+  assert.equal(terminalTarget.kind, 'device');
+  assert.equal(terminalTarget.focus.terminalIds?.size, breaker.terminals.length);
+
+  project = connect(project, endpoint(output.id, output.terminals[0].id), endpoint(breaker.id, 'bottom-0'), options);
+  const wire = project.wires[0];
+  const wireTarget = warningLocation(project, { id: 'test-wire', severity: 'warning', message: 'Revisar fio', wireId: wire.id });
+  assert.equal(wireTarget.kind, 'wire');
+  assert.ok(wireTarget.focus.wireIds.has(wire.id));
+  assert.ok(wireTarget.focus.terminalIds?.has(`${breaker.id}:bottom-0`));
+  assert.ok(Number.isFinite(wireTarget.point.x) && Number.isFinite(wireTarget.point.y));
+});
 
 test('fishbone keeps real phase slots, supports multipole snap, removal and storage beside DIN projects', () => {
   let fishbone = emptyProject({ boardType: 'fishbone', fishbone: createFishboneConfig(12, 'bi', 'alternating'), supply: 'bi', voltage: 220, rails: 1, modulesPerRail: 16 });
@@ -89,7 +115,37 @@ test('fishbone accepts the physical phase order on both sides while keeping circ
   assert.ok(validateProject(singlePhase));
 });
 
-test('catalog contains the complete QDC families with usable terminal identities and no invented sizing', () => {
+test('fishbone breaker bodies face their input terminals toward the spine on both sides', () => {
+  let project = emptyProject({ boardType: 'fishbone', fishbone: createFishboneConfig(12, 'bi', 'paired'), supply: 'bi', voltage: 220, rails: 1, modulesPerRail: 16 });
+  project = addDevice(project, 'breaker-2p', { rail: 0, slot: 0, fishboneSlotId: 'left-1' });
+  project = addDevice(project, 'breaker-2p', { rail: 0, slot: 0, fishboneSlotId: 'right-1' });
+  const [left, right] = project.devices.filter(device => device.fishboneSlotId);
+  for (const breaker of [left, right]) {
+    const rect = deviceRect(breaker, project);
+    assert.equal(rect.width, 120);
+    const input = terminalPoint(project, breaker.id, 'top-0')!;
+    const output = terminalPoint(project, breaker.id, 'bottom-0')!;
+    assert.equal(input.x, breaker.fishboneSlotId?.startsWith('left-') ? rect.x + rect.width : rect.x);
+    assert.equal(output.x, breaker.fishboneSlotId?.startsWith('left-') ? rect.x : rect.x + rect.width);
+    assert.equal(terminalPoint(project, breaker.id, 'top-1')!.y - input.y, 80);
+  }
+});
+
+test('fishbone circuit leads follow the phases actually fed to each breaker pole', () => {
+  let project = emptyProject({ boardType: 'fishbone', fishbone: createFishboneConfig(12, 'bi', 'alternating'), supply: 'bi', voltage: 220, rails: 1, modulesPerRail: 16 });
+  project = addDevice(project, 'breaker-2p', { rail: 0, slot: 0, fishboneSlotId: 'right-1' });
+  const breaker = project.devices.at(-1)!;
+  project = prepareCircuitOutputs({ ...project, circuits: [loadCircuit({ phase: 'R/S', voltage: 220, hasNeutral: false })] });
+  const output = project.devices.find(device => device.type === 'conduit-entry')!;
+  const [first, second] = output.terminals.filter(terminal => terminal.kind === 'L');
+  assert.match(connectionIssue(project, endpoint(output.id, first.id), endpoint(breaker.id, 'bottom-0'), 'phase') ?? '', /alimentado pela fase R/);
+  project = connect(project, endpoint(output.id, first.id), endpoint(breaker.id, 'bottom-1'), options);
+  project = connect(project, endpoint(output.id, second.id), endpoint(breaker.id, 'bottom-0'), options);
+  assert.equal(project.circuits[0].breakerId, breaker.id);
+  assert.ok(validateProject(project));
+});
+
+test('catalog contains the complete QDC families with usable terminals and only requested presets', () => {
   assert.ok(CATALOG.length >= 34);
   assert.equal(new Set(CATALOG.map(item => item.type)).size, CATALOG.length);
   for (const required of ['comb-bus', 'terminal', 'terminal-n', 'terminal-pe', 'rcbo-2p', 'motor-breaker-3p', 'phase-monitor', 'voltmeter', 'ammeter']) assert.ok(CATALOG.some(item => item.type === required), required);
@@ -98,7 +154,7 @@ test('catalog contains the complete QDC families with usable terminal identities
     if (item.type === 'comb-bus') assert.equal(device.terminals.length, 0);
     else assert.ok(device.terminals.length);
     assert.equal(new Set(device.terminals.map(term => term.id)).size, device.terminals.length);
-    assert.equal(device.amperage, null);
+    assert.equal(device.amperage, item.type === 'comb-bus' ? 63 : null);
     assert.equal(device.gauge, null);
   }
   assert.throws(() => createDevice('unknown'), /não encontrado/);
@@ -184,7 +240,30 @@ test('spare bus and conduit terminals stay quiet while a fed comb covers matchin
   const notices = warnings(project);
   assert.equal(notices.some(notice => notice.id === `terminal-${project.devices[3].id}`), false);
   assert.equal(notices.some(notice => notice.id === `terminal-${project.devices[4].id}`), false);
-  assert.match(notices.find(notice => notice.id === `terminal-${project.devices[1].id}`)?.message ?? '', /2 terminal/);
+  assert.match(notices.find(notice => notice.id === `terminal-${project.devices[1].id}`)?.message ?? '', /1 terminal/);
+});
+
+test('upper comb distributes phase to DPS and lower comb distributes PE only after a drawn feed', () => {
+  let project = emptyProject({ supply: 'tri', rails: 2, modulesPerRail: 8 });
+  for (let slot = 0; slot < 3; slot++) project = addDevice(project, 'spd', { rail: 0, slot });
+  const spds = project.devices.slice();
+  project = addDevice(project, 'comb-bus', { rail: 0, slot: 0 });
+  project = updateDevice(project, project.devices.at(-1)!.id, { modules: 3, poles: 3, combSide: 'top' });
+  project = addDevice(project, 'comb-bus', { rail: 0, slot: 0 });
+  project = updateDevice(project, project.devices.at(-1)!.id, { modules: 3, poles: 1, combSide: 'bottom' });
+  project = addDevice(project, 'power-entry');
+  project = addDevice(project, 'earth-bus', { rail: 1, slot: 0 });
+  const entry = project.devices[5], earth = project.devices[6];
+  project = connect(project, endpoint(entry.id, 'edge-0'), endpoint(spds[0].id, 'top-0'), options);
+  let notices = warnings(project);
+  assert.match(notices.find(notice => notice.id === `terminal-${spds[0].id}`)?.message ?? '', /1 terminal/);
+  assert.match(notices.find(notice => notice.id === `terminal-${spds[1].id}`)?.message ?? '', /2 terminal/);
+  project = connect(project, endpoint(spds[0].id, 'bottom-0'), endpoint(earth.id, 'side-0'), { ...options, conductorType: 'earth', color: '#27854c' });
+  notices = warnings(project);
+  assert.equal(notices.some(notice => notice.id === `terminal-${spds[0].id}`), false);
+  assert.match(notices.find(notice => notice.id === `terminal-${spds[1].id}`)?.message ?? '', /1 terminal/);
+  for (let index = 1; index < 3; index++) project = connect(project, endpoint(entry.id, `edge-${index}`), endpoint(spds[index].id, 'top-0'), options);
+  assert.equal(warnings(project).some(notice => spds.some(spd => notice.id === `terminal-${spd.id}`)), false);
 });
 
 test('comb electrical coverage does not turn a phase terminal into PE', () => {
@@ -195,6 +274,7 @@ test('comb electrical coverage does not turn a phase terminal into PE', () => {
   project = updateDevice(project, project.devices[2].id, { poles: 1, modules: 2, combSide: 'bottom' });
   project = addDevice(project, 'earth-bus', { rail: 1, slot: 0 });
   project = connect(project, endpoint(project.devices[0].id, 'bottom-0'), endpoint(project.devices[3].id, 'side-0'), { ...options, conductorType: 'earth', color: '#24a15c' });
+  assert.ok(warnings(project).some(notice => notice.id.startsWith('comb-mixed-')));
   assert.match(warnings(project).find(notice => notice.id === `terminal-${project.devices[1].id}`)?.message ?? '', /2 terminal/);
 });
 
@@ -228,7 +308,7 @@ test('two circuits can share one conduit without merging conductors or losing br
   assert.equal(project.devices[0].terminals.length, 6);
   assert.equal(new Set(project.devices[0].terminals.map(term => term.id)).size, 6);
   const tip = terminalPoint(project, conduitId, `circuit-${second.id}-l`)!;
-  assert.ok(tip.y < deviceRect(project.devices[0], project).y);
+  assert.equal(tip.y, deviceRect(project.devices[0], project).y);
   project = addDevice(project, 'breaker-1p', { rail: 0, slot: 0 });
   const breaker = project.devices.at(-1)!;
   assert.match(connectionIssue(project, endpoint(conduitId, `circuit-${first.id}-n`), endpoint(breaker.id, 'bottom-0'), 'neutral') ?? '', /não é compatível/);
@@ -259,6 +339,21 @@ test('moving a circuit into another conduit preserves its existing wire', () => 
   assert.equal(disconnected.devices.find(device => device.id === outputs[0].id)?.terminals.length, 6);
 });
 
+test('circuit wires meet the conduit mouth without an exposed terminal gap', () => {
+  const circuit = loadCircuit();
+  let project = prepareCircuitOutputs(emptyProject({ circuits: [circuit] }));
+  project = addDevice(project, 'breaker-1p', { rail: 0, slot: 0 });
+  const conduit = project.devices.find(device => device.type === 'conduit-entry')!;
+  const breaker = project.devices.at(-1)!;
+  const terminalId = `circuit-${circuit.id}-l`;
+  const rect = deviceRect(conduit, project);
+  const point = terminalPoint(project, conduit.id, terminalId)!;
+  assert.equal(point.y, rect.y);
+  project = connect(project, endpoint(conduit.id, terminalId), endpoint(breaker.id, 'bottom-0'), options);
+  assert.deepEqual(project.wires[0].path[0], point);
+  assert.ok(pathAvoidsDevices(project.wires[0].path, project.devices, project));
+});
+
 test('collision rejection preserves input and checks board bounds', () => {
   const empty = emptyProject({ rails: 1, modulesPerRail: 4 });
   const project = addDevice(empty, 'breaker-2p', { rail: 0, slot: 1 });
@@ -268,6 +363,31 @@ test('collision rejection preserves input and checks board bounds', () => {
   assert.equal(JSON.stringify(project), snapshot);
   assert.equal(firstSpace(project, 2), null);
   assert.deepEqual(firstSpace(project, 1), { rail: 0, slot: 0 });
+});
+
+test('expanding a comb explains an overlapping comb and succeeds after moving it', () => {
+  let project = emptyProject({ rails: 1, modulesPerRail: 12 });
+  project = addDevice(project, 'comb-bus', { rail: 0, slot: 2 });
+  project = addDevice(project, 'comb-bus', { rail: 0, slot: 5 });
+  const [first, second] = project.devices;
+  assert.throws(() => updateDevice(project, first.id, { modules: 6 }), /posições 3 a 8.*posição 6/);
+  project = updateDevice(project, second.id, { slot: 9 });
+  project = updateDevice(project, first.id, { modules: 6 });
+  assert.equal(project.devices[0].modules, 6);
+  assert.ok(validateProject(project));
+});
+
+test('upper and lower combs may span the same rail positions independently', () => {
+  let project = emptyProject({ rails: 1, modulesPerRail: 12 });
+  project = addDevice(project, 'comb-bus', { rail: 0, slot: 2 });
+  project = addDevice(project, 'comb-bus', { rail: 0, slot: 5 });
+  const [upper, lower] = project.devices;
+  project = updateDevice(project, upper.id, { combSide: 'top', modules: 6 });
+  assert.equal(project.devices[0].modules, 6);
+  assert.ok(validateProject(project));
+  assert.throws(() => updateDevice(project, upper.id, { combSide: 'bottom' }), /mesmo lado/);
+  assert.equal(project.devices[0].combSide, 'top');
+  assert.equal(project.devices[1].id, lower.id);
 });
 
 test('multi-device movement is atomic and allows moving through old selection positions', () => {
@@ -665,7 +785,10 @@ test('buses rotate, comb bars can use either terminal side and new overlays find
   project = addDevice(project, 'comb-bus');
   const combs = project.devices.filter(device => device.type === 'comb-bus');
   assert.equal(combs.length, 2);
+  assert.ok(combs.every(device => device.amperage === 63));
   assert.notDeepEqual([combs[0].rail, combs[0].slot], [combs[1].rail, combs[1].slot]);
+  project = updateDevice(project, combs[1].id, { amperage: 80 });
+  assert.equal(project.devices.find(device => device.id === combs[1].id)?.amperage, 80);
   assert.equal(combs[0].combSide, 'bottom');
   project = updateDevice(project, combs[0].id, { combSide: 'top' });
   const top = deviceRect(project.devices.find(device => device.id === combs[0].id)!, project);

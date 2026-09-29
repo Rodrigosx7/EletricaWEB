@@ -30,13 +30,14 @@ create index if not exists idx_estoque_mov_ordem
 alter table public.estoque_movimentacoes enable row level security;
 
 drop policy if exists "Users can manage own estoque_mov" on public.estoque_movimentacoes;
-create policy "Users can manage own estoque_mov"
-  on public.estoque_movimentacoes for all
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+drop policy if exists "Users can read own estoque_mov" on public.estoque_movimentacoes;
+create policy "Users can read own estoque_mov"
+  on public.estoque_movimentacoes for select to authenticated
+  using (auth.uid() = user_id);
 
-grant select, insert, update, delete on table public.estoque_movimentacoes to authenticated;
-grant usage, select on all sequences in schema public to authenticated;
+revoke insert, update, delete on table public.estoque_movimentacoes from public, anon, authenticated;
+grant select on table public.estoque_movimentacoes to authenticated;
+revoke usage, select on sequence public.estoque_movimentacoes_id_seq from public, anon, authenticated;
 
 -- ============================================
 -- PARTE 2: FUNÇÃO PARA ATUALIZAR ESTOQUE
@@ -76,6 +77,13 @@ begin
 
   if not found then
     raise exception 'Produto % não encontrado', p_produto_id;
+  end if;
+
+  if p_ordem_servico_id is not null and not exists (
+    select 1 from public.ordens_servico os
+    where os.id = p_ordem_servico_id and os.user_id = v_user_id
+  ) then
+    raise exception 'Ordem de serviço não encontrada para este usuário';
   end if;
 
   -- Calcula novo estoque baseado no tipo
@@ -171,8 +179,8 @@ begin
           new.id
         );
       exception when others then
-        -- Log do erro mas não bloqueia a conclusão da OS
-        raise warning 'Erro ao baixar estoque do produto %: %', v_item.produto_id, SQLERRM;
+        -- A OS e todas as baixas precisam ser confirmadas juntas.
+        raise exception 'Não foi possível concluir a OS: falha na baixa do produto %: %', v_item.produto_id, SQLERRM;
       end;
     end loop;
   end if;
@@ -208,6 +216,9 @@ select
   p.preco_venda,
   (p.estoque * p.preco_custo) as valor_estoque
 from public.produtos p;
+
+-- A view deve executar as políticas RLS de produtos como o usuário solicitante.
+alter view public.vw_estoque_atual set (security_invoker = true);
 
 grant select on public.vw_estoque_atual to authenticated;
 

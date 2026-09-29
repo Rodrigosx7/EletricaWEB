@@ -1,5 +1,5 @@
 import type { Circuit, Project, Terminal, Wire } from '../types';
-import { combCoveredTerminals } from '../electrical-components/combPhases.ts';
+import { combContacts, combMixedLanes } from '../electrical-components/combPhases.ts';
 
 type Kind = 'phase' | 'neutral' | 'earth';
 type Link = { to: string; wireId: string | null; viaDeviceId?: string };
@@ -42,12 +42,12 @@ function graphFor(project: Project, kind: Kind): Map<string, Link[]> {
   }
   // A comb has no terminals of its own. Join only terminals on the same physical lane.
   for (const comb of project.devices.filter(device => device.type === 'comb-bus')) {
+    const contacts = combContacts(comb, project.devices);
+    const mixedLanes = combMixedLanes(contacts);
     const groups = new Map<number, string[]>();
-    for (const device of project.devices) {
-      for (const terminal of combCoveredTerminals(comb, device).filter(term => kindFor(term) === kind)) {
-        const lane = (device.slot - comb.slot + terminal.index) % comb.poles;
-        groups.set(lane, [...(groups.get(lane) ?? []), key(device.id, terminal.id)]);
-      }
+    for (const { device, terminal, lane } of contacts) {
+      if (mixedLanes.has(lane) || kindFor(terminal) !== kind) continue;
+      groups.set(lane, [...(groups.get(lane) ?? []), key(device.id, terminal.id)]);
     }
     for (const group of groups.values()) for (const node of group.slice(1)) add(group[0], node, null, comb.id);
   }

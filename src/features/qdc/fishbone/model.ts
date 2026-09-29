@@ -51,7 +51,8 @@ export function fishboneSlotIssue(project: Project, device: Device, slotId: stri
 export function fishboneRect(project: Project, device: Device): { x: number; y: number; width: number; height: number } | null {
   const slot = project.fishbone?.slots.find(item => item.id === device.fishboneSlotId);
   if (!slot) return null;
-  const width = Math.max(42, device.modules * 43);
+  // A breaker mounted sideways keeps the same depth for every pole; extra poles stack along the spine.
+  const width = 120;
   return { x: slot.side === 'left' ? 300 - width : 560, y: FISHBONE_TOP + slot.position * FISHBONE_ROW, width, height: 72 + (device.poles - 1) * FISHBONE_ROW };
 }
 

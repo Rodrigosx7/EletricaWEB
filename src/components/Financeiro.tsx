@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactElement } from "react";
 import type { User } from "@supabase/supabase-js";
 import { Search, Plus, ArrowUpRight, ArrowDownRight, Trash2, Pencil, FileDown, Wallet } from "lucide-react";
 import { supabase } from "../supabase";
@@ -11,7 +11,7 @@ import {
 import ConfirmDialog from "./ConfirmDialog";
 import Modal from "./ui/Modal";
 import "./analysis-pages.css";
-import { useToast } from "./ui/toast";
+import { useToast } from "./ui/toast-context";
 import { usePaginacao } from "../hooks/usePaginacao";
 import ControlesPaginacao from "./ui/ControlesPaginacao";
 
@@ -89,38 +89,12 @@ export default function Financeiro(): ReactElement {
   const [observacoes, setObservacoes] = useState("");
 
   const { mostrarToast } = useToast();
+  const [revisao, setRevisao] = useState(0);
+  const { offset, tamanho, setTotal } = paginacao;
 
-  useEffect(() => {
-    async function carregar() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      setUsuario(user);
-      if (user) {
-        await carregarMovimentos(user.id);
-      } else {
-        setCarregando(false);
-      }
-    }
-    carregar();
-
-    // Auto-refresh quando volta para a aba
-    function onFocus() {
-      carregar();
-    }
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, []);
-
-  useEffect(() => {
-    if (usuario) carregarMovimentos(usuario.id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [usuario, paginacao.pagina, paginacao.tamanho]);
-
-  async function carregarMovimentos(userId: string) {
-    setErroCarregamento(false);
-    const de = paginacao.offset;
-    const ate = de + paginacao.tamanho - 1;
+  const carregarMovimentos = useCallback(async (userId: string) => {
+    const de = offset;
+    const ate = de + tamanho - 1;
     const { data, error, count } = await supabase
       .from("movimentacoes")
       .select("*", { count: "exact" })
@@ -138,9 +112,35 @@ export default function Financeiro(): ReactElement {
       return;
     }
 
+    setErroCarregamento(false);
     setMovimentos(data || []);
-    paginacao.setTotal(count ?? 0);
-  }
+    setTotal(count ?? 0);
+  }, [offset, tamanho, setTotal, mostrarToast]);
+
+  useEffect(() => {
+    let ativo = true;
+    void supabase.auth.getUser().then(({ data }) => {
+      if (!ativo) return;
+      setUsuario(data.user);
+      if (!data.user) setCarregando(false);
+    });
+    const onFocus = () => {
+      void supabase.auth.getUser().then(({ data }) => {
+        if (!ativo) return;
+        setUsuario((atual) => atual?.id === data.user?.id ? atual : data.user);
+        setRevisao((atual) => atual + 1);
+      });
+    };
+    window.addEventListener("focus", onFocus);
+    return () => { ativo = false; window.removeEventListener("focus", onFocus); };
+  }, []);
+
+  useEffect(() => {
+    if (!usuario) return;
+    let cancelado = false;
+    queueMicrotask(() => { if (!cancelado) void carregarMovimentos(usuario.id); });
+    return () => { cancelado = true; };
+  }, [usuario, carregarMovimentos, revisao]);
 
   function limparFormulario() {
     setMovEditando(null);
@@ -170,16 +170,10 @@ export default function Financeiro(): ReactElement {
     setModalAberto(true);
   }
 
-  // Atualiza categoria quando muda o tipo (no modo novo)
-  useEffect(() => {
-    if (!movEditando) {
-      if (tipo === "receita") {
-        setCategoria(CATEGORIAS_RECEITA[0]);
-      } else {
-        setCategoria(CATEGORIAS_DESPESA[0]);
-      }
-    }
-  }, [tipo, movEditando]);
+  function escolherTipo(proximoTipo: TipoMovimento) {
+    setTipo(proximoTipo);
+    if (!movEditando) setCategoria(proximoTipo === "receita" ? CATEGORIAS_RECEITA[0] : CATEGORIAS_DESPESA[0]);
+  }
 
   async function salvar(e: FormEvent) {
     e.preventDefault();
@@ -538,10 +532,10 @@ export default function Financeiro(): ReactElement {
             <section className="form-section">
               <h3>01 / Identificação</h3><p>O que esta movimentação representa?</p>
               <div className="filter-tabs analysis-movement-type" aria-label="Tipo de movimentação">
-                <button type="button" aria-pressed={tipo === "receita"} onClick={() => setTipo("receita")}>
+                <button type="button" aria-pressed={tipo === "receita"} onClick={() => escolherTipo("receita")}>
                   <ArrowUpRight size={17} aria-hidden="true" /> Receita
                 </button>
-                <button type="button" aria-pressed={tipo === "despesa"} onClick={() => setTipo("despesa")}>
+                <button type="button" aria-pressed={tipo === "despesa"} onClick={() => escolherTipo("despesa")}>
                   <ArrowDownRight size={17} aria-hidden="true" /> Despesa
                 </button>
               </div>

@@ -1,7 +1,5 @@
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useState,
@@ -10,40 +8,7 @@ import {
 } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "../supabase";
-
-export type Empresa = {
-  id: string;
-  user_id: string;
-  nome: string;
-  slogan: string | null;
-  logo_url: string | null;
-  cor_primaria: string;
-  cor_secundaria: string;
-  email_contato: string | null;
-  telefone_contato: string | null;
-  cnpj: string | null;
-  endereco: string | null;
-};
-
-type EmpresaContextValue = {
-  empresa: Empresa | null;
-  carregando: boolean;
-  atualizar: (patch: Partial<Empresa>) => Promise<void>;
-  uploadLogo: (file: File) => Promise<string>;
-  removerLogo: () => Promise<void>;
-};
-
-const EmpresaContext = createContext<EmpresaContextValue | null>(null);
-
-export function useEmpresa(): EmpresaContextValue {
-  const ctx = useContext(EmpresaContext);
-  if (!ctx) {
-    throw new Error(
-      "useEmpresa precisa estar dentro de <EmpresaProvider>"
-    );
-  }
-  return ctx;
-}
+import { EmpresaContext, type Empresa } from "./empresa-context";
 
 type EmpresaProviderProps = {
   usuario: User | null;
@@ -119,10 +84,7 @@ export function EmpresaProvider({
 
   // Carrega empresa do usuário logado
   useEffect(() => {
-    if (!usuario) {
-      setEmpresa(null);
-      return;
-    }
+    if (!usuario) return;
 
     let cancelado = false;
     async function carregar() {
@@ -253,8 +215,9 @@ export function EmpresaProvider({
       }
 
       const extensao = file.name.split(".").pop()?.toLowerCase() || "png";
-      if (!["png", "jpg", "jpeg", "svg", "webp"].includes(extensao)) {
-        throw new Error("Formato inválido. Use PNG, JPG, SVG ou WEBP.");
+      if (!["png", "jpg", "jpeg", "webp"].includes(extensao) ||
+          !["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+        throw new Error("Formato inválido. Use PNG, JPG ou WEBP.");
       }
 
       if (file.size > 5 * 1024 * 1024) {
@@ -295,13 +258,13 @@ export function EmpresaProvider({
 
   const value = useMemo(
     () => ({
-      empresa,
-      carregando,
+      empresa: usuario && empresa?.user_id === usuario.id ? empresa : null,
+      carregando: usuario ? carregando : false,
       atualizar,
       uploadLogo,
       removerLogo,
     }),
-    [empresa, carregando, atualizar, uploadLogo, removerLogo]
+    [usuario, empresa, carregando, atualizar, uploadLogo, removerLogo]
   );
 
   return (

@@ -1,6 +1,5 @@
 import { memo } from 'react';
-import type { Device, DeviceVisualModel, DpsVisual, ViewMode } from '../types';
-import ServiceEntranceArtwork from './ServiceEntranceArtwork';
+import type { Device, DeviceVisualModel, DpsVisual, Terminal, ViewMode } from '../types';
 import GenericMCB from './visuals/GenericMCB';
 import GenericSPD from './visuals/GenericSPD';
 import GenericRCD from './visuals/GenericRCD';
@@ -8,11 +7,11 @@ import { combPhaseAt } from './combPhases';
 import { breakerTechnicalModel } from './technicalCatalog';
 import ConduitEntry, { type ConduitConductor } from './ConduitEntry';
 
-type Props = { device: Device; width: number; height: number; mode: ViewMode; visualModel?: DeviceVisualModel; dpsVisual?: DpsVisual; conduitConductors?: ConduitConductor[]; activeConduitTerminalId?: string };
+type Props = { device: Device; width: number; height: number; mode: ViewMode; visualModel?: DeviceVisualModel; dpsVisual?: DpsVisual; conduitConductors?: ConduitConductor[]; combToothKinds?: (Terminal['kind'] | 'mixed' | null)[]; activeConduitTerminalId?: string };
 const INK = '#273238';
 
 /** Manufacturer-neutral DIN device artwork. Terminals are drawn by the canvas. */
-function DeviceDrawing({ device: d, width: w, height: h, mode, visualModel: projectVisualModel, dpsVisual = 'red', conduitConductors = [], activeConduitTerminalId }: Props) {
+function DeviceDrawing({ device: d, width: w, height: h, mode, visualModel: projectVisualModel, dpsVisual = 'red', conduitConductors = [], combToothKinds, activeConduitTerminalId }: Props) {
   const rcd = d.type.startsWith('rcd') || d.type.startsWith('rcbo');
   const breaker = d.type.includes('breaker');
   const switching = breaker || rcd || d.type.startsWith('switch-disconnector');
@@ -42,7 +41,7 @@ function DeviceDrawing({ device: d, width: w, height: h, mode, visualModel: proj
     return <g>
       <rect x="1" y={barY} width={w - 2} height="7" rx="2" fill="#f4f5f1" stroke="#aab5b4" />
       <path d={`M3 ${barY + 2} H${w - 3}`} stroke="#fff" strokeWidth="1.4" />
-      {Array.from({ length: d.modules }, (_, index) => { const x = (index + .5) * w / d.modules, tip = bottom ? Math.max(1, barY - 8) : Math.min(h - 1, barY + 15), phase = combPhaseAt(d, index), phaseColor = phase === 'R' ? '#b93a3e' : phase === 'S' ? '#9a7626' : phase === 'T' ? '#386a9c' : '#3485ab'; return <g key={index}><path d={bottom ? `M${x} ${tip} V${barY}` : `M${x} ${barY + 7} V${tip}`} stroke="#a8733a" strokeWidth="3.3" strokeLinecap="square" /><path d={bottom ? `M${x - 1} ${tip + 1} V${barY - 1}` : `M${x - 1} ${barY + 8} V${tip - 1}`} stroke="#efc487" strokeWidth=".8" /><circle cx={x} cy={barY + 3.5} r="2.6" fill={phaseColor} /><text x={x} y={barY + 4.8} textAnchor="middle" fill="#fff" fontSize="3.8" fontWeight="900">{phase}</text></g>; })}
+      {Array.from({ length: d.modules }, (_, index) => { const x = (index + .5) * w / d.modules, tip = bottom ? Math.max(1, barY - 8) : Math.min(h - 1, barY + 15), phase = combToothKinds?.[index] === 'PE' ? 'PE' : combToothKinds?.[index] === 'N' ? 'N' : combToothKinds?.[index] === 'mixed' ? '!' : combPhaseAt(d, index), phaseColor = phase === 'PE' ? '#27854c' : phase === 'R' || phase === '!' ? '#b93a3e' : phase === 'S' ? '#9a7626' : phase === 'T' ? '#386a9c' : '#3485ab'; return <g key={index}><path d={bottom ? `M${x} ${tip} V${barY}` : `M${x} ${barY + 7} V${tip}`} stroke="#a8733a" strokeWidth="3.3" strokeLinecap="square" /><path d={bottom ? `M${x - 1} ${tip + 1} V${barY - 1}` : `M${x - 1} ${barY + 8} V${tip - 1}`} stroke="#efc487" strokeWidth=".8" /><circle cx={x} cy={barY + 3.5} r="2.6" fill={phaseColor} /><text x={x} y={barY + 4.8} textAnchor="middle" fill="#fff" fontSize="3.8" fontWeight="900">{phase}</text></g>; })}
     </g>;
   }
   if (d.type === 'neutral-bus' || d.type === 'earth-bus') {
@@ -56,8 +55,7 @@ function DeviceDrawing({ device: d, width: w, height: h, mode, visualModel: proj
         : <circle key={index} cx={w / 2} cy={10 + (index + .5) * (h - 20) / count} r="2.3" fill="#efe2b8" stroke="#675c42" />)}
     </g>;
   }
-  if (d.type === 'power-entry') return <ServiceEntranceArtwork width={w} height={h} phases={Math.max(1, d.poles - 2)} reserveTerminalArea />;
-  if (d.type === 'conduit-entry') return <ConduitEntry device={d} width={w} height={h} mode={mode} conductors={conduitConductors} activeTerminalId={activeConduitTerminalId} />;
+  if (d.type === 'power-entry' || d.type === 'conduit-entry') return <ConduitEntry device={d} width={w} height={h} mode={mode} conductors={conduitConductors} activeTerminalId={activeConduitTerminalId} />;
   if (mode === 'schematic') return <g fill="none" stroke={INK} strokeWidth="1.6">
     <rect x="2" y="7" width={w - 4} height={h - 14} rx="2" fill="#fff" stroke="#a4b1b9" />
     <text x={w / 2} y="31" textAnchor="middle" fill={INK} stroke="none" fontSize="10" fontWeight="700">{caption}</text>

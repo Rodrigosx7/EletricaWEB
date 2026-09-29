@@ -42,11 +42,11 @@ export function SignInSplit({ aoIrParaRecuperacao }: SignInSplitProps): ReactEle
         if (!nome.trim()) { alert("Digite seu nome."); setIsSubmitting(false); return; }
         if (senha.length < 6) { alert("A senha deve ter pelo menos 6 caracteres."); setIsSubmitting(false); return; }
         const { error } = await supabase.auth.signUp({ email: email.trim(), password: senha, options: { data: { nome: nome.trim() } } });
-        if (error) { alert(error.message); setIsSubmitting(false); return; }
+        if (error) { alert(error.status === 429 ? "Muitas tentativas. Aguarde um pouco e tente novamente." : error.message); setIsSubmitting(false); return; }
         alert("Conta criada com sucesso! Verifique seu e-mail para confirmar a conta."); setIsSignUp(false);
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password: senha });
-        if (error) { alert("E-mail ou senha incorretos."); setIsSubmitting(false); return; }
+        if (error) { alert(error.status === 429 ? "Muitas tentativas. Aguarde um pouco e tente novamente." : "E-mail ou senha incorretos."); setIsSubmitting(false); return; }
       }
     } catch (err) {
       console.error(err); alert("Erro inesperado. Tente novamente.");

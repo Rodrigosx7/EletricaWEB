@@ -52,7 +52,7 @@ export function usePaginacao<TFiltro = Record<string, unknown>>(
       const max = Math.max(0, Math.ceil(t / tamanhoInicial) - 1);
       return Math.min(atual, max);
     });
-  }, []);
+  }, [tamanhoInicial]);
 
   const totalPaginas = Math.max(1, Math.ceil(total / tamanho));
   const offset = pagina * tamanho;

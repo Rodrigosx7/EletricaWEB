@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Boxes, Cable, ChevronDown, ChevronLeft, CircuitBoard, Clock3, Plus, Search, ShieldCheck, SlidersHorizontal, Star, X, Zap } from 'lucide-react';
-import { CATALOG, INSERTABLE_CATALOG } from '../electrical-components/catalog';
-import ServiceEntranceArtwork from '../electrical-components/ServiceEntranceArtwork';
+import { buildTerminals, CATALOG, createDevice, INSERTABLE_CATALOG } from '../electrical-components/catalog';
+import ConduitEntry from '../electrical-components/ConduitEntry';
 import GenericMCB from '../electrical-components/visuals/GenericMCB';
 import GenericSPD from '../electrical-components/visuals/GenericSPD';
 import GenericRCD from '../electrical-components/visuals/GenericRCD';
@@ -49,7 +49,12 @@ function CatalogThumbnail({ item, supply }: { item: CatalogItem; supply: Supply 
   }
   if (item.type === 'spd') return <GenericSPD device={SPD_PREVIEW} width={34} height={108} finish="red" />;
   if (item.type === 'rcd-2p' || item.type === 'rcd-4p') return <GenericRCD device={{ amperage: 63, sensitivity: 30, voltage: item.poles === 2 ? 220 : 380, tag: '' }} poles={item.poles as 2 | 4} width={item.poles === 2 ? 72 : 100} height={108} finish="classic" />;
-  if (item.type === 'power-entry') return <svg viewBox="0 0 64 64" className="ewq-catalog-thumb" aria-hidden="true" focusable="false"><ServiceEntranceArtwork width={64} height={64} phases={phaseCount(supply)} /></svg>;
+  if (item.type === 'power-entry') {
+    const count = phaseCount(supply) + 2;
+    const device = { ...createDevice('power-entry'), poles: count, terminals: buildTerminals('power-entry', count) };
+    const conductors = device.terminals.map(terminal => ({ id: terminal.id, color: terminal.kind === 'N' ? '#1686cf' : terminal.kind === 'PE' ? '#27854c' : terminal.label === 'S' ? '#bf393a' : terminal.label === 'T' ? '#7454a5' : '#20252b', kind: terminal.kind, circuit: '' }));
+    return <svg viewBox="0 0 64 64" className="ewq-catalog-thumb" aria-hidden="true" focusable="false"><ConduitEntry device={device} width={64} height={64} mode="realistic" conductors={conductors} /></svg>;
+  }
   const key = normalize(`${item.type} ${item.name}`);
   const isSurge = key.includes('dps');
   const isBar = /barramento|borne|busbar|terminal/.test(key);

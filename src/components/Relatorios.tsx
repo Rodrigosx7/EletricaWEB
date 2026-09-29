@@ -147,21 +147,22 @@ export default function Relatorios(): ReactElement {
     carregar();
   }, [tentativa]);
 
-  // Quando muda o período, ajusta datas
-  useEffect(() => {
+  // A seleção altera as datas no mesmo evento, sem renderização intermediária.
+  function selecionarPeriodo(proximoPeriodo: Periodo) {
+    setPeriodo(proximoPeriodo);
     const hoje = new Date();
     let inicio: Date;
-    if (periodo === "mes_atual") {
+    if (proximoPeriodo === "mes_atual") {
       inicio = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-    } else if (periodo === "ultimos_3") {
+    } else if (proximoPeriodo === "ultimos_3") {
       inicio = new Date(hoje);
       inicio.setMonth(hoje.getMonth() - 2);
       inicio.setDate(1);
-    } else if (periodo === "ultimos_6") {
+    } else if (proximoPeriodo === "ultimos_6") {
       inicio = new Date(hoje);
       inicio.setMonth(hoje.getMonth() - 5);
       inicio.setDate(1);
-    } else if (periodo === "ultimos_12") {
+    } else if (proximoPeriodo === "ultimos_12") {
       inicio = new Date(hoje);
       inicio.setMonth(hoje.getMonth() - 11);
       inicio.setDate(1);
@@ -170,7 +171,7 @@ export default function Relatorios(): ReactElement {
     }
     setDataInicio(inicioMes(inicio));
     setDataFim(dataAtual());
-  }, [periodo]);
+  }
 
   // Helpers
   const clientesMap = useMemo(() => {
@@ -347,7 +348,7 @@ export default function Relatorios(): ReactElement {
       <section className="analysis-report-period" aria-label="Período da análise">
         <div>
           <label htmlFor="rel_periodo" className="field-label">Período da análise</label>
-          <select id="rel_periodo" value={periodo} onChange={(e) => setPeriodo(e.target.value as Periodo)} className="input-base">
+          <select id="rel_periodo" value={periodo} onChange={(e) => selecionarPeriodo(e.target.value as Periodo)} className="input-base">
             <option value="mes_atual">Mês atual</option>
             <option value="ultimos_3">Últimos 3 meses</option>
             <option value="ultimos_6">Últimos 6 meses</option>

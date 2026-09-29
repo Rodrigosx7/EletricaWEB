@@ -1,6 +1,6 @@
 import type { Project, Selection } from '../types';
 
-export type CanvasFocus = { wireIds: Set<string>; deviceIds: Set<string> };
+export type CanvasFocus = { wireIds: Set<string>; deviceIds: Set<string>; terminalIds?: Set<string> };
 
 function circuitNumber(label: string): number | null {
   const match = label.match(/^C(\d+)\b/i);

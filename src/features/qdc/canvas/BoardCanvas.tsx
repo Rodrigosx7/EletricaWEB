@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent, SyntheticEvent as ReactSyntheticEvent } from 'react';
 import { Crosshair, Hand, MousePointer2, Move, X, ZoomIn, ZoomOut } from 'lucide-react';
 import DeviceDrawing from '../electrical-components/DeviceDrawing';
+import { combContacts } from '../electrical-components/combPhases';
 import FishboneArtwork from '../fishbone/FishboneArtwork';
 import { fishboneSlotAt, fishboneSlotIssue, isFishboneBreaker } from '../fishbone/model';
 import { CATALOG } from '../electrical-components/catalog';
@@ -15,7 +16,7 @@ import type { Device, Point, Project, Selection, Tool, ViewMode, Viewport, Wire,
 import './canvas.css';
 
 export type BoardCanvasProps = {
-  project: Project; selection: Selection; layers: EditorLayers; tool: Tool; mode: ViewMode; viewport: Viewport; highlightedConnections?: CanvasFocus | null;
+  project: Project; selection: Selection; layers: EditorLayers; tool: Tool; mode: ViewMode; viewport: Viewport; highlightedConnections?: CanvasFocus | null; alertFocus?: CanvasFocus | null;
   movePreview?: { candidate: Project; deviceIds: string[]; wireIds: string[] } | null;
   onViewport(v: Viewport): void; onSelect(s: Selection): void;
   onMove(ids: string[], railDelta: number, slotDelta: number, preview?: boolean): void;
@@ -47,7 +48,7 @@ function validPositions(project: Project, devices: Device[], rail: number, slot:
     if (deviceMount(device) === 'edge') return false;
     const nextRail = device.rail + rail, nextSlot = device.slot + slot;
     const mount = deviceMount(device);
-    return nextRail >= 0 && nextRail < project.rails && nextSlot >= 0 && nextSlot + device.modules <= project.modulesPerRail && !project.devices.some(other => !moving.has(other.id) && !other.fishboneSlotId && deviceMount(other) === mount && other.rail === nextRail && nextSlot < other.slot + other.modules && nextSlot + device.modules > other.slot);
+    return nextRail >= 0 && nextRail < project.rails && nextSlot >= 0 && nextSlot + device.modules <= project.modulesPerRail && !project.devices.some(other => !moving.has(other.id) && !other.fishboneSlotId && deviceMount(other) === mount && other.rail === nextRail && (mount !== 'overlay' || (other.combSide ?? 'bottom') === (device.combSide ?? 'bottom')) && nextSlot < other.slot + other.modules && nextSlot + device.modules > other.slot);
   });
 }
 
@@ -123,7 +124,7 @@ const Cabinet = memo(function Cabinet({ project, mode }: { project: Project; mod
   </g>;
 });
 
-const WireDrawing = memo(function WireDrawing({ wire, selected, dimmed, editable, mode, onSelect }: { wire: Wire; selected: boolean; dimmed: boolean; editable: boolean; mode: ViewMode; onSelect(): void }) {
+const WireDrawing = memo(function WireDrawing({ wire, selected, alerted, dimmed, editable, mode, onSelect }: { wire: Wire; selected: boolean; alerted: boolean; dimmed: boolean; editable: boolean; mode: ViewMode; onSelect(): void }) {
   const d = mode === 'schematic' ? pathData(wire.path) : roundedWirePath(wire.path), earth = wire.conductorType === 'earth';
   const greenYellow = earth && isGreenYellowWire(wire.color);
   const light = ['#f4f4ef', '#ffffff'].includes(wire.color.toLowerCase());
@@ -132,9 +133,10 @@ const WireDrawing = memo(function WireDrawing({ wire, selected, dimmed, editable
   const longest = segments.filter(segment => segment.start.y === segment.end.y).sort((a, b) => b.length - a.length)[0];
   const labelPoint = longest ? { x: (longest.start.x + longest.end.x) / 2, y: longest.start.y } : wire.path[Math.floor(wire.path.length / 2)];
   const opacity = mode === 'labels' ? dimmed ? .12 : .45 : dimmed ? .32 : 1;
-  return <g className={`qdc-wire${dimmed ? ' is-dimmed' : ''}`} opacity={opacity} data-wire={wire.id} pointerEvents={editable ? undefined : 'none'} role="button" tabIndex={editable ? 0 : -1} aria-disabled={!editable} aria-label={`Selecionar fio ${wire.label || wire.conductorType}, ${wire.gauge ?? 'sem'} milímetros quadrados`} aria-pressed={selected} onPointerDown={event => { if (!editable) return; event.stopPropagation(); if (event.button === 0) onSelect(); }} onKeyDown={event => { if (editable && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); event.stopPropagation(); onSelect(); } }}>
+  return <g className={`qdc-wire${dimmed ? ' is-dimmed' : ''}${alerted ? ' is-alerted' : ''}`} opacity={opacity} data-wire={wire.id} pointerEvents={editable ? undefined : 'none'} role="button" tabIndex={editable ? 0 : -1} aria-disabled={!editable} aria-label={`Selecionar fio ${wire.label || wire.conductorType}, ${wire.gauge ?? 'sem'} milímetros quadrados`} aria-pressed={selected} onPointerDown={event => { if (!editable) return; event.stopPropagation(); if (event.button === 0) onSelect(); }} onKeyDown={event => { if (editable && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); event.stopPropagation(); onSelect(); } }}>
     <title>{wire.label || 'Condutor'} · {wire.gauge === null ? 'Bitola não informada' : `${wire.gauge} mm²`}</title>
     <path d={d} fill="none" stroke="transparent" strokeWidth="18" strokeLinejoin="round" />
+    {alerted && <path data-qdc-editor-only="true" className="qdc-wire-alert-outline" d={d} fill="none" strokeWidth={strokeWidth + 11} strokeLinejoin="round" strokeLinecap="round" pointerEvents="none" />}
     {selected && <path data-qdc-editor-only="true" d={d} fill="none" stroke="#f3c519" strokeWidth={strokeWidth + 7} strokeLinejoin="round" strokeLinecap="round" opacity=".9" />}
     {mode === 'realistic' && <path d={d} transform="translate(0 2.2)" fill="none" stroke="#14262d" strokeOpacity=".25" strokeWidth={strokeWidth + 3.2} strokeLinejoin="round" strokeLinecap="round" pointerEvents="none" />}
     {mode === 'realistic' && <path d={d} fill="none" stroke="#18282f" strokeOpacity=".36" strokeWidth={strokeWidth + 1.6} strokeLinejoin="round" strokeLinecap="round" pointerEvents="none" />}
@@ -173,7 +175,7 @@ function WireEndpoint({ point, toward, wire, count, termination }: { point: Poin
   </g>;
 }
 
-function BoardCanvas({ project, selection, layers, tool, mode, viewport, highlightedConnections, movePreview, onViewport, onSelect, onMove, onMoveFishbone, onMovePlane, onAdd, onTerminal, onConnect, onWirePath, wireStart, wireOptions, onContextMenu, onMessage }: BoardCanvasProps) {
+function BoardCanvas({ project, selection, layers, tool, mode, viewport, highlightedConnections, alertFocus, movePreview, onViewport, onSelect, onMove, onMoveFishbone, onMovePlane, onAdd, onTerminal, onConnect, onWirePath, wireStart, wireOptions, onContextMenu, onMessage }: BoardCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null), cameraRef = useRef<SVGGElement>(null);
   const gesture = useRef<Gesture | null>(null), spaceDown = useRef(false);
   const wirePointGesture = useRef<WirePointGesture | null>(null);
@@ -554,9 +556,9 @@ function BoardCanvas({ project, selection, layers, tool, mode, viewport, highlig
   const activeDevices = new Set(selection.devices);
   const visibleWires = useMemo(() => project.wires.map(wire => wirePreview?.wireId === wire.id ? { ...wire, path: wirePreview.path } : wire), [project.wires, wirePreview]);
   const selectedWire = visibleWires.find(wire => wire.id === selection.wire);
-  const focus = useMemo(() => highlightedConnections ?? canvasFocus(project, selection), [highlightedConnections, project, selection]);
+  const focus = useMemo(() => alertFocus ?? highlightedConnections ?? canvasFocus(project, selection), [alertFocus, highlightedConnections, project, selection]);
   const endpointMarkers = useMemo(() => {
-    const markers = new Map<string, { point: Point; toward: Point; wire: Wire; wireIds: string[]; count: number; termination: WireTermination }>();
+    const markers = new Map<string, { componentId: string; point: Point; toward: Point; wire: Wire; wireIds: string[]; count: number; termination: WireTermination }>();
     for (const wire of project.wires) {
     const endpoints = [
       { componentId: wire.sourceComponent, terminalId: wire.sourceTerminal, termination: wire.sourceTermination ?? 'tubular' as const, toward: wire.path[1] },
@@ -567,11 +569,12 @@ function BoardCanvas({ project, selection, layers, tool, mode, viewport, highlig
       if (!point) continue;
       const current = markers.get(key);
       if (current) { current.count++; current.wireIds.push(wire.id); }
-      else markers.set(key, { point, toward: toward ?? point, wire, wireIds: [wire.id], count: 1, termination });
+      else markers.set(key, { componentId, point, toward: toward ?? point, wire, wireIds: [wire.id], count: 1, termination });
     }
     }
     return markers;
   }, [project]);
+  const conduitIds = new Set(project.devices.filter(device => device.type === 'conduit-entry' || device.type === 'power-entry').map(device => device.id));
   const sourceEndpoint = leadTip ? leadSource : wireStart;
   const sourceTerminal = sourceEndpoint && project.devices.find(device => device.id === sourceEndpoint.componentId)?.terminals.find(terminal => terminal.id === sourceEndpoint.terminalId);
   const sourceConductor = sourceTerminal?.kind === 'N' ? 'neutral' : sourceTerminal?.kind === 'PE' ? 'earth' : sourceTerminal?.kind === 'L' ? 'phase' : wireOptions.conductorType;
@@ -596,25 +599,37 @@ function BoardCanvas({ project, selection, layers, tool, mode, viewport, highlig
             const occupied = project.devices.some(device => isRailMounted(device) && !device.fishboneSlotId && device.rail === rail && slot >= device.slot && slot < device.slot + device.modules);
             return !occupied && canEditComponents && <rect key={`${rail}-${slot}`} data-qdc-editor-only="true" className="qdc-empty-slot" x={x + 3} y={y + 5} width={MODULE - 6} height={DEVICE_HEIGHT - 10} rx="3" fill="transparent" stroke="transparent" strokeDasharray="3 3" role="button" aria-label={`Espaço livre, trilho ${rail + 1}, módulo ${slot + 1}${selection.devices.length ? '. Mover seleção para este espaço.' : ''}`} tabIndex={selection.devices.length && tool === 'select' ? 0 : -1} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); clickDestination({ x: x + 3, y: y + DEVICE_HEIGHT / 2 }); } }} />;
           }))}
-          <g data-qdc-layer="wires" style={{ display: layers.wires.visible ? undefined : 'none' }}>{visibleWires.filter(wire => wire.id !== selection.wire).sort((a, b) => Number(focus?.wireIds.has(a.id)) - Number(focus?.wireIds.has(b.id))).concat(visibleWires.filter(wire => wire.id === selection.wire)).map(wire => <WireDrawing key={wire.id} wire={wire} selected={selection.wire === wire.id} dimmed={Boolean(movePreview?.wireIds.includes(wire.id) || focus && !focus.wireIds.has(wire.id))} editable={canEditWires} mode={mode} onSelect={() => onSelect({ devices: [], wire: wire.id })} />)}</g>
+          <g data-qdc-layer="wires" style={{ display: layers.wires.visible ? undefined : 'none' }}>{visibleWires.filter(wire => wire.id !== selection.wire).sort((a, b) => Number(focus?.wireIds.has(a.id)) - Number(focus?.wireIds.has(b.id))).concat(visibleWires.filter(wire => wire.id === selection.wire)).map(wire => <WireDrawing key={wire.id} wire={wire} selected={selection.wire === wire.id} alerted={Boolean(alertFocus?.wireIds.has(wire.id))} dimmed={Boolean(movePreview?.wireIds.includes(wire.id) || focus && !focus.wireIds.has(wire.id))} editable={canEditWires} mode={mode} onSelect={() => onSelect({ devices: [], wire: wire.id })} />)}</g>
           <g data-qdc-layer="components" style={{ display: layers.components.visible ? undefined : 'none' }}>{[...project.devices].sort((a, b) => {
             const layer = (device: Device) => deviceMount(device) === 'edge' ? 0 : deviceMount(device) === 'rail' ? 1 : 2;
             return layer(a) - layer(b) || Number(activeDevices.has(a.id)) - Number(activeDevices.has(b.id));
           }).map(device => {
             const rect = deviceRect(device, project), selected = activeDevices.has(device.id), circuit = project.circuits.find(item => item.id === device.circuitId);
-            const conduitConductors = device.type === 'conduit-entry' ? device.terminals.map(terminal => {
+            const conduitConductors = device.type === 'conduit-entry' || device.type === 'power-entry' ? device.terminals.map(terminal => {
               const owner = circuitForOutputTerminal(project, terminal.id);
-              return { id: terminal.id, color: owner ? circuitWireColor(owner, terminal) : terminal.kind === 'N' ? '#1686cf' : terminal.kind === 'PE' ? '#27854c' : '#20252b', kind: terminal.kind, circuit: owner ? owner.name.trim() || `C${owner.number}` : '' };
+              const supplyColor = terminal.label === 'S' ? '#bf393a' : terminal.label === 'T' ? '#7454a5' : '#20252b';
+              const connectedWire = project.wires.find(wire => wire.sourceComponent === device.id && wire.sourceTerminal === terminal.id || wire.targetComponent === device.id && wire.targetTerminal === terminal.id);
+              return { id: terminal.id, color: connectedWire?.color ?? (owner ? circuitWireColor(owner, terminal) : terminal.kind === 'N' ? '#1686cf' : terminal.kind === 'PE' ? '#27854c' : supplyColor), kind: terminal.kind, circuit: owner ? owner.name.trim() || `C${owner.number}` : '' };
             }) : [];
+            const combTeeth = device.type === 'comb-bus' ? combContacts(device, project.devices) : [];
+            const combToothKinds = device.type === 'comb-bus' ? Array.from({ length: device.modules }, (_, tooth) => {
+              const kinds = new Set(combTeeth.filter(contact => contact.tooth === tooth).map(contact => contact.terminal.kind));
+              return kinds.size > 1 ? 'mixed' as const : kinds.values().next().value ?? null;
+            }) : undefined;
             const identification = circuit?.name || device.label;
             const identificationLength = Math.max(5, Math.floor((rect.width - 14) / 5.3));
             const identificationLines = [identification.slice(0, identificationLength), identification.slice(identificationLength, identificationLength * 2)].filter(Boolean);
             const fishboneSlot = project.fishbone?.slots.find(slot => slot.id === device.fishboneSlotId);
+            const fishboneArtwork = fishboneSlot ? {
+              width: rect.height,
+              height: rect.width,
+              transform: fishboneSlot.side === 'left' ? `translate(${rect.width} 0) rotate(90)` : `translate(0 ${rect.height}) rotate(-90)`,
+            } : null;
             const positionLabel = fishboneSlot ? `espinha, lado ${fishboneSlot.side === 'left' ? 'esquerdo' : 'direito'}, posição ${fishboneSlot.position + 1}, fase ${fishboneSlot.phase}` : deviceMount(device) === 'edge' ? device.canvasPosition ? 'posicionamento livre no quadro' : `borda ${EDGE_LABELS[device.edgeSide ?? 'top']}` : `trilho ${device.rail + 1}, posição ${device.slot + 1}`;
             const dimmed = Boolean(focus && !focus.deviceIds.has(device.id));
             return <g key={device.id} data-device={device.id} className={`qdc-device${selected ? ' is-selected' : ''}${dimmed ? ' is-dimmed' : ''}`} transform={`translate(${rect.x} ${rect.y})`} pointerEvents={!canEditComponents && !(device.type === 'conduit-entry' && canEditWires) && !(tool === 'wire' && canEditWires) || tool === 'wire' && deviceMount(device) === 'overlay' ? 'none' : undefined} role="button" tabIndex={!canEditComponents || tool === 'wire' && deviceMount(device) === 'overlay' ? -1 : 0} aria-disabled={!canEditComponents} aria-label={`${device.label}, ${device.poles} ${device.poles === 1 ? 'polo' : 'polos'}, ${device.amperage ?? 'corrente não definida'} amperes. ${positionLabel}. Use Enter para selecionar, as setas para mover e Shift mais F10 para abrir as ações.`} aria-pressed={selected} onPointerDown={event => onDeviceDown(event, device)} onKeyDown={(event: ReactKeyboardEvent<SVGGElement>) => { if (!canEditComponents) return; if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); const ids = event.shiftKey ? selection.devices.includes(device.id) ? selection.devices.filter(id => id !== device.id) : [...selection.devices, device.id] : [device.id]; onSelect({ devices: ids, wire: null }); return; } if (!openDeviceMenu(event, device)) nudgeDevice(event, device); }} opacity={moving?.ids.includes(device.id) && (moving.rail || moving.slot) ? .4 : dimmed ? .62 : 1}>
               <title>{device.label}{circuit ? ` · C${circuit.number} ${circuit.name}` : ''} · {positionLabel} · Setas movem</title>
-              <g className="qdc-device-body" transform={device.fishboneSlotId ? `scale(${rect.width / (device.modules * MODULE - 4)} ${rect.height / DEVICE_HEIGHT})` : device.visualRotation === 180 ? `rotate(180 ${rect.width / 2} ${rect.height / 2})` : undefined}><DeviceDrawing device={device} width={device.fishboneSlotId ? device.modules * MODULE - 4 : rect.width} height={device.fishboneSlotId ? DEVICE_HEIGHT : rect.height} mode={mode} visualModel={project.visualModel ?? 'classic'} dpsVisual={project.dpsVisual ?? 'red'} conduitConductors={conduitConductors} activeConduitTerminalId={device.terminals.some(terminal => terminal.id === hoveredExit) ? hoveredExit ?? undefined : sourceEndpoint?.componentId === device.id ? sourceEndpoint.terminalId : undefined} /></g>
+              <g className="qdc-device-body" transform={fishboneArtwork?.transform ?? (device.visualRotation === 180 ? `rotate(180 ${rect.width / 2} ${rect.height / 2})` : undefined)}><DeviceDrawing device={device} width={fishboneArtwork?.width ?? rect.width} height={fishboneArtwork?.height ?? rect.height} mode={mode} visualModel={project.visualModel ?? 'classic'} dpsVisual={project.dpsVisual ?? 'red'} conduitConductors={conduitConductors} combToothKinds={combToothKinds} activeConduitTerminalId={device.terminals.some(terminal => terminal.id === hoveredExit) ? hoveredExit ?? undefined : sourceEndpoint?.componentId === device.id ? sourceEndpoint.terminalId : undefined} /></g>
               {mode === 'labels' && isRailMounted(device) && <g className="qdc-identification-card" pointerEvents="none">
                 <rect x="5" y="32" width={rect.width - 10} height="65" rx="4" fill="#263940" fillOpacity=".12" transform="translate(0 2)" />
                 <rect x="4" y="30" width={rect.width - 8} height="65" rx="4" fill="#fffef9" stroke={circuit?.color ?? '#9ba8ad'} strokeWidth="1.5" />
@@ -628,6 +643,7 @@ function BoardCanvas({ project, selection, layers, tool, mode, viewport, highlig
                 <path d={`M${rect.width / 2 - 5} -9 H${rect.width / 2 + 5}`} stroke="#c89f12" strokeWidth="3.5" strokeLinecap="round" />
                 {[[-6, -8], [rect.width + 1, -8], [-6, rect.height + 3], [rect.width + 1, rect.height + 3]].map(([x, y]) => <rect key={`${x}-${y}`} x={x} y={y} width="5" height="5" rx="1.5" fill="#fffdf3" stroke="#a9840d" strokeWidth="1" />)}
               </g>}
+              {alertFocus?.deviceIds.has(device.id) && <rect data-qdc-editor-only="true" className="qdc-device-alert-outline" x="-8" y="-10" width={rect.width + 16} height={rect.height + 20} rx="7" pointerEvents="none" />}
               {device.terminals.map(terminal => {
                 const terminalPosition = terminalPoint(project, device.id, terminal.id);
                 if (!terminalPosition) return null;
@@ -637,24 +653,25 @@ function BoardCanvas({ project, selection, layers, tool, mode, viewport, highlig
                 const screwY = side === 'top' ? 17 : side === 'bottom' ? rect.height - 17 : y;
                 const active = wireStart?.componentId === device.id && wireStart.terminalId === terminal.id;
                 const outputCircuit = device.type === 'conduit-entry' ? circuitForOutputTerminal(project, terminal.id) : undefined;
-                const color = outputCircuit ? circuitWireColor(outputCircuit, terminal) : terminal.kind === 'N' ? '#2580b4' : terminal.kind === 'PE' ? '#408148' : terminal.kind === 'control' ? '#876691' : '#4a5b63';
+                const color = device.type === 'power-entry' ? conduitConductors.find(item => item.id === terminal.id)?.color ?? '#4a5b63' : outputCircuit ? circuitWireColor(outputCircuit, terminal) : terminal.kind === 'N' ? '#2580b4' : terminal.kind === 'PE' ? '#408148' : terminal.kind === 'control' ? '#876691' : '#4a5b63';
                 const magnetic = snapTarget?.componentId === device.id && snapTarget.terminalId === terminal.id;
                 const connected = endpointMarkers.has(`${device.id}:${terminal.id}`);
                 const candidate = sourceEndpoint && connectionIssue(project, sourceEndpoint, { componentId: device.id, terminalId: terminal.id }, sourceConductor);
                 const compatible = Boolean(sourceEndpoint && !candidate && !(sourceEndpoint.componentId === device.id && sourceEndpoint.terminalId === terminal.id));
-                const exit = device.type === 'conduit-entry';
+                const exit = device.type === 'conduit-entry' || device.type === 'power-entry';
                 return <g key={terminal.id} data-terminal={`${device.id}:${terminal.id}`} className={`qdc-terminal${exit ? ' is-wire-exit' : ''}${tool === 'wire' || exit && !connected ? ' is-connectable' : ''}${sourceEndpoint ? sourceEndpoint.componentId === device.id && sourceEndpoint.terminalId === terminal.id ? ' is-source' : compatible ? ' is-compatible' : ' is-unavailable' : ''}${magnetic ? snapTarget.issue ? ' is-magnetic is-invalid' : ' is-magnetic is-valid' : ''}`} pointerEvents={canEditWires && (tool === 'wire' || exit && !connected) ? 'all' : undefined} role="button" tabIndex={canEditWires && (tool === 'wire' || exit && !connected) ? 0 : -1} aria-label={`${connected ? 'Conectado' : 'Ponta livre'} · ${terminal.label}${outputCircuit ? ` · ${outputCircuit.name}` : ''}`} onPointerEnter={() => exit && setHoveredExit(terminal.id)} onPointerLeave={() => exit && setHoveredExit(current => current === terminal.id ? null : current)} onFocus={() => exit && setHoveredExit(terminal.id)} onBlur={() => exit && setHoveredExit(current => current === terminal.id ? null : current)} onPointerDown={event => { if (!canEditWires && !canEditComponents) return; event.stopPropagation(); if (event.button === 1 || tool === 'pan' || spaceDown.current) { begin(event, 'pan'); return; } if (exit && !connected && canEditWires && layers.wires.visible && !wireStart && event.button === 0) { event.preventDefault(); svgRef.current?.setPointerCapture(event.pointerId); const source = { componentId: device.id, terminalId: terminal.id }; leadGesture.current = { pointerId: event.pointerId, source, tip: terminalPosition, clientX: event.clientX, clientY: event.clientY, moved: false }; setLeadSource(source); setLeadTip(terminalPosition); setCursor(terminalPosition); setSnapTarget(null); } else if (tool === 'wire' && canEditWires && event.button === 0) { event.preventDefault(); setCursor(null); setSnapTarget(null); onTerminal(device.id, terminal.id); } else onDeviceDown(event, device); }} onKeyDown={event => { if ((event.key === 'Enter' || event.key === ' ') && canEditWires && (tool === 'wire' || exit && !connected)) { event.preventDefault(); event.stopPropagation(); setCursor(null); setSnapTarget(null); onTerminal(device.id, terminal.id); } }}>
                   <title>{outputCircuit ? `C${outputCircuit.number} ${outputCircuit.name} · ` : ''}${terminal.label} · ${connected ? 'conectado; selecione o fio para remover ou use Ctrl+Z' : 'clique ou arraste até um destino compatível'}</title>
                   {!exit && <path d={side === 'left' || side === 'right' ? `M${x} ${y} H${screwX}` : `M${x} ${y} V${screwY}`} stroke={mode === 'installation' ? color : '#859594'} strokeWidth={mode === 'realistic' ? 3 : 1.3} />}
                   {!exit && mode === 'realistic' && <Screw x={screwX} y={screwY} size={device.terminals.filter(item => terminalSide(device, item.side) === side).length > 4 ? 3.2 : 5} />}
-                  <circle cx={x} cy={y} r={exit ? 6.4 : tool === 'wire' ? 6 : 3.2} fill={active ? '#f4cf29' : connected && exit ? color : '#fff'} stroke={active ? '#a3830e' : color} strokeWidth={exit || tool === 'wire' ? 2 : 1.3} />
+                  {!exit && <circle cx={x} cy={y} r={tool === 'wire' ? 6 : 3.2} fill={active ? '#f4cf29' : '#fff'} stroke={active ? '#a3830e' : color} strokeWidth={tool === 'wire' ? 2 : 1.3} />}
+                  {alertFocus?.terminalIds?.has(`${device.id}:${terminal.id}`) && <circle data-qdc-editor-only="true" className="qdc-terminal-alert-outline" cx={x} cy={y} r="11" pointerEvents="none" />}
                   {canEditWires && (tool === 'wire' || exit && !connected) && <circle data-qdc-editor-only="true" className="qdc-terminal-target" cx={x} cy={y} r={exit ? 10 : 12} fill="transparent" stroke={active ? '#ecc635' : 'transparent'} strokeWidth="1" />}
-                  {exit ? <text x={x} y={side === 'top' ? y + 19 : side === 'bottom' ? y - 11 : y + 2} textAnchor="middle" fill="#344b55" stroke="#fff" paintOrder="stroke" strokeWidth="2.3" fontSize="7" fontWeight="800" pointerEvents="none">{terminal.kind === 'L' ? `L${terminal.pole ?? 1}` : terminal.kind}</text> : (side === 'top' || side === 'bottom') && (tool === 'wire' || mode === 'installation' || mode === 'schematic') && <text x={x} y={side === 'top' ? 11 : rect.height - 6} textAnchor="middle" fill={color} stroke="#fff" paintOrder="stroke" strokeWidth="2.5" fontSize="7" fontWeight="700" pointerEvents="none">{terminal.label}</text>}
+                  {exit ? hoveredExit === terminal.id && <text data-qdc-editor-only="true" x={x} y={side === 'top' ? y - 12 : side === 'bottom' ? y + 16 : y - 12} textAnchor="middle" fill="#344b55" stroke="#fff" paintOrder="stroke" strokeWidth="2.3" fontSize="7" fontWeight="800" pointerEvents="none">{device.type === 'power-entry' ? terminal.label : terminal.kind === 'L' ? `L${terminal.pole ?? 1}` : terminal.kind}</text> : (side === 'top' || side === 'bottom') && (tool === 'wire' || mode === 'installation' || mode === 'schematic') && <text x={x} y={side === 'top' ? 11 : rect.height - 6} textAnchor="middle" fill={color} stroke="#fff" paintOrder="stroke" strokeWidth="2.5" fontSize="7" fontWeight="700" pointerEvents="none">{terminal.label}</text>}
                 </g>;
               })}
             </g>;
           })}</g>
-          <g data-qdc-layer="wires" data-qdc-wire-endpoints="true" style={{ display: layers.wires.visible ? undefined : 'none' }}>{[...endpointMarkers.entries()].map(([key, marker]) => <g key={key} opacity={focus && !marker.wireIds.some(id => focus.wireIds.has(id)) ? .42 : 1}><WireEndpoint {...marker} /></g>)}</g>
+          <g data-qdc-layer="wires" data-qdc-wire-endpoints="true" style={{ display: layers.wires.visible ? undefined : 'none' }}>{[...endpointMarkers.entries()].filter(([, marker]) => !conduitIds.has(marker.componentId)).map(([key, marker]) => <g key={key} opacity={focus && !marker.wireIds.some(id => focus.wireIds.has(id)) ? .42 : 1}><WireEndpoint {...marker} /></g>)}</g>
           {wireGuide && <g data-qdc-editor-only="true" className="qdc-wire-guides" pointerEvents="none" aria-hidden="true">
             {wireGuide.x !== null && <line x1={wireGuide.x} y1="34" x2={wireGuide.x} y2={size.height - 34} strokeWidth={1.2 * handleScale} strokeDasharray={`${5 * handleScale} ${5 * handleScale}`} />}
             {wireGuide.y !== null && <line x1="34" y1={wireGuide.y} x2={size.width - 34} y2={wireGuide.y} strokeWidth={1.2 * handleScale} strokeDasharray={`${5 * handleScale} ${5 * handleScale}`} />}

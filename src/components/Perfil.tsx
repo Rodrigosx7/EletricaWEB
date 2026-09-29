@@ -8,7 +8,7 @@ import {
 import type { User } from "@supabase/supabase-js";
 import { Mail, User as IconUser, Save, X, Camera, Trash2 } from "lucide-react";
 import { supabase } from "../supabase";
-import { useToast } from "./ui/toast";
+import { useToast } from "./ui/toast-context";
 
 type PerfilProps = {
   usuario: User;
@@ -61,7 +61,7 @@ export default function Perfil({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!["image/png", "image/jpeg", "image/jpg", "image/webp"].includes(file.type)) {
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
       mostrarToast("Formato inválido. Use PNG, JPG ou WEBP.", "alerta");
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
@@ -75,7 +75,8 @@ export default function Perfil({
 
     setEnviandoAvatar(true);
     try {
-      const extensao = file.name.split(".").pop() || "png";
+      const extensao = file.type === "image/jpeg" ? "jpg"
+        : file.type === "image/webp" ? "webp" : "png";
       const caminho = `${usuario.id}/avatar-${Date.now()}.${extensao}`;
 
       const { error: uploadError } = await supabase.storage
@@ -198,9 +199,7 @@ export default function Perfil({
               <div className="w-20 h-20 rounded-full bg-gradient-to-br from-[#FFD60A] to-yellow-500 text-[#0D1B2A] font-bold text-2xl flex items-center justify-center shadow-lg overflow-hidden">
                 {avatarUrl ? (
                   <img
-                    src={`${avatarUrl}${
-                      avatarUrl.includes("?") ? "&" : "?"
-                    }t=${Date.now()}`}
+                    src={avatarUrl}
                     alt="Avatar"
                     className="w-full h-full object-cover"
                   />

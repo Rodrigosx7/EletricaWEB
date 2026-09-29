@@ -1,7 +1,5 @@
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useRef,
   useState,
@@ -9,28 +7,14 @@ import {
   type ReactNode,
 } from "react";
 import { CheckCircle2, XCircle, AlertTriangle, X } from "lucide-react";
+import { ToastContext, type TipoToast } from "./toast-context";
 
-type TipoToast = "sucesso" | "erro" | "alerta";
 
 type Toast = {
   id: number;
   tipo: TipoToast;
   mensagem: string;
 };
-
-type ToastContextValue = {
-  mostrarToast: (mensagem: string, tipo?: TipoToast) => void;
-};
-
-const ToastContext = createContext<ToastContextValue | null>(null);
-
-export function useToast(): ToastContextValue {
-  const ctx = useContext(ToastContext);
-  if (!ctx) {
-    throw new Error("useToast precisa estar dentro de <ToastProvider>");
-  }
-  return ctx;
-}
 
 export function ToastProvider({
   children,

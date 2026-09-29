@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../supabase";
 import { formatarMoeda, formatarData } from "../utils/formatters";
 import { STATUS_OS, STATUS_OS_VALORES, formatarNumero, type StatusOS } from "../utils/constantes";
@@ -18,7 +18,7 @@ import {
 import ConfirmDialog from "./ConfirmDialog";
 import { usePaginacao } from "../hooks/usePaginacao";
 import ControlesPaginacao from "./ui/ControlesPaginacao";
-import { useToast } from "./ui/toast";
+import { useToast } from "./ui/toast-context";
 import Modal from "./ui/Modal";
 
 type Cliente = {
@@ -187,22 +187,18 @@ export default function OrdensServico() {
   const [custoMateriais, setCustoMateriais] =
     useState("");
 
-  useEffect(() => {
-    carregarDados();
-  }, [paginacao.pagina, paginacao.tamanho]);
-
-  async function carregarDados() {
-    setCarregando(true);
-    setErroDados(false);
-
+  const { offset, tamanho, setTotal } = paginacao;
+  const carregarDados = useCallback(async () => {
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
+    setErroDados(false);
     if (!user) {
       setCarregando(false);
       return;
     }
+    setCarregando(true);
 
     const { data: clientesData, error: clientesError } =
       await supabase
@@ -218,8 +214,8 @@ export default function OrdensServico() {
       );
     }
 
-    const de = paginacao.offset;
-    const ate = de + paginacao.tamanho - 1;
+    const de = offset;
+    const ate = de + tamanho - 1;
     const { data: ordensData, error: ordensError, count: ordensCount } =
       await supabase
         .from("ordens_servico")
@@ -261,10 +257,16 @@ export default function OrdensServico() {
     setClientes(clientesData || []);
     setOrdens(ordensData || []);
     setOrcamentos(orcamentosData || []);
-    paginacao.setTotal(ordensCount ?? 0);
+    setTotal(ordensCount ?? 0);
 
     setCarregando(false);
-  }
+  }, [offset, tamanho, setTotal]);
+
+  useEffect(() => {
+    let cancelado = false;
+    queueMicrotask(() => { if (!cancelado) void carregarDados(); });
+    return () => { cancelado = true; };
+  }, [carregarDados]);
 
   function hoje() {
     return new Date().toISOString().split("T")[0];

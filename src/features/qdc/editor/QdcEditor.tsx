@@ -25,13 +25,14 @@ import { loadProjects, parseProjectFile, saveProjects } from '../projects/storag
 import { CloudConflictError, deleteCloudProject, insertCloudProject, loadCloudProjects, updateCloudProject } from '../projects/cloud';
 import { reconcileProjects } from '../projects/sync';
 import { warnings } from '../circuits/analysis';
+import { warningLocation } from '../circuits/warningFocus';
 import { buildTerminals, CATALOG, INSERTABLE_CATALOG } from '../electrical-components/catalog';
 import { boardSize, isRailMounted, routeWires } from '../wiring/routing';
 import WireEditorPanel from '../wiring/WireEditorPanel';
 import { changedWiresAfterMove } from '../wiring/wireEditing';
 import { TERMINATION_OPTIONS, wireColorSwatch, WIRE_COLORS, WIRE_GAUGES } from '../wiring/options';
 import { exportMaterials, exportPDF, exportPNG, exportPresentationPNG, exportProject } from '../export/documents';
-import { PRELIMINARY_NOTICE, type Circuit, type Device, type Project, type Selection, type Tool, type ViewMode, type Viewport, type Wire, type WireOptions } from '../types';
+import { PRELIMINARY_NOTICE, type Circuit, type Device, type Project, type Selection, type Tool, type ViewMode, type Viewport, type Warning, type Wire, type WireOptions } from '../types';
 import '../editor.css';
 
 const NO_SELECTION: Selection = { devices: [], wire: null };
@@ -143,6 +144,7 @@ export default function QdcEditor({ usuarioId, aoAlterar, aoSair }: { usuarioId:
   const [layersOpen, setLayersOpen] = useState(false);
   const [copyName, setCopyName] = useState('');
   const [bottom, setBottom] = useState<'circuits' | 'materials' | 'warnings' | 'history'>('circuits');
+  const [activeNoticeId, setActiveNoticeId] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [panel, setPanel] = useState<'library' | 'properties' | null>(null);
   const [sideMode, setSideMode] = useState<'properties' | 'map' | 'wires' | 'circuit'>('properties');
@@ -183,6 +185,8 @@ export default function QdcEditor({ usuarioId, aoAlterar, aoSair }: { usuarioId:
     info: notices.filter(notice => notice.severity === 'info').length,
   }), [notices]);
   const orderedNotices = useMemo(() => [...notices].sort((a, b) => ({ error: 0, warning: 1, info: 2 })[a.severity] - ({ error: 0, warning: 1, info: 2 })[b.severity]), [notices]);
+  const activeNotice = notices.find(notice => notice.id === activeNoticeId);
+  const activeWarningLocation = useMemo(() => activeNotice ? warningLocation(project, activeNotice) : null, [activeNotice, project]);
   const used = project.devices.filter(device => isRailMounted(device) && !device.fishboneSlotId).reduce((n, d) => n + d.modules, 0), total = project.rails * project.modulesPerRail;
   const dirty = fingerprint !== savedFingerprint;
   const selectionLabel = selection.devices.length > 1 ? `${selection.devices.length} componentes` : selection.devices.length === 1 ? project.devices.find(device => device.id === selection.devices[0])?.label : selection.wire ? 'Fio selecionado' : null;
@@ -449,14 +453,34 @@ export default function QdcEditor({ usuarioId, aoAlterar, aoSair }: { usuarioId:
     setBottom(tab); setDetailsOpen(true);
     window.requestAnimationFrame(() => detailsRef.current?.scrollIntoView({ block: 'nearest' }));
   }
-  function showCircuit(id: string) {
-    showDetails('circuits');
-    window.requestAnimationFrame(() => {
-      const row = document.getElementById(`ewq-circuit-${id}`);
-      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      row?.scrollIntoView({ block: 'center', behavior: reducedMotion ? 'auto' : 'smooth' });
-      row?.focus({ preventScroll: true });
+  function locateWarning(notice: Warning) {
+    const location = warningLocation(project, notice);
+    const { width, height } = boardSize(project);
+    setActiveNoticeId(notice.id);
+    setDetailsOpen(false);
+    setTool('select');
+    setWireStart(null);
+    setPendingMove(null);
+    setLayers(current => ({ ...current, components: { ...current.components, visible: true }, wires: { ...current.wires, visible: true } }));
+    setSelection({ devices: notice.deviceId && project.devices.some(device => device.id === notice.deviceId) ? [notice.deviceId] : [], wire: notice.wireId && project.wires.some(wire => wire.id === notice.wireId) ? notice.wireId : null });
+    setViewport(current => {
+      const zoom = location.kind === 'board' ? 1 : Math.max(current.zoom, 1.35);
+      return { zoom, x: width / 2 - location.point.x * zoom, y: height / 2 - location.point.y * zoom };
     });
+  }
+  function editWarning(notice: Warning) {
+    locateWarning(notice);
+    if (notice.id.startsWith('terminal-') || notice.id.startsWith('fishbone-feed-') || notice.id.startsWith('breaker-wires-')) {
+      setTool('wire');
+    } else if (notice.wireId) {
+      openWireEditor();
+    } else if (notice.deviceId) {
+      openProperties();
+    } else if (notice.circuitId) {
+      inspectCircuit(notice.circuitId);
+    } else {
+      openProperties();
+    }
   }
   function mapCircuit(id: string) {
     setPendingMove(null);
@@ -494,7 +518,9 @@ export default function QdcEditor({ usuarioId, aoAlterar, aoSair }: { usuarioId:
     }
   }
   function selectCanvasItem(next: Selection) {
+    setActiveNoticeId(null);
     setSelection(next);
+    if (next.devices.length) { openProperties(); return; }
     if (!next.wire) return;
     setSideMode('wires');
     setPanel('properties');
@@ -620,7 +646,7 @@ export default function QdcEditor({ usuarioId, aoAlterar, aoSair }: { usuarioId:
   }
   function add(type: string, position?: { rail: number; slot: number; fishboneSlotId?: string }) {
     if (!canEditComponents) { setMessage('Desbloqueie e mostre a camada de componentes para adicionar.'); return; }
-    try { const next = addDevice(project, type, position); commit(next, 'Adicionar dispositivo'); setSelection({ devices: [next.devices.at(-1)!.id], wire: null }); }
+    try { const next = addDevice(project, type, position); if (commit(next, 'Adicionar dispositivo')) { setSelection({ devices: [next.devices.at(-1)!.id], wire: null }); openProperties(); } }
     catch (e) { setMessage(e instanceof Error ? e.message : 'Não foi possível adicionar.'); }
   }
   function terminal(componentId: string, terminalId: string) {
@@ -822,7 +848,7 @@ export default function QdcEditor({ usuarioId, aoAlterar, aoSair }: { usuarioId:
       <div className="ewq-resize-handle is-vertical is-library" role="separator" tabIndex={0} aria-label="Redimensionar biblioteca e área de montagem" aria-orientation="vertical" aria-valuemin={190} aria-valuemax={420} aria-valuenow={Math.round(editorLayout.libraryWidth)} title="Arraste para ajustar a largura · Duplo clique restaura" onPointerDown={event => beginResize('library', event)} onPointerMove={moveResize} onPointerUp={endResize} onPointerCancel={endResize} onDoubleClick={() => resetResize('library')} onKeyDown={event => resizeWithKeyboard('library', event)}><span /></div>
       <section className="ewq-canvas-panel" aria-label="Área de desenho do quadro"><div className="ewq-canvas-meta"><span><CircuitBoard size={16} aria-hidden="true" /> Área de montagem</span><div className="ewq-view-switch" role="group" aria-label="Modo de visualização"><Eye size={15} aria-hidden="true" />{Object.entries(VIEW_LABELS).map(([id, label]) => <button key={id} type="button" aria-pressed={mode === id} onClick={() => setMode(id as ViewMode)}>{label}</button>)}</div><label className="ewq-view-label ewq-view-label-compact"><Eye size={15} aria-hidden="true" /><span className="sr-only">Modo de visualização</span><select aria-label="Modo de visualização" value={mode} onChange={e => setMode(e.target.value as ViewMode)}>{Object.entries(VIEW_LABELS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label></div>
         {selectionLabel && <button className="ewq-selection-chip" onClick={openProperties}><Settings2 size={15} aria-hidden="true" /><span>Editar: {selectionLabel}</span></button>}
-        <BoardCanvas project={project} selection={selection} layers={layers} tool={tool} mode={mode} viewport={viewport} highlightedConnections={connectionMap} movePreview={pendingMove} onViewport={setViewport} onSelect={selectCanvasItem} onMove={(ids, r, s, preview) => { if (canEditComponents) moveWithWirePreview(() => moveDevices(project, ids, r, s), ids, !!preview, 'Mover dispositivos'); }} onMoveFishbone={(id, slotId, preview) => { if (canEditComponents) moveWithWirePreview(() => moveFishboneBreaker(project, id, slotId), [id], !!preview, 'Encaixar disjuntor na espinha'); }} onMovePlane={(id, position, preview) => { if (canEditComponents) moveWithWirePreview(() => moveDeviceOnPlane(project, id, position), [id], !!preview, 'Mover entrada de energia'); }} onAdd={add} onTerminal={terminal} onConnect={connectLead} onWirePath={(id, path) => editWire(id, { path, manualPath: true })} wireStart={wireStart} wireOptions={wireOptions} onContextMenu={(x, y, id) => { if (!canEditComponents) return; if (id && !selection.devices.includes(id)) setSelection({ devices: [id], wire: null }); setContext({ x, y }); }} onMessage={setMessage} />
+        <BoardCanvas project={project} selection={selection} layers={layers} tool={tool} mode={mode} viewport={viewport} highlightedConnections={connectionMap} alertFocus={activeWarningLocation?.kind === 'board' ? null : activeWarningLocation?.focus} movePreview={pendingMove} onViewport={setViewport} onSelect={selectCanvasItem} onMove={(ids, r, s, preview) => { if (canEditComponents) moveWithWirePreview(() => moveDevices(project, ids, r, s), ids, !!preview, 'Mover dispositivos'); }} onMoveFishbone={(id, slotId, preview) => { if (canEditComponents) moveWithWirePreview(() => moveFishboneBreaker(project, id, slotId), [id], !!preview, 'Encaixar disjuntor na espinha'); }} onMovePlane={(id, position, preview) => { if (canEditComponents) moveWithWirePreview(() => moveDeviceOnPlane(project, id, position), [id], !!preview, 'Mover entrada de energia'); }} onAdd={add} onTerminal={terminal} onConnect={connectLead} onWirePath={(id, path) => editWire(id, { path, manualPath: true })} wireStart={wireStart} wireOptions={wireOptions} onContextMenu={(x, y, id) => { if (!canEditComponents) return; if (id && !selection.devices.includes(id)) setSelection({ devices: [id], wire: null }); setContext({ x, y }); }} onMessage={setMessage} />
         {pendingMove && <div className="ewq-move-review" role="region" aria-label="Prévia dos fios após mover componentes"><div><strong>Prévia antes de mover</strong><span>{pendingMove.wireIds.length} {pendingMove.wireIds.length === 1 ? 'fio será ajustado' : 'fios serão ajustados'}. Linha azul tracejada: novo trajeto.</span></div><button type="button" onClick={() => setPendingMove(null)}>Cancelar</button><button type="button" className="is-primary" onClick={() => { if (pendingMove.baseFingerprint !== fingerprint) { setPendingMove(null); setMessage('O quadro mudou durante a prévia. Mova o componente novamente.'); return; } commit(pendingMove.candidate, 'Mover componentes e ajustar fios'); }}>Aplicar movimento</button></div>}
         {outputCircuits.length > 0 && <div className="ewq-circuit-directory"><strong>Saídas</strong><div role="list" aria-label="Circuitos identificados nas saídas do quadro">{outputCircuits.map(circuit => <span key={circuit.id} role="listitem" className="ewq-circuit-directory-item"><b>C{circuit.number}</b><span>{circuit.name || 'Sem nome'}</span></span>)}</div></div>}
         <div className="ewq-canvas-footer"><span>{project.widthMm} × {project.heightMm} mm <span className="ewq-canvas-scale">· sem escala</span></span><span className="ewq-wire-legend" aria-label="Legenda dos condutores"><i className="is-phase" />Fase<i className="is-neutral" />Neutro<i className="is-earth" />PE</span></div>
@@ -837,7 +863,10 @@ export default function QdcEditor({ usuarioId, aoAlterar, aoSair }: { usuarioId:
     <div id="ewq-tabpanel" role="tabpanel" aria-labelledby={`ewq-tab-${bottom}`} hidden={!detailsOpen}>
       {bottom === 'circuits' && <CircuitsPanel project={project} onUpdateCircuit={editCircuit} onAddCircuit={addCircuit} onPrepareOutputs={() => run(() => prepareCircuitOutputs(project), 'Preparar saídas dos circuitos')} onDeleteCircuit={deleteCircuit} onSelectDevice={id => { setSelection({ devices: [id], wire: null }); openProperties(); }} onMapCircuit={mapCircuit} onInspectCircuit={inspectCircuit} selectedCircuitId={selectedCircuitId} onUpdateDevice={editDevice} />}
       {bottom === 'materials' && <MaterialsPanel project={project} onChange={materials => commit({ ...project, materials }, 'Editar materiais')} onExport={() => void exportFile('csv')} />}
-      {bottom === 'warnings' && <section className="ewq-bottom-panel"><header className="ewq-verification-header"><div><h3>Verificações da montagem visual</h3><p>Erros impedem uma representação confiável; alertas pedem revisão; pendências são dados que ainda podem ser preenchidos. Não verifica conformidade elétrica.</p></div><div className="ewq-verification-summary" aria-live="polite" aria-atomic="true"><span className="is-error"><strong>{noticeCounts.error}</strong> Erros</span><span className="is-warning"><strong>{noticeCounts.warning}</strong> Alertas</span><span className="is-info"><strong>{noticeCounts.info}</strong> Pendências</span></div></header><ul className="ewq-warnings">{orderedNotices.length ? orderedNotices.map(w => <li key={w.id} className={`is-${w.severity}`}>{w.severity === 'error' ? <CircleAlert size={16} aria-hidden="true" /> : w.severity === 'warning' ? <TriangleAlert size={16} aria-hidden="true" /> : <Info size={16} aria-hidden="true" />}<div><span className="ewq-warning-level">{w.severity === 'error' ? 'Erro' : w.severity === 'warning' ? 'Alerta' : 'Pendente'}</span><button onClick={() => { if (w.circuitId) { showCircuit(w.circuitId); return; } setSelection({ devices: w.deviceId ? [w.deviceId] : [], wire: w.wireId ?? null }); openProperties(); }}>{w.message}</button></div></li>) : <li className="is-clear"><Check size={16} aria-hidden="true" /> Nenhuma pendência gráfica encontrada.</li>}</ul></section>}
+      {bottom === 'warnings' && <section className="ewq-bottom-panel"><header className="ewq-verification-header"><div><h3>Verificações da montagem visual</h3><p>Erros impedem uma representação confiável; alertas pedem revisão; pendências são dados que ainda podem ser preenchidos. Não verifica conformidade elétrica.</p></div><div className="ewq-verification-summary" aria-live="polite" aria-atomic="true"><span className="is-error"><strong>{noticeCounts.error}</strong> Erros</span><span className="is-warning"><strong>{noticeCounts.warning}</strong> Alertas</span><span className="is-info"><strong>{noticeCounts.info}</strong> Pendências</span></div></header><ul className="ewq-warnings">{orderedNotices.length ? orderedNotices.map(w => {
+        const action = w.id.startsWith('terminal-') || w.id.startsWith('fishbone-feed-') || w.id.startsWith('breaker-wires-') ? 'Passar fio' : w.wireId ? 'Editar fio' : w.deviceId ? 'Editar componente' : w.circuitId ? 'Editar circuito' : 'Editar quadro';
+        return <li key={w.id} className={`is-${w.severity}${activeNoticeId === w.id ? ' is-active' : ''}`}>{w.severity === 'error' ? <CircleAlert size={16} aria-hidden="true" /> : w.severity === 'warning' ? <TriangleAlert size={16} aria-hidden="true" /> : <Info size={16} aria-hidden="true" />}<div><span className="ewq-warning-level">{w.severity === 'error' ? 'Erro' : w.severity === 'warning' ? 'Alerta' : 'Pendente'}</span><p>{w.message}</p><div className="ewq-warning-actions"><button type="button" onClick={() => locateWarning(w)} aria-label={`Localizar no quadro: ${w.message}`}>Localizar no quadro</button><button type="button" onClick={() => editWarning(w)} aria-label={`${action}: ${w.message}`}>{action}</button></div></div></li>;
+      }) : <li className="is-clear"><Check size={16} aria-hidden="true" /> Nenhuma pendência gráfica encontrada.</li>}</ul></section>}
       {bottom === 'history' && <section className="ewq-bottom-panel"><header><div><h3>Histórico desta sessão</h3><p>Até 80 etapas. Desfazer e refazer restauram componentes, circuitos e conexões juntos.</p></div></header><ol className="ewq-history">{[...history.past, history.present].map((step, i) => <li key={i}><span>{String(i + 1).padStart(2, '0')}</span>{step.label}{i === history.past.length && <strong>Atual</strong>}</li>)}</ol></section>}
     </div>
     </div>

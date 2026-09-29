@@ -17,6 +17,9 @@
 .qdc-mode-realistic .qdc-device-body { filter: drop-shadow(1.2px 2.4px 1.2px #1b30383d); transition: filter .16s ease; }
 .qdc-mode-realistic .qdc-device:hover .qdc-device-body { filter: drop-shadow(1.5px 3px 1.5px #172a334d) brightness(1.015); }
 .qdc-device-selection { filter: drop-shadow(0 2px 2px #263a4230); }
+.qdc-device-alert-outline { fill: #efad2912; stroke: #d68112; stroke-width: 3; stroke-dasharray: 6 3; filter: drop-shadow(0 0 4px #edb548); }
+.qdc-wire-alert-outline { stroke: #e6a423; stroke-opacity: .75; }
+.qdc-terminal-alert-outline { fill: #ffdb6455; stroke: #be6f08; stroke-width: 2.6; filter: drop-shadow(0 0 3px #efb330); }
 .qdc-device:focus-visible > rect, .qdc-device:focus-visible > g > rect:first-child { stroke: #926f09; stroke-width: 3px; }
 .qdc-wire { cursor: pointer; outline: none; transition: opacity .16s ease; }
 .qdc-wire.is-dimmed:hover, .qdc-wire.is-dimmed:focus-within { opacity: .48; }

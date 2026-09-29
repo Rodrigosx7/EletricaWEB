@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactElement } from "react";
 import { Menu, ChevronRight, type LucideIcon } from "lucide-react";
-import { useEmpresa } from "../contexts/EmpresaContext";
+import { useEmpresa } from "../contexts/empresa-context";
 
 type TopbarProps = {
   titulo: string;

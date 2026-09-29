@@ -1,5 +1,5 @@
 import { CATALOG } from '../electrical-components/catalog.ts';
-import { combCoveredTerminals, combPhaseAt, combPhases } from '../electrical-components/combPhases.ts';
+import { combContacts, combMixedLanes, combPhaseAt, combPhases } from '../electrical-components/combPhases.ts';
 import { circuitForOutputTerminal, fits } from '../editor/operations.ts';
 import { isRailMounted } from '../wiring/routing.ts';
 import { fishbonePhase, fishboneSlotsFor } from '../fishbone/model.ts';
@@ -68,7 +68,7 @@ export function warnings(project: Project): Warning[] {
   const effectiveConnections = new Set(connections);
   if (project.boardType === 'fishbone') {
     const spine = project.devices.find(device => device.type === 'fishbone-bus');
-    for (const terminal of spine?.terminals ?? []) if (!connections.has(`${spine!.id}:${terminal.id}`)) result.push({ id: `fishbone-feed-${terminal.id}`, severity: 'warning', deviceId: spine!.id, message: `Espinha: alimentação da fase ${terminal.label} ainda não foi desenhada até o barramento.` });
+    for (const terminal of spine?.terminals ?? []) if (!connections.has(`${spine!.id}:${terminal.id}`)) result.push({ id: `fishbone-feed-${terminal.id}`, severity: 'warning', deviceId: spine!.id, terminalIds: [`${spine!.id}:${terminal.id}`], message: `Espinha: alimentação da fase ${terminal.label} ainda não foi desenhada até o barramento.` });
     for (const breaker of project.devices.filter(device => device.fishboneSlotId)) {
       const slots = fishboneSlotsFor(project, breaker);
       if (slots.length !== breaker.poles || slots.some(slot => !slot.enabled)) result.push({ id: `fishbone-slot-${breaker.id}`, severity: 'error', deviceId: breaker.id, message: `${breaker.label}: encaixe da espinha indisponível para todos os polos.` });
@@ -81,21 +81,22 @@ export function warnings(project: Project): Warning[] {
     }
   }
   for (const comb of project.devices.filter(device => device.type === 'comb-bus')) {
+    const contacts = combContacts(comb, project.devices);
+    const mixedLanes = combMixedLanes(contacts);
     const phases = combPhases(comb);
-    if (phases.some(phase => phase !== 'N' && !available.includes(phase))) result.push({ id: `comb-supply-${comb.id}`, severity: 'error', deviceId: comb.id, message: `${comb.label}: sequência ${phases.join('/')} usa fase indisponível na alimentação do quadro.` });
+    if (contacts.some(contact => contact.terminal.kind === 'L') && phases.some(phase => phase !== 'N' && !available.includes(phase))) result.push({ id: `comb-supply-${comb.id}`, severity: 'error', deviceId: comb.id, message: `${comb.label}: sequência ${phases.join('/')} usa fase indisponível na alimentação do quadro.` });
+    for (const lane of mixedLanes) result.push({ id: `comb-mixed-${comb.id}-${lane}`, severity: 'error', deviceId: comb.id, terminalIds: contacts.filter(contact => contact.lane === lane).map(contact => `${contact.device.id}:${contact.terminal.id}`), message: `${comb.label}: a via ${lane + 1} encosta em bornes de tipos diferentes (fase, neutro ou PE). Separe as ligações.` });
     const groups = new Map<string, string[]>();
-    for (const device of project.devices) {
-      for (const terminal of combCoveredTerminals(comb, device)) {
-        const lane = (device.slot - comb.slot + terminal.index) % comb.poles;
-        const group = `${terminal.kind}:${lane}`;
-        groups.set(group, [...(groups.get(group) ?? []), `${device.id}:${terminal.id}`]);
-      }
+    for (const { device, terminal, lane } of contacts) {
+      if (mixedLanes.has(lane)) continue;
+      const group = `${terminal.kind}:${lane}`;
+      groups.set(group, [...(groups.get(group) ?? []), `${device.id}:${terminal.id}`]);
     }
     for (const covered of groups.values()) if (covered.some(endpoint => connections.has(endpoint))) covered.forEach(endpoint => effectiveConnections.add(endpoint));
-    for (const breaker of project.devices.filter(device => device.circuitId && combCoveredTerminals(comb, device).length)) {
+    for (const breaker of project.devices.filter(device => device.circuitId && contacts.some(contact => contact.device.id === device.id && contact.terminal.kind === 'L'))) {
       const circuit = project.circuits.find(entry => entry.id === breaker.circuitId);
       if (!circuit) continue;
-      const actual = combCoveredTerminals(comb, breaker).map(term => combPhaseAt(comb, breaker.slot - comb.slot + term.index));
+      const actual = contacts.filter(contact => contact.device.id === breaker.id && contact.terminal.kind === 'L').map(contact => combPhaseAt(comb, contact.tooth));
       const expected = circuit.phase.split('/').filter(Boolean);
       if (actual.length && (actual.length !== expected.length || actual.some(phase => !expected.includes(phase)))) result.push({ id: `comb-phase-${comb.id}-${circuit.id}`, severity: 'warning', circuitId: circuit.id, deviceId: breaker.id, message: `${comb.label}: os dentes no disjuntor de C${circuit.number} correspondem a ${actual.join('/')} e o circuito está identificado como ${circuit.phase}. Revise posição ou fases.` });
     }
@@ -106,7 +107,7 @@ export function warnings(project: Project): Warning[] {
     if (!fits(project, device)) result.push({ id: `position-${device.id}`, severity: 'error', deviceId: device.id, message: `${device.label || 'Componente'}: fora do trilho ou sobreposto.` });
     if (!device.label.trim()) result.push({ id: `label-${device.id}`, severity: 'warning', deviceId: device.id, message: 'Componente sem identificação.' });
     const disconnected = allowsUnusedTerminals.has(device.type) ? [] : device.terminals.filter(term => !effectiveConnections.has(`${device.id}:${term.id}`));
-    if (disconnected.length) result.push({ id: `terminal-${device.id}`, severity: 'info', deviceId: device.id, message: `${device.label}: ${disconnected.length} terminal(is) sem conexão no desenho. Entradas e saídas externas podem ficar abertas.` });
+    if (disconnected.length) result.push({ id: `terminal-${device.id}`, severity: 'info', deviceId: device.id, terminalIds: disconnected.map(term => `${device.id}:${term.id}`), message: `${device.label}: ${disconnected.length} terminal(is) sem conexão no desenho. Entradas e saídas externas podem ficar abertas.` });
   }
   for (const wire of project.wires) {
     if (wire.gauge === null) result.push({ id: `gauge-${wire.id}`, severity: 'info', wireId: wire.id, message: 'Fio sem seção informada.' });

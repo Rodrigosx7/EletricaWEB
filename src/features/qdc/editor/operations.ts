@@ -1,7 +1,7 @@
 import { CATALOG, DPS_MODELS, buildSpdTerminals, buildTerminals, createDevice } from '../electrical-components/catalog.ts';
 import { breakerTechnicalModel, technicalModel, TECHNICAL_MODELS } from '../electrical-components/technicalCatalog.ts';
 import { suggestedCircuitVoltage } from '../circuits/circuitDraft.ts';
-import { FISHBONE_CAPACITIES, FISHBONE_MODELS, fishbonePhase, fishboneSlotIssue, isFishboneBreaker } from '../fishbone/model.ts';
+import { FISHBONE_CAPACITIES, FISHBONE_MODELS, fishbonePhase, fishboneSlotIssue, fishboneSlotsFor, isFishboneBreaker } from '../fishbone/model.ts';
 import { boardSize, deviceMount, deviceRect, isRailMounted, pathAvoidsDevices, routeWires } from '../wiring/routing.ts';
 import type { Circuit, Conductor, Device, Project, Selection, Terminal, Wire, WireOptions, WireTermination } from '../types.ts';
 
@@ -15,6 +15,35 @@ const terminations: WireTermination[] = ['tubular', 'generico', 'pente', 'olhal'
 
 function endpointTerminal(project: Project, endpoint: Endpoint): Terminal | undefined {
   return project.devices.find(device => device.id === endpoint.componentId)?.terminals.find(terminal => terminal.id === endpoint.terminalId);
+}
+
+function circuitPhaseLink(project: Project, wire: Wire) {
+  const endpoints = [{ componentId: wire.sourceComponent, terminalId: wire.sourceTerminal }, { componentId: wire.targetComponent, terminalId: wire.targetTerminal }];
+  for (const [index, output] of endpoints.entries()) {
+    if (project.devices.find(device => device.id === output.componentId)?.type !== 'conduit-entry' || endpointTerminal(project, output)?.kind !== 'L') continue;
+    const circuit = circuitForOutputTerminal(project, output.terminalId);
+    const breakerEndpoint = endpoints[1 - index];
+    const breaker = project.devices.find(device => device.id === breakerEndpoint.componentId);
+    const terminal = endpointTerminal(project, breakerEndpoint);
+    if (circuit && breaker && isCircuitBreaker(breaker.type) && terminal?.kind === 'L' && terminal.side === 'bottom') {
+      return { circuitId: circuit.id, breakerId: breaker.id, outputComponentId: output.componentId, outputTerminalId: output.terminalId, breakerTerminalId: terminal.id };
+    }
+  }
+  return null;
+}
+
+function completeCircuitBreaker(project: Project, circuit: Circuit): string | null {
+  const phaseOutputs = project.devices.filter(device => device.type === 'conduit-entry').flatMap(device => device.terminals
+    .filter(terminal => terminal.kind === 'L' && circuitForOutputTerminal(project, terminal.id)?.id === circuit.id)
+    .map(terminal => ({ componentId: device.id, terminalId: terminal.id })));
+  const phaseCount = circuit.phase.split('/').filter(Boolean).length;
+  if (!phaseCount || phaseOutputs.length !== phaseCount) return null;
+  const links = project.wires.map(wire => circuitPhaseLink(project, wire)).filter((link): link is NonNullable<typeof link> => link?.circuitId === circuit.id);
+  if (links.length !== phaseCount || new Set(links.map(link => link.breakerId)).size !== 1 ||
+    new Set(links.map(link => link.breakerTerminalId)).size !== phaseCount) return null;
+  const breaker = project.devices.find(device => device.id === links[0].breakerId);
+  if (!breaker || breaker.terminals.filter(terminal => terminal.side === 'bottom' && terminal.kind === 'L').length !== phaseCount) return null;
+  return phaseOutputs.every(output => links.some(link => link.outputComponentId === output.componentId && link.outputTerminalId === output.terminalId)) ? breaker.id : null;
 }
 
 export function conductorFitsTerminal(conductor: Conductor, terminal: Terminal): boolean {
@@ -69,7 +98,24 @@ export function connectionIssue(project: Project, source: Endpoint, target: Endp
       const phasePoles = device.terminals.filter(item => item.side === 'bottom' && item.kind === 'L').length;
       if (phasePoles !== phases) return `C${circuit.number} tem ${phases} fase(s); escolha um disjuntor com ${phases} polo(s) de fase e acionamento conjunto.`;
       if ((terminal.direction ?? (terminal.side === 'bottom' ? 'output' : 'input')) !== 'output') return 'Conecte a saída do circuito ao borne de saída do disjuntor.';
-      if ((outputTerminal.pole ?? 1) !== (terminal.pole ?? terminal.index + 1)) return `${outputTerminal.label} deve ir ao polo ${outputTerminal.pole ?? 1} do mesmo disjuntor.`;
+      const pole = terminal.pole ?? terminal.index + 1;
+      if (device.fishboneSlotId) {
+        const circuitPhase = circuit.phase.split('/').filter(Boolean)[(outputTerminal.pole ?? 1) - 1];
+        const slotPhase = fishboneSlotsFor(project, device)[pole - 1]?.phase;
+        if (circuitPhase !== slotPhase) return `${outputTerminal.label} deve ir a um polo alimentado pela fase ${circuitPhase} na espinha.`;
+      }
+      const destinationUsed = project.wires.some(wire => {
+        const other = wire.sourceComponent === device.id && wire.sourceTerminal === terminal.id
+          ? { componentId: wire.targetComponent, terminalId: wire.targetTerminal }
+          : wire.targetComponent === device.id && wire.targetTerminal === terminal.id
+            ? { componentId: wire.sourceComponent, terminalId: wire.sourceTerminal } : null;
+        return other && project.devices.find(item => item.id === other.componentId)?.type === 'conduit-entry' &&
+          endpointTerminal(project, other)?.kind === 'L' && circuitForOutputTerminal(project, other.terminalId)?.id === circuit.id;
+      });
+      if (destinationUsed) return `O polo ${pole} já recebe outra fase de C${circuit.number}. Escolha um polo de saída livre.`;
+      const phaseLinks = project.wires.map(wire => circuitPhaseLink(project, wire)).filter(link => link !== null);
+      if (phaseLinks.some(link => link.circuitId === circuit.id && link.breakerId !== device.id)) return `As outras fases de C${circuit.number} já estão ligadas a outro disjuntor. Complete a ligação no mesmo disjuntor.`;
+      if (phaseLinks.some(link => link.breakerId === device.id && link.circuitId !== circuit.id)) return `${device.label} já recebe fases de outro circuito.`;
       if (circuit.breakerId && circuit.breakerId !== device.id) return `C${circuit.number} já está vinculado a outro disjuntor.`;
       if (device.circuitId && device.circuitId !== circuit.id) return `${device.label} já atende outro circuito.`;
     }
@@ -93,7 +139,7 @@ export function fits(project: Project, device: Device): boolean {
   }
   if (mount === 'overlay') return Number.isInteger(device.rail) && device.rail >= 0 && device.rail < project.rails &&
     Number.isInteger(device.slot) && device.slot >= 0 && device.slot + device.modules <= project.modulesPerRail &&
-    !project.devices.some(other => other.id !== device.id && deviceMount(other) === 'overlay' && other.rail === device.rail && other.slot < device.slot + device.modules && device.slot < other.slot + other.modules);
+    !project.devices.some(other => other.id !== device.id && deviceMount(other) === 'overlay' && other.rail === device.rail && (other.combSide ?? 'bottom') === (device.combSide ?? 'bottom') && other.slot < device.slot + device.modules && device.slot < other.slot + other.modules);
   return Number.isInteger(device.modules) && device.modules >= 1 &&
     Number.isInteger(device.rail) && device.rail >= 0 && device.rail < project.rails &&
     Number.isInteger(device.slot) && device.slot >= 0 && device.slot + device.modules <= project.modulesPerRail &&
@@ -241,7 +287,11 @@ export function updateDevice(project: Project, id: string, patch: Partial<Device
   const presetRenamed = device.type !== original.type && original.label === CATALOG.find(item => item.type === original.type)?.name;
   if (presetRenamed) device.label = CATALOG.find(item => item.type === device.type)?.name ?? device.label;
   const labelChanged = patch.label !== undefined || presetRenamed;
-  if (!fits(project, device)) throw new Error('A alteração não cabe neste espaço do trilho.');
+  if (!fits(project, device)) {
+    const overlappingComb = device.type === 'comb-bus' && project.devices.find(other => other.id !== id && other.type === 'comb-bus' && other.rail === device.rail && (other.combSide ?? 'bottom') === (device.combSide ?? 'bottom') && other.slot < device.slot + device.modules && device.slot < other.slot + other.modules);
+    if (overlappingComb) throw new Error(`O pente de ${device.modules} encaixes ocuparia as posições ${device.slot + 1} a ${device.slot + device.modules} do trilho ${device.rail + 1} nos bornes ${device.combSide === 'top' ? 'superiores' : 'inferiores'} e se sobreporia ao pente que começa na posição ${overlappingComb.slot + 1} no mesmo lado. Mova ou remova o outro pente primeiro.`);
+    throw new Error('A alteração não cabe neste espaço do trilho.');
+  }
   if (!deviceShape(device)) throw new Error('Revise as características do componente: valores numéricos e identificação.');
   if (device.circuitId && (!isBreaker(device.type) || !project.circuits.some(circuit => circuit.id === device.circuitId))) throw new Error('Vincule um circuito existente a um disjuntor.');
   if (device.circuitId && isCircuitBreaker(device.type)) {
@@ -286,15 +336,13 @@ export function deleteSelection(project: Project, selection: Selection): Project
   const removedWires = project.wires.filter(wire => wire.id === selection.wire || removed.has(wire.sourceComponent) || removed.has(wire.targetComponent));
   const removedWireIds = new Set(removedWires.map(wire => wire.id));
   const wires = project.wires.filter(wire => !removedWireIds.has(wire.id));
-  const removedPhaseLink = (circuit: Circuit, wire: Project['wires'][number]) => {
-    const endpoints = [{ componentId: wire.sourceComponent, terminalId: wire.sourceTerminal }, { componentId: wire.targetComponent, terminalId: wire.targetTerminal }];
-    return endpoints.some((endpoint, index) => project.devices.find(device => device.id === endpoint.componentId)?.type === 'conduit-entry'
-      && circuitForOutputTerminal(project, endpoint.terminalId)?.id === circuit.id && endpointTerminal(project, endpoint)?.kind === 'L'
-      && endpoints[1 - index].componentId === circuit.breakerId);
+  const removedPhaseLink = (circuit: Circuit, wire: Wire) => {
+    const link = circuitPhaseLink(project, wire);
+    return link?.circuitId === circuit.id && link.breakerId === circuit.breakerId;
   };
   const unlinked = new Set(project.circuits.filter(circuit => circuit.breakerId && !removed.has(circuit.breakerId)
     && removedWires.some(wire => removedPhaseLink(circuit, wire))
-    && !wires.some(wire => removedPhaseLink(circuit, wire))).map(circuit => circuit.id));
+    && completeCircuitBreaker({ ...project, wires }, circuit) !== circuit.breakerId).map(circuit => circuit.id));
   return stamp({ ...project,
     devices: project.devices.filter(device => !removed.has(device.id)).map(device => device.circuitId && unlinked.has(device.circuitId)
       ? { ...device, circuitId: null, label: CATALOG.find(item => item.type === device.type)?.name ?? device.label } : device),
@@ -343,7 +391,12 @@ export function connectMany(project: Project, requests: ConnectionRequest[]): Pr
       sourceTermination: options.termination, targetTermination: options.termination,
     }] };
   }
-  return stamp(next);
+  let connected = stamp(next);
+  for (const circuit of connected.circuits.filter(item => !item.breakerId)) {
+    const breakerId = completeCircuitBreaker(connected, circuit);
+    if (breakerId) connected = updateCircuit(connected, circuit.id, { breakerId });
+  }
+  return connected;
 }
 
 export function connect(project: Project, source: Endpoint, target: Endpoint, options: WireOptions): Project {
@@ -358,9 +411,7 @@ export function connect(project: Project, source: Endpoint, target: Endpoint, op
   }
   const prepared = circuit && breaker?.fishboneSlotId && circuit.phase !== fishbonePhase(project, breaker)
     ? updateCircuit(project, circuit.id, { phase: fishbonePhase(project, breaker) }) : project;
-  const connected = connectMany(prepared, [{ source, target, options }]);
-  return circuit && breaker && isCircuitBreaker(breaker.type) && !circuit.breakerId
-    ? updateCircuit(connected, circuit.id, { breakerId: breaker.id }) : connected;
+  return connectMany(prepared, [{ source, target, options }]);
 }
 
 export function organize(project: Project): Project {

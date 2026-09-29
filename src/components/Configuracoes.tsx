@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactElement } from "react";
 import { Upload, Trash2, Save, Check, Move, RotateCcw } from "lucide-react";
-import { useEmpresa } from "../contexts/EmpresaContext";
-import { useToast } from "../components/ui/toast";
+import { useEmpresa } from "../contexts/empresa-context";
+import { useToast } from "../components/ui/toast-context";
 import ConfirmDialog from "./ConfirmDialog";
 import Modal from "./ui/Modal";
 import "./analysis-pages.css";
@@ -34,18 +34,23 @@ const CORES_SECUNDARIAS_SUGERIDAS = [
 ];
 
 export default function Configuracoes(): ReactElement {
+  const { empresa } = useEmpresa();
+  return <ConfiguracoesForm key={empresa?.id ?? "sem-empresa"} />;
+}
+
+function ConfiguracoesForm(): ReactElement {
   const { empresa, carregando, atualizar, uploadLogo, removerLogo } =
     useEmpresa();
   const { mostrarToast } = useToast();
 
-  const [nome, setNome] = useState("");
-  const [slogan, setSlogan] = useState("");
-  const [emailContato, setEmailContato] = useState("");
-  const [telefoneContato, setTelefoneContato] = useState("");
-  const [cnpj, setCnpj] = useState("");
-  const [enderecoEmpresa, setEnderecoEmpresa] = useState("");
-  const [corPrimaria, setCorPrimaria] = useState("#FFD60A");
-  const [corSecundaria, setCorSecundaria] = useState("#0D1B2A");
+  const [nome, setNome] = useState(empresa?.nome || "");
+  const [slogan, setSlogan] = useState(empresa?.slogan || "");
+  const [emailContato, setEmailContato] = useState(empresa?.email_contato || "");
+  const [telefoneContato, setTelefoneContato] = useState(empresa?.telefone_contato || "");
+  const [cnpj, setCnpj] = useState(empresa?.cnpj || "");
+  const [enderecoEmpresa, setEnderecoEmpresa] = useState(empresa?.endereco || "");
+  const [corPrimaria, setCorPrimaria] = useState(empresa?.cor_primaria || "#FFD60A");
+  const [corSecundaria, setCorSecundaria] = useState(empresa?.cor_secundaria || "#0D1B2A");
   const [salvando, setSalvando] = useState(false);
   const [enviandoLogo, setEnviandoLogo] = useState(false);
   const [secao, setSecao] = useState<"empresa" | "visual">("empresa");
@@ -62,20 +67,6 @@ export default function Configuracoes(): ReactElement {
     if (!imagemParaRecorte) return;
     return () => URL.revokeObjectURL(imagemParaRecorte.url);
   }, [imagemParaRecorte]);
-
-  // Preenche o form quando a empresa carrega
-  useEffect(() => {
-    if (empresa) {
-      setNome(empresa.nome || "");
-      setSlogan(empresa.slogan || "");
-      setEmailContato(empresa.email_contato || "");
-      setTelefoneContato(empresa.telefone_contato || "");
-      setCnpj(empresa.cnpj || "");
-      setEnderecoEmpresa(empresa.endereco || "");
-      setCorPrimaria(empresa.cor_primaria || "#FFD60A");
-      setCorSecundaria(empresa.cor_secundaria || "#0D1B2A");
-    }
-  }, [empresa]);
 
   async function salvarAlteracoes() {
     if (!nome.trim()) {

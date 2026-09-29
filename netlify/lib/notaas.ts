@@ -14,6 +14,8 @@ export type NotaasConfig = {
   aliquotaIss: number;
   supabaseUrl: string;
   supabaseAnonKey: string;
+  supabaseServiceRoleKey: string;
+  allowedUserId: string;
 };
 
 export type NotaDraftInput = {
@@ -36,10 +38,12 @@ export function lerConfiguracao(): NotaasConfig | null {
   const apiKey = env("NOTAAS_API_KEY");
   const supabaseUrl = env("SUPABASE_URL") || env("VITE_SUPABASE_URL");
   const supabaseAnonKey = env("SUPABASE_ANON_KEY") || env("SUPABASE_PUBLISHABLE_KEY") || env("VITE_SUPABASE_ANON_KEY") || env("VITE_SUPABASE_PUBLISHABLE_KEY");
+  const supabaseServiceRoleKey = env("SUPABASE_SERVICE_ROLE_KEY");
+  const allowedUserId = env("NOTAAS_ALLOWED_USER_ID");
   const aliquotaRaw = env("NOTAAS_ALIQUOTA_ISS");
   const aliquotaIss = Number(aliquotaRaw);
 
-  if (!apiKey || !supabaseUrl || !supabaseAnonKey || !Number.isFinite(aliquotaIss) || aliquotaIss < 0 || aliquotaIss > 100) {
+  if (!apiKey || !supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(allowedUserId) || !aliquotaRaw || !Number.isFinite(aliquotaIss) || aliquotaIss < 0 || aliquotaIss > 100) {
     return null;
   }
 
@@ -49,6 +53,8 @@ export function lerConfiguracao(): NotaasConfig | null {
     aliquotaIss,
     supabaseUrl,
     supabaseAnonKey,
+    supabaseServiceRoleKey,
+    allowedUserId,
   };
 }
 
@@ -73,18 +79,22 @@ export function lerBody(event: FunctionEvent): NotaDraftInput | null {
   }
 }
 
-export async function exigirUsuario(event: FunctionEvent, config: NotaasConfig): Promise<boolean> {
+export async function autenticarEmissor(event: FunctionEvent, config: NotaasConfig) {
   const authorization = event.headers.authorization || event.headers.Authorization || "";
-  if (!authorization.startsWith("Bearer ")) return false;
+  if (!authorization.startsWith("Bearer ")) return null;
 
   const token = authorization.slice("Bearer ".length).trim();
-  if (!token) return false;
+  if (!token) return null;
 
   const cliente = createClient(config.supabaseUrl, config.supabaseAnonKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   const { data, error } = await cliente.auth.getUser(token);
-  return !error && Boolean(data.user);
+  if (error || data.user?.id !== config.allowedUserId) return null;
+  const banco = createClient(config.supabaseUrl, config.supabaseServiceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  return { userId: data.user.id, banco };
 }
 
 function textoObrigatorio(value: unknown): string {

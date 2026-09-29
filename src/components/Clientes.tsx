@@ -3,7 +3,7 @@ import type { User } from "@supabase/supabase-js";
 import { Search, UserPlus, Pencil, Trash2, Phone, Mail, MapPin } from "lucide-react";
 import { supabase } from "../supabase";
 import ConfirmDialog from "./ConfirmDialog";
-import { useToast } from "./ui/toast";
+import { useToast } from "./ui/toast-context";
 import Modal from "./ui/Modal";
 import { mascaraTelefone } from "../utils/formatters";
 

@@ -32,10 +32,10 @@ drop policy if exists "Users can manage own movimentacoes" on public.movimentaco
 create policy "Users can manage own movimentacoes"
   on public.movimentacoes for all
   using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  with check (auth.uid() = user_id and
+    (ordem_servico_id is null or exists (select 1 from public.ordens_servico os where os.id = ordem_servico_id and os.user_id = auth.uid())));
 
 grant select, insert, update, delete on table public.movimentacoes to authenticated;
-grant usage, select on all sequences in schema public to authenticated;
 
 -- Trigger para updated_at
 create or replace function public.atualizar_updated_at()

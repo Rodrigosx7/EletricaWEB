@@ -50,6 +50,10 @@ async function chamar(path: string, init: RequestInit = {}): Promise<ApiResponse
     throw new NotaasApiError("A função de emissão não está disponível neste ambiente. Use o Netlify Dev ou o deploy do site.", 0);
   }
 
+  if (response.status === 429) {
+    throw new NotaasApiError("Muitas tentativas em pouco tempo. Aguarde um minuto e tente novamente.", 429);
+  }
+
   let payload: ApiResponse;
   try {
     payload = await response.json() as ApiResponse;

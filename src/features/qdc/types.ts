@@ -59,6 +59,6 @@ export type CatalogItem = { type: string; name: string; category: string; module
 export type Selection = { devices: string[]; wire: string | null };
 export type WireOptions = { conductorType: Conductor; color: string; gauge: number | null; termination: WireTermination };
 export type WarningSeverity = 'error' | 'warning' | 'info';
-export type Warning = { id: string; severity: WarningSeverity; message: string; deviceId?: string; wireId?: string; circuitId?: string };
+export type Warning = { id: string; severity: WarningSeverity; message: string; deviceId?: string; wireId?: string; circuitId?: string; terminalIds?: string[] };
 export type Viewport = { x: number; y: number; zoom: number };
 export const PRELIMINARY_NOTICE = 'Configuração visual preliminar. O dimensionamento, proteção, capacidade de condução, curto-circuito, DR, DPS, queda de tensão e demais critérios devem ser verificados por profissional habilitado conforme as normas aplicáveis.';

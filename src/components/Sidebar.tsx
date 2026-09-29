@@ -19,7 +19,7 @@ import {
   PanelsTopLeft,
 } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
-import { useEmpresa } from "../contexts/EmpresaContext";
+import { useEmpresa } from "../contexts/empresa-context";
 import { iniciais } from "../utils/formatters";
 
 type SidebarProps = {

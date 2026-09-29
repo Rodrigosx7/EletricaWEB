@@ -184,6 +184,8 @@
 .ewq-circuit-inspector-field textarea { resize: vertical; }
 .ewq-circuit-inspector-number { display: flex; align-items: center; gap: 4px; }
 .ewq-circuit-inspector-number em { flex: none; min-width: 28px; color: #647b87; font-style: normal; text-align: right; }
+.ewq-circuit-inspector-suggestion { padding: 9px 11px; border: 1px solid #b7d2c0; border-radius: 7px; background: #eaf6ed; color: #235f3d; cursor: pointer; text-align: left; font: inherit; font-size: 11px; font-weight: 700; }
+.ewq-circuit-inspector-suggestion:hover { background: #dff0e5; }
 .ewq-circuit-inspector-switches { display: flex; gap: 14px; flex-wrap: wrap; }
 .ewq-circuit-inspector-switches label, .ewq-circuit-inspector-check { display: flex; gap: 5px; align-items: center; color: #4b6572; font-size: 12px; }
 .ewq-circuit-composer-colors, .ewq-circuit-inspector-colors { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 9px 0; }

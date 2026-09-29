@@ -116,7 +116,8 @@ export function PropertiesPanel({ project, selection, onUpdateDevice, onUpdateWi
   </div>;
   const pendingNotice = pendingDeviceFields.length > 0 && <p className="ewq-property-alert"><TriangleAlert size={15} aria-hidden="true" /><span>Complete {pendingDeviceFields.join(' e ')} para deixar o componente pronto para conferência.</span></p>;
   const heading = multiple ? 'Seleção múltipla' : wire ? 'Condutor' : device ? 'Componente' : 'Configuração do quadro';
-  const railPlacement = device && <><Field label="Trilho"><select value={device.rail} onChange={event => update({ rail: Number(event.target.value) })}>{Array.from({ length: project.rails }, (_, index) => <option key={index} value={index}>Trilho {index + 1}</option>)}</select></Field><Field label="Módulo inicial"><select value={device.slot} onChange={event => update({ slot: Number(event.target.value) })}>{Array.from({ length: Math.max(1, project.modulesPerRail - device.modules + 1) }, (_, index) => <option key={index} value={index}>{index + 1}</option>)}</select></Field></>;
+  const modulePlacement = device && <Field label="Módulo inicial"><select value={device.slot} onChange={event => update({ slot: Number(event.target.value) })}>{Array.from({ length: Math.max(1, project.modulesPerRail - device.modules + 1) }, (_, index) => <option key={index} value={index}>{index + 1}</option>)}</select></Field>;
+  const railPlacement = device && <><Field label="Trilho"><select value={device.rail} onChange={event => update({ rail: Number(event.target.value) })}>{Array.from({ length: project.rails }, (_, index) => <option key={index} value={index}>Trilho {index + 1}</option>)}</select></Field>{modulePlacement}</>;
   const edgePlacement = device && <><Field label="Borda"><select value={device.edgeSide ?? 'top'} onChange={event => update({ edgeSide: event.target.value as EdgeSide })}>{SIDES.map(side => <option key={side.value} value={side.value}>{side.label}</option>)}</select></Field><Field label="Posição na borda (%)"><Numeric value={device.edgeOffset ?? 50} min={0} max={100} step={1} list="ewq-edge-offset" onChange={edgeOffset => update({ edgeOffset: edgeOffset ?? 50 })} /></Field></>;
   const edgeEntryPlacement = device && ['power-entry', 'conduit-entry'].includes(device.type) ? <><Field label="Posicionamento" wide><select value={isPlanePositioned ? 'plane' : 'edge'} onChange={event => update({ canvasPosition: event.target.value === 'plane' ? device.canvasPosition ?? (() => { const rect = deviceRect(device, project); return { x: rect.x, y: rect.y }; })() : undefined })}><option value="plane">Livre no plano</option><option value="edge">Borda do quadro</option></select></Field>{!isPlanePositioned && edgePlacement}</> : edgePlacement;
   return <aside className="ewq-panel ewq-properties" aria-label="Propriedades do quadro e da seleção">
@@ -142,7 +143,7 @@ export function PropertiesPanel({ project, selection, onUpdateDevice, onUpdateWi
         </div>
         <AdvancedSection summary="Seção, posição e observações">
           <Field label="Seção associada (mm²)"><Numeric value={device.gauge} options={WIRE_GAUGES} list="ewq-device-gauges" onChange={gauge => update({ gauge })} /></Field>
-          {railPlacement}
+          {modulePlacement}
           <Field label="Observações" wide><DraftTextarea rows={3} maxLength={600} value={device.description} onCommit={description => update({ description })} /></Field>
         </AdvancedSection><SelectedActions onDelete={onDelete} onDuplicate={onDuplicate} />
       </> : device?.type === 'fishbone-bus' ? <>

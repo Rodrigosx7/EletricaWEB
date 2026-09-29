@@ -9,7 +9,7 @@ import {
 } from "../utils/formatters";
 import ConfirmDialog from "./ConfirmDialog";
 import Modal from "./ui/Modal";
-import { useToast } from "./ui/toast";
+import { useToast } from "./ui/toast-context";
 import { usePaginacao } from "../hooks/usePaginacao";
 import ControlesPaginacao from "./ui/ControlesPaginacao";
 

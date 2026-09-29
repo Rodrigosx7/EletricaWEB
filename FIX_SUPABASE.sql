@@ -132,9 +132,11 @@ grant select, insert, update, delete on table public.ordem_servico_itens to auth
 -- Resolve "permission denied for sequence X_id_seq"
 -- ============================================
 
-grant usage, select on all sequences in schema public to authenticated;
-grant usage, select on all sequences in schema public to anon;
-grant usage, select on all sequences in schema public to postgres;
+grant usage, select on sequence
+  public.clientes_id_seq, public.servicos_id_seq, public.produtos_id_seq,
+  public.orcamentos_id_seq, public.orcamento_itens_id_seq,
+  public.ordens_servico_id_seq, public.ordem_servico_itens_id_seq
+to authenticated;
 
 -- ============================================
 -- FASE 5: RLS + Policies
@@ -176,22 +178,31 @@ create policy "Users can manage own produtos"
 create policy "Users can manage own orcamentos"
   on public.orcamentos for all
   using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  with check (auth.uid() = user_id and
+    (cliente_id is null or exists (select 1 from public.clientes c where c.id = cliente_id and c.user_id = auth.uid())));
 
 create policy "Users can manage own orcamento_itens"
   on public.orcamento_itens for all
   using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  with check (auth.uid() = user_id and
+    (orcamento_id is null or exists (select 1 from public.orcamentos o where o.id = orcamento_id and o.user_id = auth.uid())) and
+    (servico_id is null or exists (select 1 from public.servicos s where s.id = servico_id and s.user_id = auth.uid())) and
+    (produto_id is null or exists (select 1 from public.produtos p where p.id = produto_id and p.user_id = auth.uid())));
 
 create policy "Users can manage own ordens_servico"
   on public.ordens_servico for all
   using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  with check (auth.uid() = user_id and
+    (cliente_id is null or exists (select 1 from public.clientes c where c.id = cliente_id and c.user_id = auth.uid())) and
+    (orcamento_id is null or exists (select 1 from public.orcamentos o where o.id = orcamento_id and o.user_id = auth.uid())));
 
 create policy "Users can manage own ordem_servico_itens"
   on public.ordem_servico_itens for all
   using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  with check (auth.uid() = user_id and
+    (ordem_servico_id is null or exists (select 1 from public.ordens_servico os where os.id = ordem_servico_id and os.user_id = auth.uid())) and
+    (servico_id is null or exists (select 1 from public.servicos s where s.id = servico_id and s.user_id = auth.uid())) and
+    (produto_id is null or exists (select 1 from public.produtos p where p.id = produto_id and p.user_id = auth.uid())));
 
 -- ============================================
 -- FIM

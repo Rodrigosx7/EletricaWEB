@@ -13,6 +13,12 @@ test('2P prototype separates catalog preset, project instance and stable functio
   assert.equal(first.technicalModelId, GENERIC_DIN_2P.id);
   assert.equal(first.visualVariant, GENERIC_DIN_2P.visualVariant);
   assert.equal(first.amperage, null);
+  for (const type of ['breaker-1p', 'breaker-2p', 'breaker-3p']) {
+    const breaker = createDevice(type);
+    assert.equal(breaker.curve, 'C');
+    assert.equal(breaker.breakingCapacityKa, 4.5);
+    assert.equal(breaker.voltage, 220);
+  }
   assert.deepEqual(first.terminals, breakerTerminals(2));
   assert.deepEqual(first.terminals.map(term => [term.id, term.label, term.pole, term.position?.x, term.position?.y]), [
     ['top-0', '1', 1, .25, 0], ['bottom-0', '2', 1, .25, 1],
@@ -30,6 +36,8 @@ test('technical edits preserve the 2P electrical topology and connected wire IDs
   assert.equal(project.wires[0].id, wireId);
   assert.equal(project.wires[0].sourceTerminal, 'bottom-0');
   assert.equal(project.devices[0].amperage, 32);
+  assert.equal(project.devices[0].breakingCapacityKa, 6);
+  assert.equal(project.devices[0].voltage, 400);
   assert.equal(project.devices[0].tag, 'QF01');
   assert.ok(validateProject(project));
   const before = terminalPoint(project, source.id, 'bottom-0');

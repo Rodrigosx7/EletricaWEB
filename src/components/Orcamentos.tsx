@@ -15,8 +15,8 @@ import {
   MoreHorizontal,
 } from "lucide-react";
 import ConfirmDialog from "./ConfirmDialog";
-import { useToast } from "./ui/toast";
-import { useEmpresa } from "../contexts/EmpresaContext";
+import { useToast } from "./ui/toast-context";
+import { useEmpresa } from "../contexts/empresa-context";
 import Modal from "./ui/Modal";
 type Cliente = {
   id: number;

@@ -146,28 +146,37 @@ drop policy if exists "Users can manage own orcamentos" on public.orcamentos;
 create policy "Users can manage own orcamentos"
   on public.orcamentos for all
   using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  with check (auth.uid() = user_id and
+    (cliente_id is null or exists (select 1 from public.clientes c where c.id = cliente_id and c.user_id = auth.uid())));
 
 -- orcamento_itens
 drop policy if exists "Users can manage own orcamento_itens" on public.orcamento_itens;
 create policy "Users can manage own orcamento_itens"
   on public.orcamento_itens for all
   using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  with check (auth.uid() = user_id and
+    (orcamento_id is null or exists (select 1 from public.orcamentos o where o.id = orcamento_id and o.user_id = auth.uid())) and
+    (servico_id is null or exists (select 1 from public.servicos s where s.id = servico_id and s.user_id = auth.uid())) and
+    (produto_id is null or exists (select 1 from public.produtos p where p.id = produto_id and p.user_id = auth.uid())));
 
 -- ordens_servico
 drop policy if exists "Users can manage own ordens_servico" on public.ordens_servico;
 create policy "Users can manage own ordens_servico"
   on public.ordens_servico for all
   using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  with check (auth.uid() = user_id and
+    (cliente_id is null or exists (select 1 from public.clientes c where c.id = cliente_id and c.user_id = auth.uid())) and
+    (orcamento_id is null or exists (select 1 from public.orcamentos o where o.id = orcamento_id and o.user_id = auth.uid())));
 
 -- ordem_servico_itens
 drop policy if exists "Users can manage own ordem_servico_itens" on public.ordem_servico_itens;
 create policy "Users can manage own ordem_servico_itens"
   on public.ordem_servico_itens for all
   using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  with check (auth.uid() = user_id and
+    (ordem_servico_id is null or exists (select 1 from public.ordens_servico os where os.id = ordem_servico_id and os.user_id = auth.uid())) and
+    (servico_id is null or exists (select 1 from public.servicos s where s.id = servico_id and s.user_id = auth.uid())) and
+    (produto_id is null or exists (select 1 from public.produtos p where p.id = produto_id and p.user_id = auth.uid())));
 
 -- ============================================
 -- PARTE 3: TABELA EMPRESAS + TRIGGER
@@ -238,13 +247,17 @@ grant all on table public.empresas to postgres;
 -- PARTE 4: STORAGE BUCKETS (logos + avatars)
 -- ============================================
 
-insert into storage.buckets (id, name, public)
-values ('logos', 'logos', true)
-on conflict (id) do nothing;
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('logos', 'logos', true, 5242880, array['image/png', 'image/jpeg', 'image/webp'])
+on conflict (id) do update set
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
 
-insert into storage.buckets (id, name, public)
-values ('avatars', 'avatars', true)
-on conflict (id) do nothing;
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('avatars', 'avatars', true, 3145728, array['image/png', 'image/jpeg', 'image/webp'])
+on conflict (id) do update set
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
 
 grant usage on schema storage to authenticated;
 
@@ -329,7 +342,8 @@ drop policy if exists "Users can manage own movimentacoes" on public.movimentaco
 create policy "Users can manage own movimentacoes"
   on public.movimentacoes for all
   using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  with check (auth.uid() = user_id and
+    (ordem_servico_id is null or exists (select 1 from public.ordens_servico os where os.id = ordem_servico_id and os.user_id = auth.uid())));
 
 create or replace function public.atualizar_updated_at()
 returns trigger
@@ -359,6 +373,11 @@ grant select, insert, update, delete on table public.ordens_servico to authentic
 grant select, insert, update, delete on table public.ordem_servico_itens to authenticated;
 grant select, insert, update, delete on table public.empresas to authenticated;
 grant select, insert, update, delete on table public.movimentacoes to authenticated;
+grant usage, select on sequence
+  public.clientes_id_seq, public.servicos_id_seq, public.produtos_id_seq,
+  public.orcamentos_id_seq, public.orcamento_itens_id_seq,
+  public.ordens_servico_id_seq, public.ordem_servico_itens_id_seq
+to authenticated;
 
 -- ============================================
 -- FIM

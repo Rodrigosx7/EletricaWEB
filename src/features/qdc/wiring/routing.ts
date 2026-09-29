@@ -98,13 +98,13 @@ export function terminalPoint(project: Project, componentId: string, terminalId:
   const peers = device.terminals.filter(t => terminalSide(device, t.side) === side).sort((a, b) => a.index - b.index);
   const index = peers.findIndex(t => t.id === terminal.id);
   const rect = deviceRect(device, project);
-  const exit = device.type === 'conduit-entry' ? 12 : 0;
+  // Edge terminals meet the routed wire at the conduit mouth.
   if (terminal.position && deviceMount(device) === 'rail') return {
     x: rect.x + rect.width * terminal.position.x,
     y: rect.y + rect.height * terminal.position.y,
   };
-  if (side === 'left' || side === 'right') return { x: rect.x + (side === 'right' ? rect.width + exit : -exit), y: rect.y + rect.height * (index + .5) / peers.length };
-  return { x: rect.x + rect.width * (index + .5) / peers.length, y: rect.y + (side === 'bottom' ? rect.height + exit : -exit) };
+  if (side === 'left' || side === 'right') return { x: side === 'right' ? rect.x + rect.width : rect.x, y: rect.y + rect.height * (index + .5) / peers.length };
+  return { x: rect.x + rect.width * (index + .5) / peers.length, y: side === 'bottom' ? rect.y + rect.height : rect.y };
 }
 
 function compact(points: Point[]): Point[] {

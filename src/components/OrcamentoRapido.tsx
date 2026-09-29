@@ -604,8 +604,8 @@ const COMODOS_PADRAO = [
 
 /* ---------------- storage ---------------- */
 
-const STORAGE_KEY = "orcamento_rapido_v2";
-const USAGE_KEY = "orcamento_rapido_usados_v1";
+const storageKey = (usuarioId: string) => `orcamento_rapido_v2:${usuarioId}`;
+const usageKey = (usuarioId: string) => `orcamento_rapido_usados_v1:${usuarioId}`;
 
 type UsoItem = {
   id: string;
@@ -613,9 +613,9 @@ type UsoItem = {
   count: number;
 };
 
-function carregarUsados(): UsoItem[] {
+function carregarUsados(usuarioId: string): UsoItem[] {
   try {
-    const raw = localStorage.getItem(USAGE_KEY);
+    const raw = localStorage.getItem(usageKey(usuarioId));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -628,31 +628,8 @@ function carregarUsados(): UsoItem[] {
   }
 }
 
-// buffer de escritas pendentes, com flush por debounce ou antes de fechar a aba
-let bufferUsados: UsoItem[] | null = null;
-let timerFlush: ReturnType<typeof setTimeout> | null = null;
-
-function flushUsados() {
-  if (bufferUsados) {
-    try {
-      localStorage.setItem(USAGE_KEY, JSON.stringify(bufferUsados));
-    } catch {
-      // storage cheio — ignora silenciosamente
-    }
-    bufferUsados = null;
-  }
-  if (timerFlush) {
-    clearTimeout(timerFlush);
-    timerFlush = null;
-  }
-}
-
-if (typeof window !== "undefined") {
-  window.addEventListener("beforeunload", flushUsados);
-}
-
-function registrarUso(itemId: string, nomeItem: string) {
-  const usados = bufferUsados ?? carregarUsados();
+function registrarUso(usuarioId: string, itemId: string, nomeItem: string): UsoItem[] {
+  const usados = carregarUsados(usuarioId);
   const existente = usados.find((u) => u.id === itemId);
   if (existente) {
     existente.count += 1;
@@ -661,15 +638,14 @@ function registrarUso(itemId: string, nomeItem: string) {
   }
   // mantém só os top 50 por count
   usados.sort((a, b) => b.count - a.count);
-  bufferUsados = usados.slice(0, 50);
-  // debounce: agrupa múltiplos cliques numa escrita só
-  if (timerFlush) clearTimeout(timerFlush);
-  timerFlush = setTimeout(flushUsados, 500);
+  const proximos = usados.slice(0, 50);
+  try { localStorage.setItem(usageKey(usuarioId), JSON.stringify(proximos)); } catch { /* preferência opcional */ }
+  return proximos;
 }
 
-function carregarComodos(): Comodo[] {
+function carregarComodos(usuarioId: string): Comodo[] {
   try {
-    const bruto = localStorage.getItem(STORAGE_KEY);
+    const bruto = localStorage.getItem(storageKey(usuarioId));
     if (!bruto) return [];
     const parsed = JSON.parse(bruto);
     // migração: detectar formato antigo ou corrompido
@@ -707,9 +683,9 @@ function idAleatorio(): string {
 
 /* ---------------- componente ---------------- */
 
-export default function OrcamentoRapido(): ReactElement {
+export default function OrcamentoRapido({ usuarioId }: { usuarioId: string }): ReactElement {
   const [estadoInicial] = useState(() => {
-    const dados = carregarComodos();
+    const dados = carregarComodos(usuarioId);
     return { dados, ativo: dados[0]?.id ?? "" };
   });
   const [comodos, setComodos] = useState<Comodo[]>(estadoInicial.dados);
@@ -719,21 +695,21 @@ export default function OrcamentoRapido(): ReactElement {
   const [novoComodo, setNovoComodo] = useState("");
   const [itemPersonalizado, setItemPersonalizado] = useState("");
   const [mostrarTodasCats, setMostrarTodasCats] = useState(false);
-  const [usados, setUsados] = useState<UsoItem[]>(() => carregarUsados());
+  const [usados, setUsados] = useState<UsoItem[]>(() => carregarUsados(usuarioId));
 
   // persiste com debounce de 500ms para evitar writes síncronos a cada clique
   useEffect(() => {
     const timer = setTimeout(() => {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(comodos));
+      localStorage.setItem(storageKey(usuarioId), JSON.stringify(comodos));
     }, 500);
     return () => clearTimeout(timer);
-  }, [comodos]);
+  }, [comodos, usuarioId]);
 
   // sincroniza com alterações de outras abas
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (e.key !== STORAGE_KEY) return;
-      const dados = carregarComodos();
+      if (e.key !== storageKey(usuarioId)) return;
+      const dados = carregarComodos(usuarioId);
       setComodos(dados);
       if (comodoAtivo && !dados.find((c) => c.id === comodoAtivo)) {
         setComodoAtivo(dados[0]?.id ?? "");
@@ -741,7 +717,7 @@ export default function OrcamentoRapido(): ReactElement {
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-  }, [comodoAtivo]);
+  }, [comodoAtivo, usuarioId]);
 
   const comodoAtual = comodos.find((c) => c.id === comodoAtivo);
 
@@ -773,8 +749,7 @@ export default function OrcamentoRapido(): ReactElement {
   ) {
     if (!comodoAtivo) return;
     // registra uso para "mais usados"
-    registrarUso(itemId, nomeItem);
-    setUsados(carregarUsados());
+    setUsados(registrarUso(usuarioId, itemId, nomeItem));
     setComodos((prev) =>
       prev.map((c) => {
         if (c.id !== comodoAtivo) return c;

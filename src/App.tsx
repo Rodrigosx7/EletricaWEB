@@ -268,7 +268,7 @@ function AppInterno() {
         )}
 
         {/* Orçamento Rápido */}
-        {pagina === "orcamentoRapido" && <OrcamentoRapido />}
+        {pagina === "orcamentoRapido" && <OrcamentoRapido key={usuario.id} usuarioId={usuario.id} />}
         {pagina === "quadros" && <MontagemQuadros key={usuario.id} usuarioId={usuario.id} aoAlterar={setQuadroAlterado} aoSair={() => navegar("dashboard")} />}
 
         {/* Ordens de Serviço */}
