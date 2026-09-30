@@ -19,7 +19,10 @@ export default function AuthHero(): ReactElement {
           <div><span>03</span><strong>Receber</strong><small>Financeiro e análise</small></div>
         </div>
       </div>
-      <p className="auth-story-footer">Uma área de trabalho feita para a rotina de quem executa.</p>
+      <footer className="auth-story-footer">
+        <span>© {new Date().getFullYear()} Portal Elétrico</span>
+        <span>Desenvolvido por Rodrigo Justo</span>
+      </footer>
     </section>
   );
 }

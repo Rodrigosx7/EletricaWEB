@@ -85,6 +85,10 @@ export function SignInSplit({ aoIrParaRecuperacao }: SignInSplitProps): ReactEle
         <div className="auth-divider"><span>ou continue com</span></div>
         <button type="button" onClick={entrarComGoogle} disabled={googleCarregando || isSubmitting} className="btn-secondary auth-google">{googleCarregando ? <span className="auth-spinner auth-spinner-dark" aria-hidden="true" /> : <GoogleIcon />}{googleCarregando ? "Redirecionando..." : "Google"}</button>
         <p className="auth-mode-switch">{isSignUp ? "Já tem uma conta?" : "Ainda não tem uma conta?"} <button type="button" onClick={toggleMode}>{isSignUp ? "Entrar" : "Criar conta"}</button></p>
+        <footer className="auth-creator-credit">
+          <span>© {new Date().getFullYear()} Portal Elétrico</span>
+          <span>Desenvolvido por Rodrigo Justo</span>
+        </footer>
       </div>
     </section>
   );

@@ -21,6 +21,7 @@ import {
   Calculator as CalcIcon,
   Settings,
   ClipboardList,
+  Info,
   type LucideIcon,
 } from "lucide-react";
 
@@ -37,6 +38,7 @@ const NotasFiscais = lazy(() => import("./components/NotasFiscais"));
 const Relatorios = lazy(() => import("./components/Relatorios"));
 const Calculadora = lazy(() => import("./components/Calculadora"));
 const Configuracoes = lazy(() => import("./components/Configuracoes"));
+const Sobre = lazy(() => import("./components/Sobre"));
 
 function PageLoading() {
   return <div className="grid min-h-[420px] place-items-center rounded-xl border border-[var(--color-border)] bg-white text-sm text-[var(--color-text-muted)]" role="status" aria-live="polite">Preparando esta área…</div>;
@@ -181,6 +183,7 @@ function AppInterno() {
         titulo: "Configurações",
         icone: Settings,
       },
+      sobre: { titulo: "Sobre o portal", icone: Info },
     }),
     []
   );
@@ -290,6 +293,7 @@ function AppInterno() {
 
         {/* Configurações */}
         {pagina === "configuracoes" && <Configuracoes />}
+        {pagina === "sobre" && <Sobre />}
 
         </Suspense>
 

@@ -236,7 +236,9 @@ input:disabled, select:disabled, textarea:disabled { cursor: not-allowed; }
 .auth-flow div { display: grid; grid-template-columns: 2.25rem 1fr auto; align-items: center; gap: 1rem; padding: 1.15rem 0; border-bottom: 1px solid rgb(255 255 255 / .15); font-size: .875rem; }
 .auth-flow span, .auth-flow small { color: #8fa1aa; font-size: var(--font-xs); }
 .auth-flow strong { font-weight: 650; }
-.auth-story .auth-story-footer { color: #8fa1aa; font-size: var(--font-xs); }
+.auth-story-footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem 1.25rem; padding-top: 1.25rem; border-top: 1px solid rgb(255 255 255 / .15); color: #b8c5cc; font-size: var(--font-xs); }
+.auth-creator-credit { display: none; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--color-border); text-align: center; font-size: var(--font-xs); color: var(--color-muted); }
+.auth-creator-credit span { display: block; }
 .auth-form-side { display: flex; align-items: center; justify-content: center; padding: 3rem clamp(1.5rem,6vw,6rem); background: var(--color-surface); }
 .auth-form { width: 100%; max-width: 25rem; color: var(--color-ink); }
 .auth-form-heading { margin-bottom: 2rem; }
@@ -374,6 +376,7 @@ input:disabled, select:disabled, textarea:disabled { cursor: not-allowed; }
   .workspace-topbar { padding-inline: 1.5rem; position: sticky; top: 0; z-index: 30; }
   .auth-layout { grid-template-columns: 1fr; }
   .auth-story { display: none; }
+  .auth-creator-credit { display: block; }
   .auth-form-side { min-height: 100dvh; }
   .auth-mobile-brand { display: flex; }
   .material-room-panel { position: static; }

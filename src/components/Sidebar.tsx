@@ -17,6 +17,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   PanelsTopLeft,
+  Info,
 } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import { useEmpresa } from "../contexts/empresa-context";
@@ -260,6 +261,16 @@ export default function Sidebar({
 
         {/* Usuário + Sair */}
         <div className="shrink-0 border-t border-white/10 p-3">
+          <button
+            type="button"
+            onClick={() => handleClickItem("sobre")}
+            aria-current={pagina === "sobre" ? "page" : undefined}
+            title={recolhida ? "Sobre o portal" : undefined}
+            className={`mb-2 w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm transition ${recolhida ? "lg:justify-center lg:px-0" : ""} ${pagina === "sobre" ? "bg-white/10 text-white font-semibold" : "text-slate-300 hover:bg-white/5 hover:text-white"}`}
+          >
+            <Info className="w-5 h-5 text-slate-500" aria-hidden="true" />
+            <span className={recolhida ? "lg:hidden" : ""}>Sobre o portal</span>
+          </button>
           <button
             type="button"
             onClick={() => handleClickItem("configuracoes")}
