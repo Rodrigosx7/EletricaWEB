@@ -116,6 +116,7 @@
 .ewq-wire-controls strong { color: #775b1d; font-size: 12px; }
 .ewq-wire-controls label { display: flex; align-items: center; gap: 6px; }
 .ewq-wire-controls select { background: white; min-height: 36px; max-width: 160px; padding: 6px; border: 1px solid #d9d0ba; border-radius: 5px; }
+.ewq-wire-terminal-picker select { min-width: 220px; max-width: 280px; }
 .ewq-wire-color-picker { display: flex; align-items: center; gap: 6px; margin: 0; padding: 0; border: 0; }
 .ewq-wire-color-picker legend { float: left; margin-right: 3px; }
 .ewq-wire-color-picker button { display: inline-grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 1px solid #cfc6aa; border-radius: 6px; background: #fff; }
@@ -549,7 +550,7 @@ body.ewq-resizing-row { cursor: row-resize; }
   .ewq-project-bar .ewq-exit span { display: none; }
   .ewq-heading h1 { font-size: 26px; }
   .ewq-heading-actions { width: 100%; justify-content: space-between; }
-  .ewq-tool { font-size: 11px; gap: 5px; padding: 6px 7px; }
+  .ewq-tool { font-size: 11px; gap: 5px; min-height: 44px; padding: 6px 7px; }
   .ewq-toolbar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 7px; }
   .ewq-toolbar > .ewq-mode-tools { grid-column: 1 / -1; grid-row: 1; justify-content: space-between; }
   .ewq-toolbar > .ewq-auto { grid-column: 1 / -1; grid-row: 2; justify-self: stretch; }
@@ -563,13 +564,13 @@ body.ewq-resizing-row { cursor: row-resize; }
   .ewq-layer-panel { left: -60px; }
   .ewq-shortcut-menu { left: auto; right: 0; width: min(286px, calc(100vw - 40px)); }
   .ewq-shortcut-menu::before { left: auto; right: 11px; }
-  .ewq-toolbar .ewq-button { font-size: 11px; min-height: 40px; padding-inline: 7px; gap: 5px; }
+  .ewq-toolbar .ewq-button { font-size: 11px; min-height: 44px; padding-inline: 7px; gap: 5px; }
   .ewq-responsive-tools { width: 100%; grid-column: 2 / -1; grid-row: 4; margin-left: 0; }
   .ewq-responsive-tools .ewq-button { flex: 1; }
   .ewq-auto-long { display: inline; }
   .ewq-auto-short { display: none; }
   .ewq-bottom-tabs { overflow-x: auto; scrollbar-width: thin; gap: 14px; }
-  .ewq-bottom-tabs button { min-height: 42px; padding-block: 8px; }
+  .ewq-bottom-tabs button { min-height: 44px; padding-block: 8px; }
   .ewq-details-toggle { align-self: flex-start; margin-top: 4px; }
   .ewq-canvas-meta { padding-inline: 10px; font-size: 11px; }
   .ewq-canvas-footer { padding-inline: 10px; }
@@ -578,13 +579,15 @@ body.ewq-resizing-row { cursor: row-resize; }
   .ewq-canvas-meta > span { gap: 5px; }
   .ewq-onboarding { align-items: center; }
   .ewq-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; width: 100%; }
-  .ewq-steps button { align-items: flex-start; min-height: 42px; padding: 5px 2px; font-size: 10px; line-height: 1.25; white-space: normal; }
+  .ewq-steps button { align-items: flex-start; min-height: 44px; padding: 5px 2px; font-size: 10px; line-height: 1.25; white-space: normal; }
   .ewq-steps button > span { width: 18px; height: 18px; border-radius: 5px; }
 }
 @media (max-width: 600px) {
   .ewq-dialog-grid { grid-template-columns: 1fr; }
   .ewq-dialog-form :is(input, select, textarea) { font-size: 16px; }
-  .ewq-button, .ewq-tool, .ewq-icon { min-height: 40px; }
+  .ewq-button, .ewq-tool, .ewq-icon { min-height: 44px; }
+  .ewq-wire-terminal-picker { width: 100%; }
+  .ewq-wire-terminal-picker select { flex: 1; min-width: 0; max-width: none; min-height: 44px; font-size: 16px; }
 }
 @keyframes ewq-panel-from-right { from { opacity: .65; transform: translateX(14px); } to { opacity: 1; transform: translateX(0); } }
 @keyframes ewq-panel-from-left { from { opacity: .65; transform: translateX(-14px); } to { opacity: 1; transform: translateX(0); } }

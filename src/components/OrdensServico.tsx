@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "../supabase";
 import { formatarMoeda, formatarData } from "../utils/formatters";
 import { STATUS_OS, STATUS_OS_VALORES, formatarNumero, type StatusOS } from "../utils/constantes";
@@ -81,7 +81,13 @@ type ItemOS = {
   subtotal: number;
 };
 
-export default function OrdensServico() {
+type OrdensServicoProps = {
+  abrirOrdemId?: number | null;
+  aoOrdemAberta?: () => void;
+};
+
+export default function OrdensServico({ abrirOrdemId, aoOrdemAberta }: OrdensServicoProps) {
+  const aberturaIniciada = useRef<number | null>(null);
   const [ordens, setOrdens] = useState<OrdemServico[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [orcamentos, setOrcamentos] = useState<Orcamento[]>([]);
@@ -719,6 +725,45 @@ export default function OrdensServico() {
     setItensVisualizados(itens);
     setCarregandoItens(false);
   }
+
+  useEffect(() => {
+    if (!abrirOrdemId || carregando || aberturaIniciada.current === abrirOrdemId) return;
+    aberturaIniciada.current = abrirOrdemId;
+
+    async function abrirOrdemSolicitada() {
+      let ordem = ordens.find((item) => item.id === abrirOrdemId);
+      if (!ordem) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const { data, error } = await supabase
+          .from("ordens_servico")
+          .select("id, numero, cliente_id, orcamento_id, data_abertura, data_inicio, data_previsao, data_conclusao, status, descricao, observacoes, valor_servico, custo_materiais, valor_total")
+          .eq("user_id", user.id)
+          .eq("id", abrirOrdemId)
+          .single();
+        if (error || !data) {
+          mostrarToast("Não foi possível abrir esta ordem de serviço.", "erro");
+          aoOrdemAberta?.();
+          return;
+        }
+        ordem = data as OrdemServico;
+      }
+      setOrdemVisualizada(ordem);
+      setModalVisualizacao(true);
+      setCarregandoItens(true);
+      const { data: itens, error: itensError } = await supabase
+        .from("ordem_servico_itens")
+        .select("id, ordem_servico_id, tipo, servico_id, produto_id, descricao, quantidade, valor_unitario, subtotal")
+        .eq("ordem_servico_id", ordem.id)
+        .order("id");
+      if (itensError) mostrarToast("Não foi possível carregar os itens desta ordem.", "erro");
+      setItensVisualizados((itens || []) as ItemOS[]);
+      setCarregandoItens(false);
+      aoOrdemAberta?.();
+    }
+
+    void abrirOrdemSolicitada();
+  }, [abrirOrdemId, carregando, ordens, aoOrdemAberta, mostrarToast]);
 
   async function editarOrdem(
     ordem: OrdemServico

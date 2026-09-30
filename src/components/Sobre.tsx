@@ -23,6 +23,7 @@ export default function Sobre() {
           </p>
         </div>
       </section>
+      <a href="/privacidade.html" className="inline-flex min-h-11 items-center mt-6 text-sm font-semibold text-[var(--color-accent)] underline underline-offset-4">Aviso de privacidade</a>
       <p className="mt-6 text-xs text-[var(--color-muted)]">© {new Date().getFullYear()} Portal Elétrico</p>
     </div>
   );

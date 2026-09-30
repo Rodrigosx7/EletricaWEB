@@ -8,13 +8,15 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { supabase } from "../supabase";
-import { formatarMoeda, formatarData, primeiroDiaMes, primeiroDiaMesAnterior } from "../utils/formatters";
+import { formatarMoeda, formatarData } from "../utils/formatters";
 import { formatarNumero } from "../utils/constantes";
+import { dashboardPeriod } from "../utils/dashboardPeriod";
 
 
 type DashboardProps = {
   setPagina: (pagina: string) => void;
   aoNovoOrcamento: () => void;
+  aoAbrirOrdem: (id: number) => void;
 };
 
 type KPIs = {
@@ -60,7 +62,7 @@ const KPIS_INICIAIS: KPIs = {
   totalOrcamentosPendentes: 0,
 };
 
-export default function Dashboard({ setPagina, aoNovoOrcamento }: DashboardProps) {
+export default function Dashboard({ setPagina, aoNovoOrcamento, aoAbrirOrdem }: DashboardProps) {
   const [usuario, setUsuario] = useState<User | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [kpis, setKpis] = useState<KPIs>(KPIS_INICIAIS);
@@ -89,10 +91,7 @@ export default function Dashboard({ setPagina, aoNovoOrcamento }: DashboardProps
         return;
       }
 
-      const agora = new Date();
-      const hojeISO = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-${String(agora.getDate()).padStart(2, "0")}`;
-      const inicioMesISO = primeiroDiaMes();
-      const inicioMesAnteriorISO = primeiroDiaMesAnterior();
+      const periodo = dashboardPeriod(new Date());
 
       const [
         clientesRes,
@@ -131,22 +130,22 @@ export default function Dashboard({ setPagina, aoNovoOrcamento }: DashboardProps
           .eq("user_id", user.id)
           .order("numero", { ascending: false })
           .limit(5),
-        // OS do mês atual (para faturamento)
-        supabase
-          .from("ordens_servico")
-          .select("valor_total, status, data_abertura")
-          .eq("user_id", user.id)
-          .eq("status", "Concluída")
-          .gte("data_abertura", inicioMesISO)
-          .lte("data_abertura", hojeISO),
-        // OS do mês anterior (para variação)
+        // Valor das O.S. concluídas no mês, agrupado pela conclusão.
         supabase
           .from("ordens_servico")
           .select("valor_total")
           .eq("user_id", user.id)
           .eq("status", "Concluída")
-          .gte("data_abertura", inicioMesAnteriorISO)
-          .lt("data_abertura", inicioMesISO),
+          .gte("data_conclusao", periodo.currentStart)
+          .lte("data_conclusao", periodo.currentEnd),
+        // Compara com os mesmos dias do mês anterior.
+        supabase
+          .from("ordens_servico")
+          .select("valor_total")
+          .eq("user_id", user.id)
+          .eq("status", "Concluída")
+          .gte("data_conclusao", periodo.previousStart)
+          .lte("data_conclusao", periodo.previousEnd),
         // KPIs reais: contagem separada de OS abertas (não derivado da lista limitada)
         supabase
           .from("ordens_servico")
@@ -251,6 +250,7 @@ export default function Dashboard({ setPagina, aoNovoOrcamento }: DashboardProps
   const mes = agora.toLocaleDateString("pt-BR", { month: "long" });
   const anterior = new Date(agora.getFullYear(), agora.getMonth() - 1, 1);
   const mesAnterior = anterior.toLocaleDateString("pt-BR", { month: "long" });
+  const periodo = dashboardPeriod(agora);
   const variacao = kpis.faturamentoMesAnterior > 0
     ? ((kpis.faturamentoMes - kpis.faturamentoMesAnterior) / kpis.faturamentoMesAnterior) * 100
     : null;
@@ -259,7 +259,7 @@ export default function Dashboard({ setPagina, aoNovoOrcamento }: DashboardProps
     { titulo: "Serviços em andamento", detalhe: "Acompanhe a execução", quantidade: kpis.osAndamento, pagina: "ordens-servico" },
     { titulo: "Orçamentos pendentes", detalhe: "Acompanhe a aprovação dos clientes", quantidade: kpis.totalOrcamentosPendentes, pagina: "orcamentos" },
     ...(kpis.estoqueBaixo > 0 ? [{ titulo: "Materiais para repor", detalhe: "Produtos abaixo do estoque mínimo", quantidade: kpis.estoqueBaixo, pagina: "produtos" }] : []),
-  ];
+  ].filter(({ quantidade }) => quantidade > 0);
   const hoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
   const maiorFaturamento = Math.max(kpis.faturamentoMes, kpis.faturamentoMesAnterior, 1);
 
@@ -312,7 +312,7 @@ export default function Dashboard({ setPagina, aoNovoOrcamento }: DashboardProps
                   <div className="min-w-0">
                     <div className="flex justify-between flex-wrap gap-2"><h3>{os.cliente_nome || "Cliente não informado"}</h3><span className="status-label" data-tone={atrasado ? "danger" : previstoHoje ? "warning" : undefined}>{atrasado ? "Prazo vencido" : previstoHoje ? "Vence hoje" : os.status}</span></div>
                     <p>O.S. #{formatarNumero(os.numero)} · {formatarMoeda(os.valor_total)}</p>
-                    <button type="button" onClick={() => setPagina("ordens-servico")} className="text-xs underline underline-offset-4 mt-2 min-h-11">Acompanhar execução</button>
+                    <button type="button" onClick={() => aoAbrirOrdem(os.id)} className="text-xs underline underline-offset-4 mt-2 min-h-11">Acompanhar execução</button>
                   </div>
                 </li>;
               })}
@@ -330,22 +330,23 @@ export default function Dashboard({ setPagina, aoNovoOrcamento }: DashboardProps
               <ArrowRight size={16} className="shrink-0 text-slate-400" aria-hidden="true" />
             </button>
           ))}
+          {pendencias.length === 0 && <p className="mt-5 text-sm text-slate-200">Nenhuma pendência no momento.</p>}
         </aside>
       </div>
 
       <section className="revenue-summary" aria-labelledby="faturamento-titulo">
         <div>
-          <h2 id="faturamento-titulo">Faturamento de {mes}</h2>
+          <h2 id="faturamento-titulo">Valor das O.S. concluídas em {mes}</h2>
           <div className="amount">{formatarMoeda(kpis.faturamentoMes)}</div>
           <p>{kpis.osConcluidasMes} O.S. concluída{kpis.osConcluidasMes !== 1 ? "s" : ""} · de 1 a {agora.getDate()} de {mes}</p>
           <button type="button" className="text-xs underline underline-offset-4 mt-2 min-h-11" onClick={() => setPagina("financeiro")}>Consultar movimentações financeiras</button>
         </div>
         <div>
-          <p>{variacao === null ? `Sem faturamento em ${mesAnterior} para comparar.` : `${variacao >= 0 ? "+" : "−"}${Math.abs(variacao).toFixed(0)}% em relação a ${mesAnterior} completo`}</p>
+          <p>{variacao === null ? `Sem O.S. concluídas no período comparável de ${mesAnterior}.` : `${variacao >= 0 ? "+" : "−"}${Math.abs(variacao).toFixed(0)}% em relação a 1–${periodo.previousEndDay} de ${mesAnterior}`}</p>
           {[{label:mes,value:kpis.faturamentoMes},{label:mesAnterior,value:kpis.faturamentoMesAnterior}].map(item => <div className="comparison-row" key={item.label}>
             <span className="capitalize">{item.label}</span><span className="track"><span className="fill block" style={{width:`${item.value / maiorFaturamento * 100}%`}} /></span><span>{formatarMoeda(item.value)}</span>
           </div>)}
-          <p className="mt-3 max-w-md">Valores das O.S. concluídas, agrupados pela data de abertura. O mês atual ainda está em andamento.</p>
+          <p className="mt-3 max-w-md">Valores agrupados pela data de conclusão. O.S. sem essa data não entram no período.</p>
         </div>
       </section>
 
@@ -358,14 +359,14 @@ export default function Dashboard({ setPagina, aoNovoOrcamento }: DashboardProps
           <div className="hidden md:block overflow-x-auto"><table className="data-table">
             <thead><tr>{["Ordem / cliente","Abertura","Situação","Valor"].map(label=><th scope="col" key={label} className={label==="Valor"?"text-right":""}>{label}</th>)}</tr></thead>
             <tbody>{osRecentes.map(os=><tr key={os.id}>
-              <td><div className="record-primary">{os.cliente_nome || "Cliente não informado"}</div><div className="record-meta">O.S. #{formatarNumero(os.numero)}</div></td>
+              <td><button type="button" className="record-primary text-left underline-offset-4 hover:underline" onClick={() => aoAbrirOrdem(os.id)}>{os.cliente_nome || "Cliente não informado"}</button><div className="record-meta">O.S. #{formatarNumero(os.numero)}</div></td>
               <td className="whitespace-nowrap">{formatarData(os.data_abertura)}</td>
               <td><span className="status-label" data-tone={os.status === "Concluída" ? "success" : os.status === "Em andamento" ? "warning" : undefined}>{os.status}</span></td>
               <td className="text-right whitespace-nowrap font-semibold tabular-nums">{formatarMoeda(os.valor_total)}</td>
             </tr>)}</tbody>
           </table></div>
           <ul className="md:hidden">{osRecentes.map(os=><li key={os.id} className="record-row">
-            <div className="flex flex-wrap justify-between gap-2"><p className="record-primary">{os.cliente_nome || "Cliente não informado"}</p><span className="status-label">{os.status}</span></div>
+            <div className="flex flex-wrap justify-between gap-2"><button type="button" className="record-primary text-left underline-offset-4 hover:underline" onClick={() => aoAbrirOrdem(os.id)}>{os.cliente_nome || "Cliente não informado"}</button><span className="status-label">{os.status}</span></div>
             <p className="record-meta">O.S. #{formatarNumero(os.numero)} · {formatarData(os.data_abertura)}</p><p className="text-sm font-semibold mt-2">{formatarMoeda(os.valor_total)}</p>
           </li>)}</ul>
         </>}

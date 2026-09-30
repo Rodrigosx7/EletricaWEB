@@ -10,6 +10,10 @@ Aplicação React/Vite para gestão de serviços elétricos, orçamentos e monta
 
 Verificações: `npm run build`, `npm run typecheck:functions`, `npm run lint` e `npm test`.
 
+Para acompanhar uma publicação na Netlify, consulte [docs/PUBLICACAO.md](docs/PUBLICACAO.md) e execute `npm run check:deploy` após gerar o build do mesmo commit. Para backup e teste de restauração do banco, arquivos e quadros, consulte [docs/RECUPERACAO.md](docs/RECUPERACAO.md).
+
+O pedido de exclusão no perfil requer aplicar `PRIVACY_REQUESTS.sql` no SQL Editor do Supabase. Ele registra uma solicitação para análise manual; não remove conta nem dados automaticamente.
+
 ## Banco de dados
 
 Em um projeto novo, aplique os scripts SQL no Supabase nesta ordem: `SETUP_SUPABASE.sql`, `FEATURES_FINAL.sql`, `RECEITA_AUTO.sql`, `ESTOQUE_SETUP.sql`, `QDC_SETUP.sql` e `NOTAAS_SETUP.sql`. Em um projeto existente, após backup, aplique `SECURITY_HARDENING.sql` para proteger os históricos e limitar uploads. As demais políticas de relacionamento e a view de estoque dos scripts de instalação só mudam no banco depois de sua execução; confira se não há referências entre contas diferentes. `FIX_SUPABASE.sql`, se usado para recuperação, também contém as políticas reforçadas.

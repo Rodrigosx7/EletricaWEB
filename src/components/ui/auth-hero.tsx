@@ -21,6 +21,7 @@ export default function AuthHero(): ReactElement {
       </div>
       <footer className="auth-story-footer">
         <span>© {new Date().getFullYear()} Portal Elétrico</span>
+        <a href="/privacidade.html" className="text-inherit underline underline-offset-4">Privacidade</a>
         <span>Desenvolvido por Rodrigo Justo</span>
       </footer>
     </section>

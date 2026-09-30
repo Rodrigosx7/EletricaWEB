@@ -87,6 +87,7 @@ export function SignInSplit({ aoIrParaRecuperacao }: SignInSplitProps): ReactEle
         <p className="auth-mode-switch">{isSignUp ? "Já tem uma conta?" : "Ainda não tem uma conta?"} <button type="button" onClick={toggleMode}>{isSignUp ? "Entrar" : "Criar conta"}</button></p>
         <footer className="auth-creator-credit">
           <span>© {new Date().getFullYear()} Portal Elétrico</span>
+          <a href="/privacidade.html">Privacidade</a>
           <span>Desenvolvido por Rodrigo Justo</span>
         </footer>
       </div>

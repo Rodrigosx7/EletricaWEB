@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "test": "node --experimental-strip-types --test tests/*.test.ts tests/*.test.mjs",
     "typecheck:functions": "tsc -p tsconfig.functions.json",
+    "check:deploy": "node scripts/check-deployment.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

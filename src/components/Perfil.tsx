@@ -39,9 +39,40 @@ export default function Perfil({
   const [carregando, setCarregando] = useState(false);
   const [enviandoAvatar, setEnviandoAvatar] = useState(false);
   const [sucesso, setSucesso] = useState(false);
+  const [solicitacaoExclusao, setSolicitacaoExclusao] = useState<string | null>(null);
+  const [solicitacaoDisponivel, setSolicitacaoDisponivel] = useState<boolean | null>(null);
+  const [solicitandoExclusao, setSolicitandoExclusao] = useState(false);
   const { mostrarToast } = useToast();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let ativo = true;
+    void supabase.from("account_deletion_requests")
+      .select("status")
+      .eq("user_id", usuario.id)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!ativo) return;
+        setSolicitacaoDisponivel(!error);
+        if (!error) setSolicitacaoExclusao(data?.status ?? null);
+      });
+    return () => { ativo = false; };
+  }, [usuario.id]);
+
+  async function solicitarExclusao() {
+    if (!window.confirm("Solicitar a exclusão da sua conta e dos dados associados? A solicitação será analisada antes de qualquer remoção.")) return;
+    setSolicitandoExclusao(true);
+    const { error } = await supabase.from("account_deletion_requests")
+      .insert({ user_id: usuario.id, status: "requested" });
+    setSolicitandoExclusao(false);
+    if (error) {
+      mostrarToast("Não foi possível registrar a solicitação. Tente novamente mais tarde.", "erro");
+      return;
+    }
+    setSolicitacaoExclusao("requested");
+    mostrarToast("Solicitação registrada. A análise será feita antes da exclusão.", "sucesso");
+  }
 
   useEffect(() => {
     function teclaEsc(e: KeyboardEvent) {
@@ -182,7 +213,7 @@ export default function Perfil({
       onClick={aoFechar}
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Cabeçalho com gradiente */}
@@ -326,6 +357,19 @@ export default function Perfil({
             </button>
           </div>
         </form>
+        <section className="border-t border-gray-200 px-6 py-5" aria-labelledby="dados-conta-titulo">
+          <h3 id="dados-conta-titulo" className="text-sm font-semibold text-gray-900">Dados da conta</h3>
+          <p className="mt-1 text-xs leading-5 text-gray-600">Você pode solicitar a exclusão da conta. A solicitação passa por análise, inclusive de dados que precisem ser conservados por obrigação aplicável.</p>
+          {solicitacaoDisponivel === false ? (
+            <p className="mt-3 text-sm text-gray-600" role="status">Solicitações temporariamente indisponíveis. Tente novamente mais tarde.</p>
+          ) : solicitacaoExclusao ? (
+            <p className="mt-3 text-sm text-gray-700" role="status">Solicitação de exclusão: {solicitacaoExclusao === "requested" ? "recebida" : solicitacaoExclusao === "in_review" ? "em análise" : solicitacaoExclusao === "completed" ? "concluída" : "revisada"}.</p>
+          ) : (
+            <button type="button" className="mt-3 text-sm font-medium text-red-700 hover:underline disabled:opacity-50" disabled={solicitandoExclusao || solicitacaoDisponivel === null} onClick={() => void solicitarExclusao()}>
+              {solicitandoExclusao ? "Registrando…" : "Solicitar exclusão da conta"}
+            </button>
+          )}
+        </section>
       </div>
     </div>
   );

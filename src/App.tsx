@@ -57,6 +57,7 @@ function AppInterno() {
   const [pagina, setPagina] = useState("dashboard");
   const [quadroAlterado, setQuadroAlterado] = useState(false);
   const [novoOrcamento, setNovoOrcamento] = useState(false);
+  const [ordemParaAbrir, setOrdemParaAbrir] = useState<number | null>(null);
   const [perfilAberto, setPerfilAberto] = useState(false);
   const [logoutAberto, setLogoutAberto] = useState(false);
   const [saindo, setSaindo] = useState(false);
@@ -78,6 +79,7 @@ function AppInterno() {
       setQuadroAlterado(false);
     }
     setNovoOrcamento(false);
+    setOrdemParaAbrir(null);
     setPagina(paginaDestino);
     setMenuAberto(false);
     window.scrollTo({ top: 0, behavior: "instant" });
@@ -256,7 +258,10 @@ function AppInterno() {
 
         {/* Dashboard */}
         {pagina === "dashboard" && (
-          <Dashboard setPagina={navegar} aoNovoOrcamento={() => {
+          <Dashboard setPagina={navegar} aoAbrirOrdem={(id) => {
+            navegar("ordens-servico");
+            setOrdemParaAbrir(id);
+          }} aoNovoOrcamento={() => {
             navegar("orcamentos");
             setNovoOrcamento(true);
           }} />
@@ -275,7 +280,7 @@ function AppInterno() {
         {pagina === "quadros" && <MontagemQuadros key={usuario.id} usuarioId={usuario.id} aoAlterar={setQuadroAlterado} aoSair={() => navegar("dashboard")} />}
 
         {/* Ordens de Serviço */}
-        {pagina === "ordens-servico" && <OrdensServico />}
+        {pagina === "ordens-servico" && <OrdensServico abrirOrdemId={ordemParaAbrir} aoOrdemAberta={() => setOrdemParaAbrir(null)} />}
 
         {/* Serviços */}
         {pagina === "servicos" && <Servicos />}
