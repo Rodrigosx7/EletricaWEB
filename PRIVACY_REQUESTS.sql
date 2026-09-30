@@ -2,10 +2,14 @@
 -- A exclusão é revisada manualmente; esta tabela não apaga dados por conta própria.
 create table if not exists public.account_deletion_requests (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null unique,
+  user_id uuid not null,
   requested_at timestamptz not null default now(),
   status text not null default 'requested' check (status in ('requested', 'in_review', 'completed', 'rejected'))
 );
+
+create unique index if not exists account_deletion_one_active_request
+  on public.account_deletion_requests (user_id)
+  where status in ('requested', 'in_review');
 
 alter table public.account_deletion_requests enable row level security;
 
@@ -21,4 +25,5 @@ create policy "Users can request own deletion" on public.account_deletion_reques
 
 revoke all on public.account_deletion_requests from anon;
 revoke all on public.account_deletion_requests from authenticated;
-grant select, insert on public.account_deletion_requests to authenticated;
+grant select on public.account_deletion_requests to authenticated;
+grant insert (user_id) on public.account_deletion_requests to authenticated;

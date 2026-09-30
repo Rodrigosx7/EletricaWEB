@@ -51,6 +51,8 @@ export default function Perfil({
     void supabase.from("account_deletion_requests")
       .select("status")
       .eq("user_id", usuario.id)
+      .order("requested_at", { ascending: false })
+      .limit(1)
       .maybeSingle()
       .then(({ data, error }) => {
         if (!ativo) return;
@@ -64,7 +66,7 @@ export default function Perfil({
     if (!window.confirm("Solicitar a exclusão da sua conta e dos dados associados? A solicitação será analisada antes de qualquer remoção.")) return;
     setSolicitandoExclusao(true);
     const { error } = await supabase.from("account_deletion_requests")
-      .insert({ user_id: usuario.id, status: "requested" });
+      .insert({ user_id: usuario.id });
     setSolicitandoExclusao(false);
     if (error) {
       mostrarToast("Não foi possível registrar a solicitação. Tente novamente mais tarde.", "erro");
@@ -362,13 +364,14 @@ export default function Perfil({
           <p className="mt-1 text-xs leading-5 text-gray-600">Você pode solicitar a exclusão da conta. A solicitação passa por análise, inclusive de dados que precisem ser conservados por obrigação aplicável.</p>
           {solicitacaoDisponivel === false ? (
             <p className="mt-3 text-sm text-gray-600" role="status">Solicitações temporariamente indisponíveis. Tente novamente mais tarde.</p>
-          ) : solicitacaoExclusao ? (
-            <p className="mt-3 text-sm text-gray-700" role="status">Solicitação de exclusão: {solicitacaoExclusao === "requested" ? "recebida" : solicitacaoExclusao === "in_review" ? "em análise" : solicitacaoExclusao === "completed" ? "concluída" : "revisada"}.</p>
-          ) : (
+          ) : <>
+            {solicitacaoExclusao && <p className="mt-3 text-sm text-gray-700" role="status">Última solicitação de exclusão: {solicitacaoExclusao === "requested" ? "recebida" : solicitacaoExclusao === "in_review" ? "em análise" : solicitacaoExclusao === "completed" ? "concluída" : "revisada"}.</p>}
+            {!solicitacaoExclusao || !["requested", "in_review"].includes(solicitacaoExclusao) ? (
             <button type="button" className="mt-3 text-sm font-medium text-red-700 hover:underline disabled:opacity-50" disabled={solicitandoExclusao || solicitacaoDisponivel === null} onClick={() => void solicitarExclusao()}>
               {solicitandoExclusao ? "Registrando…" : "Solicitar exclusão da conta"}
             </button>
-          )}
+            ) : null}
+          </>}
         </section>
       </div>
     </div>
